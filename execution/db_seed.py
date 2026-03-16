@@ -27,7 +27,8 @@ def timestamp():
 TEST_CLIENT = {
     "business_name":  "Holt Sewer & Drain",
     "owner_name":     "Jeremy Holt",
-    "phone":          "+12074190986",
+    "phone":          "+12074190986",   # Telnyx number customers text in to
+    "owner_mobile":   "+12076538819",   # Jeremy's real cell — proposals sent here
     "service_area":   "Rural Maine",
     "trade_vertical": "sewer_drain",
     "active":         True,
@@ -68,10 +69,11 @@ def seed():
             client_id = existing.data["id"]
             print(f"[{timestamp()}] INFO db_seed: Client exists → {existing.data['business_name']} (id={client_id})")
             # Update personality in case it has been extended (e.g. rates added)
-            supabase.table("clients").update(
-                {"personality": TEST_CLIENT["personality"]}
-            ).eq("id", client_id).execute()
-            print(f"[{timestamp()}] INFO db_seed: Personality updated with rate fields.")
+            supabase.table("clients").update({
+                "personality":  TEST_CLIENT["personality"],
+                "owner_mobile": TEST_CLIENT["owner_mobile"],
+            }).eq("id", client_id).execute()
+            print(f"[{timestamp()}] INFO db_seed: Personality and owner_mobile updated.")
             return client_id
     except Exception:
         # .single() raises when no row found — that means we should insert

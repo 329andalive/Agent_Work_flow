@@ -163,7 +163,7 @@ def build_user_prompt(customer_name: str, customer_address: str, job_type: str, 
 
 FALLBACK_MESSAGE = (
     "Something went wrong generating your proposal. "
-    "Call Jeremy at 207-419-0986"
+    "Call Jeremy at 207-653-8819"
 )
 
 
@@ -173,7 +173,7 @@ def run(client_phone: str, customer_phone: str, raw_input: str) -> str | None:
 
     Args:
         client_phone:   The business owner's Telnyx number (e.g. "+12074190986")
-        customer_phone: The end customer's phone number
+        customer_phone: The end customer's phone number (e.g. "+12076538819")
         raw_input:      The raw SMS text describing the job
 
     Returns:
@@ -190,7 +190,8 @@ def run(client_phone: str, customer_phone: str, raw_input: str) -> str | None:
         send_sms(to_number=client_phone, message_body=FALLBACK_MESSAGE)
         return None
 
-    client_id = client["id"]
+    client_id    = client["id"]
+    owner_mobile = client.get("owner_mobile") or client_phone
     print(f"[{timestamp()}] INFO proposal_agent: Client → {client['business_name']} (id={client_id})")
 
     # ------------------------------------------------------------------
@@ -295,12 +296,28 @@ def run(client_phone: str, customer_phone: str, raw_input: str) -> str | None:
         proposal_id = None
 
     # ------------------------------------------------------------------
-    # Step 8: Send the proposal back via SMS to the client's number
-    # The owner reads it, approves, and forwards to the customer.
-    # (Future: auto-send direct to customer once trust is established.)
+    # Step 8: Build HTML, upload to Supabase Storage, text link to owner's mobile.
+    # Fallback: send raw text if upload fails.
     # ------------------------------------------------------------------
-    print(f"[{timestamp()}] INFO proposal_agent: Sending proposal via SMS to {client_phone}")
-    sms_result = send_sms(to_number=client_phone, message_body=proposal_text)
+    from execution.proposal_html import build_proposal_html
+    from execution.proposal_storage import upload_proposal_html
+
+    html = build_proposal_html(
+        proposal_text=proposal_text,
+        customer_name=customer_name,
+        job_type=job_type,
+        business_name=client["business_name"],
+        owner_name=client.get("owner_name", "Jeremy"),
+    )
+    proposal_url = upload_proposal_html(html, customer_name)
+
+    if proposal_url:
+        sms_body = f"New proposal for {customer_name} — review and forward: {proposal_url}"
+    else:
+        sms_body = f"New proposal for {customer_name}:\n\n{proposal_text}"
+
+    print(f"[{timestamp()}] INFO proposal_agent: Sending proposal link via SMS to {owner_mobile}")
+    sms_result = send_sms(to_number=owner_mobile, message_body=sms_body, from_number=client_phone)
 
     if not sms_result["success"]:
         print(f"[{timestamp()}] ERROR proposal_agent: SMS send failed — {sms_result['error']}")
@@ -315,8 +332,8 @@ def run(client_phone: str, customer_phone: str, raw_input: str) -> str | None:
             client_id=client_id,
             direction="outbound",
             from_number=client_phone,
-            to_number=client_phone,
-            body=proposal_text,
+            to_number=owner_mobile,
+            body=sms_body,
             agent_used="proposal_agent",
             job_id=job_id,
             telnyx_message_id=sms_result.get("message_id"),
