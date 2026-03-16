@@ -43,21 +43,17 @@ from execution.db_client import get_client_by_phone
 from execution.db_customer import get_customer_by_phone, create_customer
 from execution.db_proposals import save_proposal, update_proposal_status
 from execution.db_followups import schedule_followup
-from execution.db_jobs import create_job, update_job_status
-from execution.followup_agent import (
-    run_scheduled_followups,
-    handle_proposal_response,
-    handle_loss_reason,
-)
+from execution.db_jobs import create_job
 from execution.sms_router import route_message
-from execution.reporting_agent import get_closing_rate_summary, update_monthly_outcomes
+from execution.followup_agent import run_scheduled_followups
+from execution.reporting_agent import get_closing_rate_summary
 
 
 # ---------------------------------------------------------------------------
 # Test fixtures
 # ---------------------------------------------------------------------------
 
-JEREMY_PHONE   = "+12075551234"   # Jeremy's Telnyx number
+JEREMY_PHONE   = "+12074190986"   # Jeremy's Telnyx number (must match db_seed.py)
 CUSTOMER_PHONE = "+12075559999"   # Fake customer number
 CUSTOMER_NAME  = "Test Customer"
 CUSTOMER_ADDR  = "123 Test Lane, Bangor, ME"
@@ -76,7 +72,7 @@ def _get_jeremy(verbose=True) -> dict:
 def _get_or_create_customer(client_id: str) -> dict:
     customer = get_customer_by_phone(client_id, CUSTOMER_PHONE)
     if not customer:
-        cid = create_customer(client_id, CUSTOMER_NAME, CUSTOMER_PHONE, CUSTOMER_ADDR, None)
+        create_customer(client_id, CUSTOMER_NAME, CUSTOMER_PHONE, CUSTOMER_ADDR, None)
         customer = get_customer_by_phone(client_id, CUSTOMER_PHONE)
     print(f"  Customer: {customer['name']} (id={customer['id'][:8]}...)")
     return customer
@@ -151,7 +147,7 @@ def test_proposal_acceptance():
 
     client   = _get_jeremy()
     customer = _get_or_create_customer(client["id"])
-    job_id, proposal_id = _create_test_proposal(client["id"], customer["id"])
+    _create_test_proposal(client["id"], customer["id"])
 
     # Simulate inbound SMS: customer says yes
     sms_data = {
@@ -185,7 +181,7 @@ def test_loss_report_and_why():
 
     client   = _get_jeremy()
     customer = _get_or_create_customer(client["id"])
-    job_id, proposal_id = _create_test_proposal(client["id"], customer["id"])
+    _create_test_proposal(client["id"], customer["id"])
 
     # Simulate owner texting in a loss report
     loss_sms = {

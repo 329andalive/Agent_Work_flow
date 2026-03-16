@@ -503,13 +503,14 @@ def handle_loss_reason(
             lost_reason=reason_code,
             lost_reason_detail=detail_text,
         )
-        # Also update proposal itself
-        update_proposal_response(
-            proposal_id=proposal_id,
-            response_type=None,  # keep existing response_type
-            lost_reason=reason_code,
-            lost_reason_detail=detail_text,
-        )
+        # Also stamp lost_reason on the proposal row directly
+        try:
+            get_supabase().table("proposals").update({
+                "lost_reason":        reason_code,
+                "lost_reason_detail": detail_text,
+            }).eq("id", proposal_id).execute()
+        except Exception as e:
+            print(f"[{_timestamp()}] ERROR followup_agent: proposal lost_reason update — {e}")
 
     # Mark the follow-up as sent/resolved
     mark_followup_sent(followup_id, f"owner replied: {raw_input}")
