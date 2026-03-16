@@ -3,7 +3,7 @@ sms_router.py — Routes inbound SMS to the correct AI agent
 
 Flow:
     1. Receive parsed SMS data from sms_receive.py
-    2. Look up the client by phone number (Supabase — stubbed for now)
+    2. Look up the client by phone number via db_client.py (real Supabase)
     3. Scan message body for routing keywords
     4. Return the name of the agent that should handle this message
 
@@ -12,7 +12,13 @@ Usage:
     agent = route_message(sms_data)
 """
 
+import os
+import sys
 from datetime import datetime
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from execution.db_client import get_client_by_phone
 
 
 def timestamp():
@@ -36,25 +42,12 @@ ROUTING_TABLE = {
 DEFAULT_AGENT = "proposal_agent"
 
 
-def lookup_client(phone_number: str) -> dict:
+def lookup_client(phone_number: str) -> dict | None:
     """
-    Look up a client record by phone number.
-
-    STUB — replace with real Supabase query when ready:
-        from supabase import create_client
-        supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
-        result = supabase.table("clients").select("*").eq("phone", phone_number).single().execute()
-        return result.data
-
-    Returns a mock client object for now.
+    Look up a client record by phone number via Supabase.
+    Returns the full client record, or None if the number isn't registered.
     """
-    print(f"[{timestamp()}] INFO sms_router: Looking up client for {phone_number} (stub — returning mock)")
-    return {
-        "id": "mock-client-001",
-        "name": "Mock Client",
-        "phone": phone_number,
-        "status": "active",
-    }
+    return get_client_by_phone(phone_number)
 
 
 def detect_agent(message_body: str) -> str:
@@ -90,9 +83,12 @@ def route_message(sms_data: dict) -> str:
 
         print(f"[{timestamp()}] INFO sms_router: Routing message_id={message_id} from={from_number}")
 
-        # Step 1: Look up the client (stubbed — will hit Supabase later)
+        # Step 1: Look up the client in Supabase by their phone number
         client = lookup_client(from_number)
-        print(f"[{timestamp()}] INFO sms_router: Client resolved → id={client['id']} name={client['name']}")
+        if not client:
+            print(f"[{timestamp()}] WARN sms_router: Unknown number {from_number} — no client found")
+            return DEFAULT_AGENT
+        print(f"[{timestamp()}] INFO sms_router: Client resolved → id={client['id']} name={client['business_name']}")
 
         # Step 2: Determine the right agent based on message content
         agent = detect_agent(body)
