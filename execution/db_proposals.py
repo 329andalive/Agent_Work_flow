@@ -124,3 +124,104 @@ def get_pending_proposals(client_id: str) -> list:
     except Exception as e:
         print(f"[{timestamp()}] ERROR db_proposals: get_pending_proposals failed — {e}")
         return []
+
+
+def update_proposal_response(
+    proposal_id: str,
+    response_type: str,
+    lost_reason: str = None,
+    lost_reason_detail: str = None,
+) -> bool:
+    """
+    Record how a customer responded to a proposal.
+    Called by followup_agent after detecting acceptance or rejection.
+
+    Args:
+        proposal_id:        UUID of the proposal
+        response_type:      "accepted", "declined", or "cold"
+        lost_reason:        Reason code if declined (optional)
+        lost_reason_detail: Owner's own words about why (optional)
+
+    Returns:
+        True on success, False on failure.
+    """
+    try:
+        supabase = get_client()
+        update = {
+            "response_type": response_type,
+            "responded_at":  datetime.now(timezone.utc).isoformat(),
+        }
+        if lost_reason:
+            update["lost_reason"] = lost_reason
+        if lost_reason_detail:
+            update["lost_reason_detail"] = lost_reason_detail
+
+        supabase.table("proposals").update(update).eq("id", proposal_id).execute()
+        print(f"[{timestamp()}] INFO db_proposals: Proposal {proposal_id} response_type={response_type}")
+        return True
+
+    except Exception as e:
+        print(f"[{timestamp()}] ERROR db_proposals: update_proposal_response failed — {e}")
+        return False
+
+
+def get_latest_sent_proposal_for_customer(client_id: str, customer_id: str) -> dict | None:
+    """
+    Find the most recent sent proposal for a specific client/customer pair.
+    Used by followup_agent when a customer texts in a response.
+
+    Returns:
+        Proposal dict, or None if not found / on error.
+    """
+    try:
+        supabase = get_client()
+        result = (
+            supabase.table("proposals")
+            .select("*")
+            .eq("client_id", client_id)
+            .eq("customer_id", customer_id)
+            .eq("status", "sent")
+            .order("created_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+        if result.data:
+            print(f"[{timestamp()}] INFO db_proposals: Found latest sent proposal for customer")
+        return result.data[0] if result.data else None
+
+    except Exception as e:
+        print(f"[{timestamp()}] ERROR db_proposals: get_latest_sent_proposal_for_customer failed — {e}")
+        return None
+
+
+def get_cold_proposals(client_id: str, days: int = 14) -> list:
+    """
+    Return sent proposals with no response older than `days` days.
+    These get marked cold and trigger the final message + why question.
+
+    Args:
+        client_id: UUID of the client
+        days:      Age threshold in days (default 14)
+
+    Returns:
+        List of proposal dicts, or empty list on error.
+    """
+    try:
+        supabase = get_client()
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+
+        result = (
+            supabase.table("proposals")
+            .select("*")
+            .eq("client_id", client_id)
+            .eq("status", "sent")
+            .is_("response_type", "null")
+            .lt("sent_at", cutoff)
+            .execute()
+        )
+        print(f"[{timestamp()}] INFO db_proposals: get_cold_proposals → {len(result.data)} cold ({days}+ days)")
+        return result.data or []
+
+    except Exception as e:
+        print(f"[{timestamp()}] ERROR db_proposals: get_cold_proposals failed — {e}")
+        return []

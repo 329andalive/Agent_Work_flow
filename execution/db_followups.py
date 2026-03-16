@@ -120,3 +120,91 @@ def mark_followup_sent(followup_id: str, message_sent: str) -> bool:
     except Exception as e:
         print(f"[{timestamp()}] ERROR db_followups: mark_followup_sent failed — {e}")
         return False
+
+
+def cancel_followups_for_job(job_id: str) -> int:
+    """
+    Cancel all pending follow-ups for a job.
+    Called immediately when a proposal is accepted or declined so we
+    stop chasing a resolved opportunity.
+
+    Args:
+        job_id: UUID of the job whose follow-ups should be cancelled
+
+    Returns:
+        Number of follow-ups cancelled, or 0 on failure.
+    """
+    try:
+        supabase = get_client()
+        result = (
+            supabase.table("follow_ups")
+            .update({"status": "cancelled"})
+            .eq("job_id", job_id)
+            .eq("status", "pending")
+            .execute()
+        )
+        count = len(result.data) if result.data else 0
+        print(f"[{timestamp()}] INFO db_followups: Cancelled {count} follow-ups for job_id={job_id}")
+        return count
+
+    except Exception as e:
+        print(f"[{timestamp()}] ERROR db_followups: cancel_followups_for_job failed — {e}")
+        return 0
+
+
+def get_pending_followups_by_type(client_id: str, followup_type: str) -> list:
+    """
+    Return pending follow-ups of a specific type for a client.
+    Used by sms_router to check if there's an outstanding 'lost_job_why'
+    question before routing an inbound message.
+
+    Args:
+        client_id:     UUID of the client
+        followup_type: e.g. "lost_job_why"
+
+    Returns:
+        List of follow-up dicts, or empty list on error.
+    """
+    try:
+        supabase = get_client()
+        result = (
+            supabase.table("follow_ups")
+            .select("*")
+            .eq("client_id", client_id)
+            .eq("follow_up_type", followup_type)
+            .eq("status", "pending")
+            .order("created_at", desc=True)
+            .execute()
+        )
+        return result.data or []
+
+    except Exception as e:
+        print(f"[{timestamp()}] ERROR db_followups: get_pending_followups_by_type failed — {e}")
+        return []
+
+
+def count_followups_sent_for_proposal(proposal_id: str) -> int:
+    """
+    Count how many follow-up messages have already been sent for a proposal.
+    Prevents sending more than 3 touches total.
+
+    Args:
+        proposal_id: UUID of the proposal
+
+    Returns:
+        Count of sent follow-ups, or 0 on failure.
+    """
+    try:
+        supabase = get_client()
+        result = (
+            supabase.table("follow_ups")
+            .select("id")
+            .eq("proposal_id", proposal_id)
+            .eq("status", "sent")
+            .execute()
+        )
+        return len(result.data) if result.data else 0
+
+    except Exception as e:
+        print(f"[{timestamp()}] ERROR db_followups: count_followups_sent_for_proposal failed — {e}")
+        return 0
