@@ -34,9 +34,19 @@ def timestamp():
 # The first matching agent wins. Default fallback is proposal_agent.
 # ---------------------------------------------------------------------------
 ROUTING_TABLE = {
+    # Invoice agent — owner texting in that a job is done
+    # These keywords take priority over proposal keywords
+    "invoice_agent":  [
+        "done", "finished", "complete", "completed", "all done",
+        "wrapped up", "job done", "just finished", "took me",
+        "hours", "billed", "bill them", "send invoice",
+        "worked", "spent", "3 hours", "2 hours", "4 hours", "1 hour",
+    ],
+    # Proposal agent — new job request keywords
     "proposal_agent":  ["quote", "estimate", "proposal", "pricing", "price", "cost", "bid"],
-    "invoice_agent":   ["invoice", "bill", "payment", "pay", "receipt", "balance", "owe"],
+    # Payment / account questions
     "followup_agent":  ["follow up", "followup", "follow-up", "check in", "checking in", "update", "status"],
+    # Review request
     "review_agent":    ["review", "google", "feedback", "rating", "stars", "yelp"],
 }
 
@@ -93,8 +103,14 @@ def dispatch(agent_name: str, sms_data: dict) -> None:
             )
 
         elif agent_name == "invoice_agent":
-            # Stub — build invoice_agent next
-            print(f"[{timestamp()}] INFO sms_router: invoice_agent not yet implemented")
+            from execution.invoice_agent import run as invoice_run
+            # client_phone = the Telnyx number that received the text (to_number)
+            # customer_phone = the sender (from_number) — may be owner's personal phone
+            invoice_run(
+                client_phone=to_number,
+                customer_phone=from_number,
+                raw_input=body,
+            )
 
         elif agent_name == "followup_agent":
             # Stub — build followup_agent next

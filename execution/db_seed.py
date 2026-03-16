@@ -37,7 +37,13 @@ TEST_CLIENT = {
         "and I show up when I say I will. My customers are mostly farmers, camp owners, "
         "and rural homeowners who have been burned by contractors before. I earn their "
         "trust by being straight with them. My estimates are detailed and honest. "
-        "I do not use fancy words. I say what the job is, what it costs, and when I can do it."
+        "I do not use fancy words. I say what the job is, what it costs, and when I can do it.\n\n"
+        "Hourly rate: $125/hr\n"
+        "Overtime (after 8hrs or weekends): $175/hr\n"
+        "Minimum charge: $150\n"
+        "I do not charge travel in my local area.\n"
+        "Standard payment terms: due on receipt for residential, net 15 for commercial accounts.\n"
+        "Payment methods accepted: check, cash, or Venmo @HoltSewer."
     ),
 }
 
@@ -59,9 +65,14 @@ def seed():
             .execute()
         )
         if existing.data:
-            print(f"[{timestamp()}] INFO db_seed: Client already exists → {existing.data['business_name']} (id={existing.data['id']})")
-            print(f"[{timestamp()}] INFO db_seed: Nothing to insert. Seed complete.")
-            return existing.data["id"]
+            client_id = existing.data["id"]
+            print(f"[{timestamp()}] INFO db_seed: Client exists → {existing.data['business_name']} (id={client_id})")
+            # Update personality in case it has been extended (e.g. rates added)
+            supabase.table("clients").update(
+                {"personality": TEST_CLIENT["personality"]}
+            ).eq("id", client_id).execute()
+            print(f"[{timestamp()}] INFO db_seed: Personality updated with rate fields.")
+            return client_id
     except Exception:
         # .single() raises when no row found — that means we should insert
         pass
