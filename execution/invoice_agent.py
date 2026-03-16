@@ -262,10 +262,10 @@ def run(client_phone: str, customer_phone: str, raw_input: str) -> str | None:
     client = get_client_by_phone(client_phone)
     if not client:
         print(f"[{timestamp()}] ERROR invoice_agent: No client found for {client_phone}")
-        send_sms(to_number=client_phone, message_body=FALLBACK_MESSAGE)
         return None
 
-    client_id = client["id"]
+    client_id    = client["id"]
+    owner_mobile = client.get("owner_mobile") or customer_phone
     print(f"[{timestamp()}] INFO invoice_agent: Client → {client['business_name']}")
 
     # ------------------------------------------------------------------
@@ -291,7 +291,7 @@ def run(client_phone: str, customer_phone: str, raw_input: str) -> str | None:
     # If we can't determine hours, ask and bail
     if actual_hours is None:
         print(f"[{timestamp()}] INFO invoice_agent: Hours not found — sending clarification request")
-        send_sms(to_number=client_phone, message_body=HOURS_MISSING_REPLY)
+        send_sms(to_number=owner_mobile, message_body=HOURS_MISSING_REPLY, from_number=client_phone)
         return None
 
     print(f"[{timestamp()}] INFO invoice_agent: Parsed → {actual_hours}hrs | materials='{materials_desc}' ${materials_cost}")
@@ -371,7 +371,7 @@ def run(client_phone: str, customer_phone: str, raw_input: str) -> str | None:
 
     if not invoice_text:
         print(f"[{timestamp()}] ERROR invoice_agent: Claude returned no text")
-        send_sms(to_number=client_phone, message_body=FALLBACK_MESSAGE)
+        send_sms(to_number=owner_mobile, message_body=FALLBACK_MESSAGE)
         return None
 
     print(f"[{timestamp()}] INFO invoice_agent: Invoice generated ({len(invoice_text)} chars)")
@@ -432,8 +432,8 @@ def run(client_phone: str, customer_phone: str, raw_input: str) -> str | None:
     # ------------------------------------------------------------------
     # Step 10: Send combined SMS to the OWNER'S Telnyx number
     # ------------------------------------------------------------------
-    print(f"[{timestamp()}] INFO invoice_agent: Sending combined invoice+cost SMS to owner {client_phone}")
-    sms_result = send_sms(to_number=client_phone, message_body=combined_sms)
+    print(f"[{timestamp()}] INFO invoice_agent: Sending combined invoice+cost SMS to {owner_mobile}")
+    sms_result = send_sms(to_number=owner_mobile, message_body=combined_sms, from_number=client_phone)
 
     if not sms_result["success"]:
         print(f"[{timestamp()}] ERROR invoice_agent: SMS send failed — {sms_result['error']}")

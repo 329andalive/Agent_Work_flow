@@ -44,10 +44,10 @@ def timestamp():
 ROUTING_TABLE = {
     # Invoice agent — owner texting in that a job is done
     "invoice_agent": [
-        "done", "finished", "complete", "completed", "all done",
-        "wrapped up", "job done", "just finished", "took me",
-        "hours", "billed", "bill them", "send invoice",
-        "worked", "spent", "3 hours", "2 hours", "4 hours", "1 hour",
+        "all done", "job done", "just finished", "we're done", "just wrapped",
+        "wrapped up", "took me", "billed", "bill them", "send invoice",
+        "send the invoice", "finished up", "worked", "spent",
+        "3 hours", "2 hours", "4 hours", "5 hours", "1 hour", "half a day",
     ],
     # Proposal agent — new job request keywords
     "proposal_agent": ["quote", "estimate", "proposal", "pricing", "price", "cost", "bid"],
