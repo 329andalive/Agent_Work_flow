@@ -26,12 +26,12 @@ Usage:
 
 import os
 import sys
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from execution.db_connection import get_client as get_supabase
-from execution.db_client import get_client_by_phone, get_personality
+from execution.db_client import get_client_by_phone
 from execution.db_customer import get_customer_by_phone
 from execution.db_proposals import (
     update_proposal_response,
@@ -215,9 +215,9 @@ def run_scheduled_followups() -> int:
 
         # Look up customer
         try:
-            customer_row = supabase.table("customers").select("phone, name").eq("id", customer_id).single().execute()
-            customer_phone = customer_row.data["phone"]
-            customer_name  = customer_row.data.get("name", "there")
+            customer_row = supabase.table("customers").select("customer_phone, customer_name").eq("id", customer_id).single().execute()
+            customer_phone = customer_row.data["customer_phone"]
+            customer_name  = customer_row.data.get("customer_name", "there")
         except Exception as e:
             print(f"[{_timestamp()}] ERROR followup_agent: customer lookup for {customer_id} — {e}")
             continue
@@ -298,9 +298,9 @@ def _process_cold_proposals():
 
             # Look up customer
             try:
-                customer_row = supabase.table("customers").select("phone, name").eq("id", customer_id).single().execute()
-                customer_phone = customer_row.data["phone"]
-                customer_name  = customer_row.data.get("name", "there")
+                customer_row = supabase.table("customers").select("customer_phone, customer_name").eq("id", customer_id).single().execute()
+                customer_phone = customer_row.data["customer_phone"]
+                customer_name  = customer_row.data.get("customer_name", "there")
             except Exception as e:
                 print(f"[{_timestamp()}] ERROR followup_agent: cold customer lookup — {e}")
                 continue
@@ -354,17 +354,15 @@ def _process_cold_proposals():
 def handle_proposal_response(
     client_phone: str,
     customer_phone: str,
-    raw_input: str,
     response_type: str,
 ) -> None:
     """
     Handle a customer's accept or decline reply to a proposal.
 
     Args:
-        client_phone:  Telnyx number (used to look up client)
+        client_phone:   Telnyx number (used to look up client)
         customer_phone: Customer's phone number
-        raw_input:     Raw SMS text from customer
-        response_type: "accepted" or "declined"
+        response_type:  "accepted" or "declined"
     """
     # Look up client
     client = get_client_by_phone(client_phone)
@@ -382,7 +380,7 @@ def handle_proposal_response(
         return
 
     customer_id   = customer["id"]
-    customer_name = customer.get("name", "there")
+    customer_name = customer.get("customer_name", "there")
 
     # Find latest sent proposal for this customer
     proposal = get_latest_sent_proposal_for_customer(client_id, customer_id)
@@ -459,6 +457,101 @@ def handle_proposal_response(
 
 # ---------------------------------------------------------------------------
 # Entry point 3: Handle owner's loss reason reply
+# ---------------------------------------------------------------------------
+# Entry point: Owner proactively reports a lost job
+# ---------------------------------------------------------------------------
+
+def handle_lost_report(
+    client_phone: str,
+    owner_phone: str,
+) -> None:
+    """
+    Owner texts in that they lost a job ("Lost the Anderson place").
+    Finds the most recent open proposal for this client and marks it declined.
+    Then asks the owner why.
+
+    Args:
+        client_phone: Telnyx number (used to look up client)
+        owner_phone:  Owner's personal phone (to send the why-question back to)
+    """
+    client = get_client_by_phone(client_phone)
+    if not client:
+        print(f"[{_timestamp()}] ERROR followup_agent: client not found for {client_phone}")
+        return
+
+    client_id = client["id"]
+
+    # Find the most recent sent proposal for this client (any customer)
+    try:
+        supabase = get_supabase()
+        result = (
+            supabase.table("proposals")
+            .select("*")
+            .eq("client_id", client_id)
+            .eq("status", "sent")
+            .is_("response_type", "null")
+            .order("created_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+        if not result.data:
+            print(f"[{_timestamp()}] WARN followup_agent: handle_lost_report — no open proposals for {client_id}")
+            send_sms(to_number=owner_phone, message_body="No open proposals found to mark as lost.", from_number=client_phone)
+            return
+        proposal = result.data[0]
+    except Exception as e:
+        print(f"[{_timestamp()}] ERROR followup_agent: handle_lost_report lookup — {e}")
+        return
+
+    proposal_id = proposal["id"]
+    customer_id = proposal["customer_id"]
+    job_id      = proposal.get("job_id")
+    amount      = float(proposal.get("amount_estimate") or 0)
+
+    # Look up customer name for context
+    try:
+        cust_row = supabase.table("customers").select("customer_name").eq("id", customer_id).single().execute()
+        customer_name = cust_row.data.get("customer_name", "that customer")
+    except Exception:
+        customer_name = "that customer"
+
+    # Mark proposal declined
+    update_proposal_response(proposal_id, "declined")
+    if job_id:
+        cancel_followups_for_job(job_id)
+        update_job_status(job_id, "lost")
+
+    # Record in lost_jobs
+    save_lost_job(
+        client_id=client_id,
+        customer_id=customer_id,
+        job_id=job_id,
+        proposal_id=proposal_id,
+        proposal_amount=amount,
+        lost_reason="unknown",
+    )
+
+    # Ask owner why
+    why_msg = (
+        f"Got it — marked {customer_name}'s ${amount:,.0f} quote as lost. "
+        f"Do you know why? Reply: 1=price, 2=timing, 3=competitor, 4=relationship"
+    )
+    send_sms(to_number=owner_phone, message_body=why_msg, from_number=client_phone)
+
+    # Schedule lost_job_why so router watches for the reply
+    schedule_followup(
+        client_id=client_id,
+        customer_id=customer_id,
+        job_id=job_id,
+        proposal_id=proposal_id,
+        followup_type="lost_job_why",
+        scheduled_for=datetime.now(timezone.utc).isoformat(),
+    )
+
+    update_monthly_outcomes(client_id)
+    print(f"[{_timestamp()}] INFO followup_agent: Lost report handled — proposal {proposal_id} marked declined")
+
+
 # ---------------------------------------------------------------------------
 
 def handle_loss_reason(

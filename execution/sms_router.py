@@ -116,7 +116,6 @@ def dispatch(agent_name: str, sms_data: dict, **kwargs) -> None:
             handle_proposal_response(
                 client_phone=to_number,
                 customer_phone=from_number,
-                raw_input=body,
                 response_type=kwargs.get("response_type", "declined"),
             )
 
@@ -129,13 +128,10 @@ def dispatch(agent_name: str, sms_data: dict, **kwargs) -> None:
             )
 
         elif agent_name == "lost_report":
-            # Owner proactively reporting a loss — treat same as a decline
-            from execution.followup_agent import handle_proposal_response
-            handle_proposal_response(
+            from execution.followup_agent import handle_lost_report
+            handle_lost_report(
                 client_phone=to_number,
-                customer_phone=from_number,
-                raw_input=body,
-                response_type="declined",
+                owner_phone=from_number,
             )
 
         elif agent_name == "review_agent":

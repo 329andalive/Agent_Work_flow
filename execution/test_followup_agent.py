@@ -65,7 +65,7 @@ def _get_jeremy(verbose=True) -> dict:
         print(f"ERROR: No client found for {JEREMY_PHONE}. Run db_seed.py first.")
         sys.exit(1)
     if verbose:
-        print(f"  Client: {client['business_name']} (id={client['id'][:8]}...)")
+        print(f"  Client: {client['business_name']} (id={client['id']})")
     return client
 
 
@@ -74,7 +74,7 @@ def _get_or_create_customer(client_id: str) -> dict:
     if not customer:
         create_customer(client_id, CUSTOMER_NAME, CUSTOMER_PHONE, CUSTOMER_ADDR, None)
         customer = get_customer_by_phone(client_id, CUSTOMER_PHONE)
-    print(f"  Customer: {customer['name']} (id={customer['id'][:8]}...)")
+    print(f"  Customer: {customer['customer_name']} (id={customer['id']})")
     return customer
 
 
@@ -95,7 +95,7 @@ def _create_test_proposal(client_id: str, customer_id: str) -> tuple[str, str]:
         amount=350.00,
     )
     update_proposal_status(proposal_id, "sent")
-    print(f"  Created job={job_id[:8]}... proposal={proposal_id[:8]}... (status=sent)")
+    print(f"  Created job={job_id} proposal={proposal_id} (status=sent)")
     return job_id, proposal_id
 
 
@@ -122,7 +122,7 @@ def test_scheduled_followup():
         followup_type="estimate_followup",
         scheduled_for=due_now,
     )
-    print(f"  Scheduled follow-up id={fu_id[:8]}... due at: {due_now[:19]}")
+    print(f"  Scheduled follow-up id={fu_id} due at: {due_now[:19]}")
 
     print("\n  Running run_scheduled_followups()...")
     count = run_scheduled_followups()
