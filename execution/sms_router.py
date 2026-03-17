@@ -48,8 +48,8 @@ def timestamp():
 # ---------------------------------------------------------------------------
 ROLE_PERMISSIONS = {
     "field_tech": ["clock_agent"],
-    "foreman":    ["clock_agent", "proposal_agent", "scheduling_agent", "job_list_agent"],
-    "office":     ["proposal_agent", "invoice_agent", "scheduling_agent", "job_list_agent"],
+    "foreman":    ["clock_agent", "proposal_agent", "scheduling_agent", "job_list_agent", "noshow_agent"],
+    "office":     ["proposal_agent", "invoice_agent", "scheduling_agent", "job_list_agent", "noshow_agent"],
     "owner":      ["all"],
 }
 
@@ -65,6 +65,11 @@ def has_permission(role: str, action: str) -> bool:
 # Clock keywords only trigger for field_tech / foreman (enforced in route_message).
 # ---------------------------------------------------------------------------
 ROUTING_TABLE = {
+    # No-show response — foreman/owner responding to a no-show alert
+    "noshow_agent": [
+        "on it", "on my way", "got it", "handling it",
+        "reassign", "re-assign", "find someone", "send someone",
+    ],
     # Clock agent — field staff clocking in or out
     "clock_agent": [
         "on site", "clocking in", "clock in", "starting", "arrived",
@@ -173,6 +178,21 @@ def dispatch(agent_name: str, sms_data: dict, employee: dict = None, role: str =
                 )
             else:
                 print(f"[{timestamp()}] ERROR sms_router: clock_agent — client not found for {to_number}")
+
+        elif agent_name == "noshow_agent":
+            from execution.noshow_agent import handle_noshow_response
+            from execution.db_client import get_client_by_phone
+            full_client = get_client_by_phone(to_number)
+            if full_client:
+                handle_noshow_response(
+                    client=full_client,
+                    employee=employee,
+                    raw_input=body,
+                    from_number=from_number,
+                )
+            else:
+                print(f"[{timestamp()}] ERROR sms_router: noshow_agent — "
+                      f"client not found for {to_number}")
 
         elif agent_name == "scheduling_agent":
             from execution.scheduling_agent import handle_scheduling
@@ -376,6 +396,12 @@ def route_message(sms_data: dict) -> str:
         # Step 4: Keyword routing fallback
         # ------------------------------------------------------------------
         agent = detect_agent(body)
+
+        # noshow_agent only fires if there's actually an open alert
+        if agent == "noshow_agent":
+            from execution.db_noshow import has_open_noshow_alert
+            if not has_open_noshow_alert(client_id):
+                agent = DEFAULT_AGENT
 
         print(f"[{timestamp()}] INFO sms_router: Routed to → {agent} (body: '{body[:60]}')")
         dispatch(agent, sms_data, employee=employee, role=role)
