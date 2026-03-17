@@ -1,0 +1,1120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Office — Holt Sewer &amp; Drain</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    /* ── Variables ──────────────────────────────────────────────────── */
+    :root {
+      --bg-page:        #F1EFE8;
+      --bg-card:        #FFFFFF;
+      --bg-secondary:   #F1EFE8;
+      --border:         rgba(0,0,0,0.12);
+      --text-primary:   #1a1a18;
+      --text-secondary: #5F5E5A;
+      --text-tertiary:  #888780;
+
+      --green:          #639922;
+      --green-bg:       #EAF3DE;
+      --amber:          #BA7517;
+      --amber-bg:       #FAEEDA;
+      --red:            #A32D2D;
+      --red-bg:         #FCEBEB;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg-page:        #1a1a18;
+        --bg-card:        #242422;
+        --bg-secondary:   #2C2C2A;
+        --border:         rgba(255,255,255,0.10);
+        --text-primary:   #F1EFE8;
+        --text-secondary: #B4B2A9;
+        --text-tertiary:  #888780;
+
+        --green:          #97C459;
+        --green-bg:       #173404;
+        --amber:          #EF9F27;
+        --amber-bg:       #412402;
+        --red:            #E24B4A;
+        --red-bg:         #501313;
+      }
+    }
+
+    /* ── Reset ──────────────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; }
+
+    body {
+      font-family: 'Barlow', sans-serif;
+      background: var(--bg-page);
+      color: var(--text-primary);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* ── Header ─────────────────────────────────────────────────────── */
+    #header {
+      height: 48px;
+      flex-shrink: 0;
+      background: var(--bg-card);
+      border-bottom: 0.5px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 20px;
+    }
+
+    .header-left {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .brand {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 20px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+      color: var(--text-primary);
+      white-space: nowrap;
+    }
+
+    .nav {
+      display: flex;
+      gap: 6px;
+    }
+
+    .nav-btn {
+      font-family: 'DM Mono', monospace;
+      font-size: 11px;
+      font-weight: 400;
+      letter-spacing: 0.05em;
+      padding: 4px 10px;
+      border-radius: 4px;
+      border: 0.5px solid var(--border);
+      background: transparent;
+      color: var(--text-secondary);
+      cursor: pointer;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      transition: background 0.12s, color 0.12s;
+    }
+
+    .nav-btn:hover { background: var(--bg-secondary); }
+
+    .nav-btn.active {
+      background: var(--text-primary);
+      color: var(--bg-card);
+      border-color: var(--text-primary);
+    }
+
+    .header-right {
+      text-align: right;
+    }
+
+    #last-updated {
+      font-family: 'DM Mono', monospace;
+      font-size: 10px;
+      color: var(--text-tertiary);
+    }
+
+    /* ── Body scroll ────────────────────────────────────────────────── */
+    #body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px;
+    }
+
+    /* ── Metrics row ────────────────────────────────────────────────── */
+    .metrics-row {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+
+    .metric-card {
+      background: var(--bg-card);
+      border: 0.5px solid var(--border);
+      border-radius: 6px;
+      padding: 12px 14px;
+    }
+
+    .metric-label {
+      font-family: 'DM Mono', monospace;
+      font-size: 10px;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-tertiary);
+    }
+
+    .metric-value {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 28px;
+      font-weight: 700;
+      line-height: 1;
+      margin-top: 4px;
+      color: var(--text-primary);
+    }
+
+    .metric-value.c-green { color: var(--green); }
+    .metric-value.c-amber { color: var(--amber); }
+    .metric-value.c-red   { color: var(--red); }
+
+    .metric-sub {
+      font-family: 'Barlow', sans-serif;
+      font-size: 11px;
+      color: var(--text-tertiary);
+      margin-top: 3px;
+    }
+
+    /* ── Panels grid ────────────────────────────────────────────────── */
+    .panels-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    .panel {
+      background: var(--bg-card);
+      border: 0.5px solid var(--border);
+      border-radius: 6px;
+      overflow: hidden;
+      min-height: 240px;
+    }
+
+    .panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 14px;
+      border-bottom: 0.5px solid var(--border);
+    }
+
+    .panel-title {
+      font-family: 'DM Mono', monospace;
+      font-size: 11px;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-secondary);
+    }
+
+    .panel-count {
+      font-family: 'DM Mono', monospace;
+      font-size: 11px;
+      color: var(--text-tertiary);
+    }
+
+    /* ── Data rows ──────────────────────────────────────────────────── */
+    .data-row {
+      padding: 10px 14px;
+      border-bottom: 0.5px solid var(--border);
+      cursor: pointer;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 12px;
+      align-items: start;
+      transition: background 0.1s;
+    }
+
+    .data-row:last-child { border-bottom: none; }
+    .data-row:hover { background: var(--bg-secondary); }
+    .data-row.open  { background: var(--bg-secondary); }
+
+    .row-main {
+      font-family: 'Barlow', sans-serif;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-primary);
+      line-height: 1.2;
+    }
+
+    .row-sub {
+      font-family: 'DM Mono', monospace;
+      font-size: 11px;
+      color: var(--text-tertiary);
+      margin-top: 2px;
+    }
+
+    .row-right {
+      text-align: right;
+      flex-shrink: 0;
+    }
+
+    .row-amount {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--text-primary);
+      line-height: 1;
+    }
+
+    /* Age badges */
+    .badge {
+      font-family: 'DM Mono', monospace;
+      font-size: 10px;
+      font-weight: 500;
+      padding: 2px 6px;
+      border-radius: 3px;
+      border: 0.5px solid;
+      display: inline-block;
+      margin-top: 4px;
+    }
+
+    .badge-red    { color: var(--red);   border-color: var(--red);   background: var(--red-bg); }
+    .badge-amber  { color: var(--amber); border-color: var(--amber); background: var(--amber-bg); }
+    .badge-green  { color: var(--green); border-color: var(--green); background: var(--green-bg); }
+    .badge-gray   { color: var(--text-tertiary); border-color: var(--border); background: var(--bg-secondary); }
+
+    /* ── Inline drawer ──────────────────────────────────────────────── */
+    .drawer {
+      display: none;
+      background: var(--bg-secondary);
+      border-top: 0.5px solid var(--border);
+      padding: 10px 14px;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .drawer.open {
+      display: flex;
+    }
+
+    .drawer-btn {
+      font-family: 'Barlow', sans-serif;
+      font-size: 12px;
+      font-weight: 500;
+      padding: 5px 10px;
+      border-radius: 4px;
+      border: 0.5px solid var(--border);
+      background: transparent;
+      color: var(--text-secondary);
+      cursor: pointer;
+      transition: background 0.12s, color 0.12s;
+    }
+
+    .drawer-btn:hover { background: var(--bg-card); color: var(--text-primary); }
+    .drawer-btn:disabled { opacity: 0.5; cursor: default; }
+
+    .drawer-confirm {
+      font-family: 'DM Mono', monospace;
+      font-size: 11px;
+      color: var(--green);
+      padding: 5px 0;
+      align-self: center;
+    }
+
+    /* ── Win rate bars ──────────────────────────────────────────────── */
+    .bar-row {
+      display: grid;
+      grid-template-columns: 80px 1fr 40px;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 14px;
+      border-bottom: 0.5px solid var(--border);
+    }
+
+    .bar-row:last-child { border-bottom: none; }
+
+    .bar-label {
+      font-family: 'DM Mono', monospace;
+      font-size: 11px;
+      color: var(--text-secondary);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .bar-track {
+      height: 6px;
+      border-radius: 3px;
+      background: var(--border);
+      overflow: hidden;
+    }
+
+    .bar-fill {
+      height: 100%;
+      border-radius: 3px;
+      background: #639922;
+      transition: width 0.4s ease;
+    }
+
+    .bar-pct {
+      font-family: 'DM Mono', monospace;
+      font-size: 11px;
+      color: var(--text-secondary);
+      text-align: right;
+    }
+
+    /* ── States ─────────────────────────────────────────────────────── */
+    .panel-empty {
+      padding: 24px 14px;
+      font-family: 'DM Mono', monospace;
+      font-size: 12px;
+      color: var(--text-tertiary);
+      text-align: center;
+    }
+
+    /* Skeleton */
+    .skeleton-row {
+      padding: 12px 14px;
+      border-bottom: 0.5px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .skel {
+      border-radius: 3px;
+      background: var(--border);
+      animation: pulse 1.4s ease-in-out infinite;
+    }
+
+    .skel-main { height: 13px; width: 65%; }
+    .skel-sub  { height: 10px; width: 40%; }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 0.4; }
+      50%       { opacity: 0.8; }
+    }
+
+    /* Fade out on remove */
+    .fading {
+      transition: opacity 0.3s ease, max-height 0.3s ease;
+      overflow: hidden;
+      max-height: 200px;
+    }
+
+    .fading.gone {
+      opacity: 0;
+      max-height: 0;
+      padding: 0;
+    }
+
+    /* ── Toast ──────────────────────────────────────────────────────── */
+    #toast-container {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      z-index: 1000;
+    }
+
+    .toast {
+      font-family: 'DM Mono', monospace;
+      font-size: 12px;
+      padding: 8px 14px;
+      border-radius: 4px;
+      border: 0.5px solid;
+      animation: toast-in 0.2s ease;
+    }
+
+    .toast-success { background: var(--green-bg); border-color: var(--green); color: var(--green); }
+    .toast-error   { background: var(--red-bg);   border-color: var(--red);   color: var(--red); }
+
+    @keyframes toast-in {
+      from { opacity: 0; transform: translateY(6px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    /* ── Responsive ─────────────────────────────────────────────────── */
+    @media (max-width: 700px) {
+      .metrics-row { grid-template-columns: repeat(2, 1fr); }
+      .panels-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ── Header ───────────────────────────────────────────────────── -->
+  <header id="header">
+    <div class="header-left">
+      <div class="brand">Holt Sewer &amp; Drain</div>
+      <nav class="nav">
+        <a class="nav-btn" href="index.html">Board</a>
+        <span class="nav-btn active">Office</span>
+      </nav>
+    </div>
+    <div class="header-right">
+      <div id="last-updated"></div>
+    </div>
+  </header>
+
+  <!-- ── Body ─────────────────────────────────────────────────────── -->
+  <div id="body">
+
+    <!-- Metrics -->
+    <div class="metrics-row" id="metrics-row">
+      <!-- Skeleton metrics -->
+      <div class="metric-card"><div class="metric-label">Uncollected</div><div class="metric-value skel" style="height:28px;width:80px;margin-top:4px"></div></div>
+      <div class="metric-card"><div class="metric-label">Estimates out</div><div class="metric-value skel" style="height:28px;width:60px;margin-top:4px"></div></div>
+      <div class="metric-card"><div class="metric-label">Won this month</div><div class="metric-value skel" style="height:28px;width:90px;margin-top:4px"></div></div>
+      <div class="metric-card"><div class="metric-label">Win rate</div><div class="metric-value skel" style="height:28px;width:60px;margin-top:4px"></div></div>
+    </div>
+
+    <!-- Panels -->
+    <div class="panels-grid">
+
+      <!-- Panel 1: Billing & Collections -->
+      <div class="panel" id="panel-billing">
+        <div class="panel-header">
+          <span class="panel-title">Billing &amp; Collections</span>
+          <span class="panel-count" id="billing-count">&mdash;</span>
+        </div>
+        <div id="billing-body">
+          <div class="skeleton-row"><div class="skel skel-main"></div><div class="skel skel-sub"></div></div>
+          <div class="skeleton-row"><div class="skel skel-main"></div><div class="skel skel-sub"></div></div>
+          <div class="skeleton-row"><div class="skel skel-main"></div><div class="skel skel-sub"></div></div>
+        </div>
+      </div>
+
+      <!-- Panel 2: Estimates Pipeline -->
+      <div class="panel" id="panel-estimates">
+        <div class="panel-header">
+          <span class="panel-title">Estimates Pipeline</span>
+          <span class="panel-count" id="estimates-count">&mdash;</span>
+        </div>
+        <div id="estimates-body">
+          <div class="skeleton-row"><div class="skel skel-main"></div><div class="skel skel-sub"></div></div>
+          <div class="skeleton-row"><div class="skel skel-main"></div><div class="skel skel-sub"></div></div>
+          <div class="skeleton-row"><div class="skel skel-main"></div><div class="skel skel-sub"></div></div>
+        </div>
+      </div>
+
+      <!-- Panel 3: Follow-up Queue -->
+      <div class="panel" id="panel-followup">
+        <div class="panel-header">
+          <span class="panel-title">Follow-up Queue</span>
+          <span class="panel-count" id="followup-count">&mdash;</span>
+        </div>
+        <div id="followup-body">
+          <div class="skeleton-row"><div class="skel skel-main"></div><div class="skel skel-sub"></div></div>
+          <div class="skeleton-row"><div class="skel skel-main"></div><div class="skel skel-sub"></div></div>
+          <div class="skeleton-row"><div class="skel skel-main"></div><div class="skel skel-sub"></div></div>
+        </div>
+      </div>
+
+      <!-- Panel 4: Win Rate by Job Type -->
+      <div class="panel" id="panel-winrate">
+        <div class="panel-header">
+          <span class="panel-title">Win Rate by Job Type</span>
+          <span class="panel-count">last 30 days</span>
+        </div>
+        <div id="winrate-body">
+          <div class="skeleton-row"><div class="skel skel-main"></div></div>
+          <div class="skeleton-row"><div class="skel skel-main"></div></div>
+          <div class="skeleton-row"><div class="skel skel-main"></div></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ── Toast container ──────────────────────────────────────────── -->
+  <div id="toast-container"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script>
+    /* ── Config ─────────────────────────────────────────────────────── */
+    const SUPABASE_URL      = 'YOUR_SUPABASE_URL';   // TODO: replace
+    const SUPABASE_ANON_KEY = 'YOUR_ANON_KEY';       // TODO: replace
+    const CLIENT_ID         = 'YOUR_CLIENT_ID';      // TODO: replace
+    const API_BASE          = 'https://web-production-043dc.up.railway.app';
+    const REFRESH_MS        = 60_000;
+
+    const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    /* ── Toast ──────────────────────────────────────────────────────── */
+    function toast(msg, type = 'success') {
+      const el = document.createElement('div');
+      el.className = `toast toast-${type}`;
+      el.textContent = msg;
+      document.getElementById('toast-container').appendChild(el);
+      setTimeout(() => el.remove(), 3000);
+    }
+
+    /* ── API ────────────────────────────────────────────────────────── */
+    async function apiPost(path, body) {
+      console.log(`[API] POST ${path}`, body);
+      try {
+        const res = await fetch(`${API_BASE}${path}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return await res.json();
+      } catch (err) {
+        console.error(`[API] ${path} failed:`, err);
+        throw err;
+      }
+    }
+
+    /* ── Helpers ────────────────────────────────────────────────────── */
+    function escHtml(str) {
+      return String(str ?? '')
+        .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+        .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+
+    function fmtMoney(n) {
+      if (n == null || isNaN(n)) return '$0';
+      return '$' + Math.round(n).toLocaleString('en-US');
+    }
+
+    function daysSince(iso) {
+      if (!iso) return 0;
+      return Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);
+    }
+
+    function fmtDate(iso) {
+      if (!iso) return '';
+      const d = new Date(iso);
+      const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+      return `${months[d.getMonth()]} ${d.getDate()}`;
+    }
+
+    function startOfMonth() {
+      const d = new Date();
+      return new Date(d.getFullYear(), d.getMonth(), 1).toISOString();
+    }
+
+    function daysAgoIso(n) {
+      return new Date(Date.now() - n * 86400000).toISOString();
+    }
+
+    function ageBadge(days, warnAt = 3, dangerAt = 7) {
+      if (days >= dangerAt) return `<span class="badge badge-red">${days}d overdue</span>`;
+      if (days >= warnAt)   return `<span class="badge badge-amber">${days}d out</span>`;
+      return `<span class="badge badge-gray">${days}d</span>`;
+    }
+
+    /* ── Last-updated ───────────────────────────────────────────────── */
+    let lastFetchAt = null;
+
+    function tickLastUpdated() {
+      const el = document.getElementById('last-updated');
+      if (!lastFetchAt) return;
+      const sec = Math.round((Date.now() - lastFetchAt) / 1000);
+      el.textContent = sec < 5 ? 'just updated' : `updated ${sec}s ago`;
+    }
+
+    setInterval(tickLastUpdated, 5000);
+
+    /* ── Data fetch ─────────────────────────────────────────────────── */
+    async function fetchAll() {
+      const cutoff = daysAgoIso(60);
+
+      const [
+        { data: proposals },
+        { data: jobs },
+        { data: customers },
+      ] = await Promise.all([
+        sb.from('proposals').select('*')
+          .eq('client_id', CLIENT_ID)
+          .gte('created_at', cutoff),
+        sb.from('jobs').select('*')
+          .eq('client_id', CLIENT_ID)
+          .gte('created_at', cutoff),
+        sb.from('customers').select('id,customer_name,customer_address,customer_phone')
+          .eq('client_id', CLIENT_ID),
+      ]);
+
+      return {
+        proposals: proposals || [],
+        jobs: jobs || [],
+        customers: customers || [],
+      };
+    }
+
+    /* ── Lookup helpers ─────────────────────────────────────────────── */
+    function byId(arr, id) {
+      return arr.find(r => r.id === id) || null;
+    }
+
+    /* ── Metrics ────────────────────────────────────────────────────── */
+    function computeMetrics(proposals, jobs) {
+      const now = Date.now();
+      const monthStart = new Date(startOfMonth()).getTime();
+      const thirtyDays = daysAgoIso(30);
+      const sixtyDays  = daysAgoIso(60);
+
+      // 1. Uncollected — job completed, proposal still 'sent'
+      const uncollected = proposals.filter(p => {
+        const job = byId(jobs, p.job_id);
+        return p.status === 'sent' && job?.status === 'completed';
+      });
+      const uncollectedTotal = uncollected.reduce((s, p) => s + (p.amount || 0), 0);
+
+      // 2. Estimates out — proposal sent, job not completed
+      const estimatesOut = proposals.filter(p => {
+        const job = byId(jobs, p.job_id);
+        return p.status === 'sent' && job?.status !== 'completed';
+      });
+      const agingEstimates = estimatesOut.filter(p => daysSince(p.created_at) > 3).length;
+
+      // 3. Won this month
+      const wonMonth = proposals.filter(p =>
+        p.status === 'accepted' && new Date(p.responded_at).getTime() >= monthStart
+      );
+      const wonTotal = wonMonth.reduce((s, p) => s + (p.amount || 0), 0);
+
+      // 4. Win rate (last 30 days vs prior 30 days)
+      const decided30 = proposals.filter(p =>
+        ['accepted','declined'].includes(p.status) &&
+        p.responded_at >= thirtyDays
+      );
+      const won30      = decided30.filter(p => p.status === 'accepted').length;
+      const winRate30  = decided30.length ? Math.round(won30 / decided30.length * 100) : null;
+
+      const decided60 = proposals.filter(p =>
+        ['accepted','declined'].includes(p.status) &&
+        p.responded_at >= sixtyDays && p.responded_at < thirtyDays
+      );
+      const won60     = decided60.filter(p => p.status === 'accepted').length;
+      const winRate60 = decided60.length ? Math.round(won60 / decided60.length * 100) : null;
+
+      return { uncollectedTotal, uncollectedCount: uncollected.length,
+               agingEstimates, estimatesOutCount: estimatesOut.length,
+               wonTotal, wonCount: wonMonth.length,
+               winRate30, winRate60 };
+    }
+
+    function renderMetrics(m) {
+      document.getElementById('metrics-row').innerHTML = `
+        <div class="metric-card">
+          <div class="metric-label">Uncollected</div>
+          <div class="metric-value ${m.uncollectedTotal > 0 ? 'c-red' : ''}">${fmtMoney(m.uncollectedTotal)}</div>
+          <div class="metric-sub">${m.uncollectedCount} open invoice${m.uncollectedCount !== 1 ? 's' : ''}</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">Estimates Out</div>
+          <div class="metric-value ${m.agingEstimates > 0 ? 'c-amber' : ''}">${m.estimatesOutCount}</div>
+          <div class="metric-sub">${m.agingEstimates} aging past 3 days</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">Won This Month</div>
+          <div class="metric-value c-green">${fmtMoney(m.wonTotal)}</div>
+          <div class="metric-sub">${m.wonCount} job${m.wonCount !== 1 ? 's' : ''}</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">Win Rate</div>
+          <div class="metric-value">${m.winRate30 != null ? m.winRate30 + '%' : '&mdash;'}</div>
+          <div class="metric-sub">${m.winRate60 != null ? `vs ${m.winRate60}% last month` : 'Not enough data'}</div>
+        </div>
+      `;
+    }
+
+    /* ── Panel 1: Billing ───────────────────────────────────────────── */
+    function renderBilling(proposals, jobs, customers) {
+      const rows = proposals
+        .filter(p => {
+          const job = byId(jobs, p.job_id);
+          return p.status === 'sent' && job?.status === 'completed';
+        })
+        .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+
+      document.getElementById('billing-count').textContent = `${rows.length} open`;
+
+      if (!rows.length) {
+        document.getElementById('billing-body').innerHTML =
+          '<div class="panel-empty">Nothing here &mdash; looking good.</div>';
+        return;
+      }
+
+      document.getElementById('billing-body').innerHTML = rows.map((p, i) => {
+        const job      = byId(jobs, p.job_id);
+        const cust     = byId(customers, job?.customer_id);
+        const custName = cust?.customer_name || 'Unknown';
+        const address  = cust?.customer_address || '';
+        const jobType  = job?.job_type || 'Job';
+        const days     = daysSince(job?.completed_at || p.created_at);
+        const badge    = ageBadge(days, 3, 7);
+        const compDate = fmtDate(job?.completed_at);
+
+        return `
+          <div class="data-row fading" id="billing-row-${i}" onclick="toggleDrawer('billing-drawer-${i}', this)">
+            <div>
+              <div class="row-main">${escHtml(jobType)} &middot; ${escHtml(custName)}</div>
+              <div class="row-sub">${escHtml(address)}${compDate ? ' &middot; Completed ' + compDate : ''}</div>
+            </div>
+            <div class="row-right">
+              <div class="row-amount">${fmtMoney(p.amount)}</div>
+              ${badge}
+            </div>
+          </div>
+          <div class="drawer" id="billing-drawer-${i}">
+            <button class="drawer-btn" onclick="sendReminder('billing-row-${i}','billing-drawer-${i}','${p.id}','${cust?.customer_phone || ''}')">Send payment reminder</button>
+            <button class="drawer-btn" onclick="markPaid('billing-row-${i}','billing-drawer-${i}','${p.id}','${job?.id || ''}')">Mark paid</button>
+          </div>
+        `;
+      }).join('');
+    }
+
+    async function sendReminder(rowId, drawerId, proposalId, custPhone) {
+      const drawer = document.getElementById(drawerId);
+      const btn = drawer.querySelector('button');
+      if (btn) btn.disabled = true;
+      try {
+        await apiPost('/api/sms/payment-reminder', { client_id: CLIENT_ID, proposal_id: proposalId, customer_phone: custPhone });
+        drawer.innerHTML = '<span class="drawer-confirm">Reminder sent &mdash; check in 24hrs</span>';
+        toast('Reminder sent.', 'success');
+      } catch {
+        if (btn) btn.disabled = false;
+        toast('Failed — try again.', 'error');
+      }
+    }
+
+    async function markPaid(rowId, drawerId, proposalId, jobId) {
+      const drawer = document.getElementById(drawerId);
+      const btns = drawer.querySelectorAll('button');
+      btns.forEach(b => b.disabled = true);
+      try {
+        await apiPost('/api/jobs/mark-paid', { client_id: CLIENT_ID, proposal_id: proposalId, job_id: jobId });
+        toast('Marked as paid.', 'success');
+        const rowEl = document.getElementById(rowId);
+        if (rowEl) {
+          rowEl.classList.add('gone');
+          drawer.classList.add('gone');
+          setTimeout(() => { rowEl.remove(); drawer.remove(); }, 350);
+        }
+      } catch {
+        btns.forEach(b => b.disabled = false);
+        toast('Failed — try again.', 'error');
+      }
+    }
+
+    /* ── Panel 2: Estimates pipeline ────────────────────────────────── */
+    function renderEstimates(proposals, jobs, customers) {
+      const rows = proposals
+        .filter(p => {
+          const job = byId(jobs, p.job_id);
+          return p.status === 'sent' && job?.status !== 'completed';
+        })
+        .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+
+      document.getElementById('estimates-count').textContent = `${rows.length} out`;
+
+      if (!rows.length) {
+        document.getElementById('estimates-body').innerHTML =
+          '<div class="panel-empty">Nothing here &mdash; looking good.</div>';
+        return;
+      }
+
+      document.getElementById('estimates-body').innerHTML = rows.map((p, i) => {
+        const job      = byId(jobs, p.job_id);
+        const cust     = byId(customers, job?.customer_id);
+        const custName = cust?.customer_name || 'Unknown';
+        const address  = cust?.customer_address || '';
+        const jobType  = job?.job_type || 'Job';
+        const days     = daysSince(p.created_at);
+
+        let badge;
+        if (p.status === 'declined') {
+          badge = `<span class="badge badge-gray">lost</span>`;
+        } else if (days >= 6) {
+          badge = `<span class="badge badge-amber">${days}d</span>`;
+        } else if (days >= 3) {
+          badge = `<span class="badge badge-amber">${days}d</span>`;
+        } else {
+          badge = `<span class="badge badge-green">sent</span>`;
+        }
+
+        return `
+          <div class="data-row fading" id="est-row-${i}" onclick="toggleDrawer('est-drawer-${i}', this)">
+            <div>
+              <div class="row-main">${escHtml(custName)}</div>
+              <div class="row-sub">${escHtml(jobType)} &middot; ${escHtml(address)}</div>
+            </div>
+            <div class="row-right">
+              <div class="row-amount">${fmtMoney(p.amount)}</div>
+              ${badge}
+            </div>
+          </div>
+          <div class="drawer" id="est-drawer-${i}">
+            <button class="drawer-btn" onclick="sendFollowup('est-drawer-${i}','${p.id}')">Send follow-up</button>
+            <button class="drawer-btn" onclick="markWon('est-row-${i}','est-drawer-${i}','${p.id}')">Mark won</button>
+            <button class="drawer-btn" onclick="markLost('est-row-${i}','est-drawer-${i}','${p.id}')">Mark lost</button>
+          </div>
+        `;
+      }).join('');
+    }
+
+    async function sendFollowup(drawerId, proposalId) {
+      const drawer = document.getElementById(drawerId);
+      const btn = drawer.querySelector('button');
+      if (btn) btn.disabled = true;
+      try {
+        await apiPost('/api/sms/followup', { client_id: CLIENT_ID, proposal_id: proposalId });
+        drawer.innerHTML = '<span class="drawer-confirm">Follow-up sent.</span>';
+        toast('Follow-up sent.', 'success');
+      } catch {
+        if (btn) btn.disabled = false;
+        toast('Failed — try again.', 'error');
+      }
+    }
+
+    async function markWon(rowId, drawerId, proposalId) {
+      const drawer = document.getElementById(drawerId);
+      drawer.querySelectorAll('button').forEach(b => b.disabled = true);
+      try {
+        await apiPost('/api/proposals/mark-won', { client_id: CLIENT_ID, proposal_id: proposalId });
+        toast('Marked as won.', 'success');
+        fadeRow(rowId, drawerId);
+      } catch {
+        drawer.querySelectorAll('button').forEach(b => b.disabled = false);
+        toast('Failed — try again.', 'error');
+      }
+    }
+
+    async function markLost(rowId, drawerId, proposalId) {
+      const drawer = document.getElementById(drawerId);
+      drawer.querySelectorAll('button').forEach(b => b.disabled = true);
+      try {
+        await apiPost('/api/proposals/mark-lost', { client_id: CLIENT_ID, proposal_id: proposalId });
+        toast('Marked as lost.', 'success');
+        fadeRow(rowId, drawerId);
+      } catch {
+        drawer.querySelectorAll('button').forEach(b => b.disabled = false);
+        toast('Failed — try again.', 'error');
+      }
+    }
+
+    /* ── Panel 3: Follow-up queue ───────────────────────────────────── */
+    function renderFollowupQueue(proposals, jobs, customers) {
+      const items = [];
+      const now = Date.now();
+
+      // Type A: aging estimates > 3 days no response
+      proposals
+        .filter(p => {
+          const job = byId(jobs, p.job_id);
+          return p.status === 'sent' && job?.status !== 'completed' && daysSince(p.created_at) > 3;
+        })
+        .forEach(p => {
+          const job  = byId(jobs, p.job_id);
+          const cust = byId(customers, job?.customer_id);
+          const days = daysSince(p.created_at);
+          items.push({
+            type: 'A', urgency: days,
+            main: `${cust?.customer_name || 'Unknown'} &mdash; estimate aging`,
+            sub: `${fmtMoney(p.amount)} ${job?.job_type || ''} &middot; No reply in ${days} days`,
+            badge: days > 5
+              ? `<span class="badge badge-red">overdue</span>`
+              : `<span class="badge badge-amber">aging</span>`,
+            proposalId: p.id,
+            custPhone: cust?.customer_phone || '',
+          });
+        });
+
+      // Type B: unpaid invoices (job completed > 3 days, proposal 'sent')
+      proposals
+        .filter(p => {
+          const job = byId(jobs, p.job_id);
+          return p.status === 'sent' && job?.status === 'completed' && daysSince(job.completed_at || p.created_at) > 3;
+        })
+        .forEach(p => {
+          const job  = byId(jobs, p.job_id);
+          const cust = byId(customers, job?.customer_id);
+          const days = daysSince(job?.completed_at || p.created_at);
+          items.push({
+            type: 'B', urgency: days + 100,
+            main: `${cust?.customer_name || 'Unknown'} &mdash; unpaid invoice`,
+            sub: `${fmtMoney(p.amount)} &middot; ${days} days since completion`,
+            badge: days > 7
+              ? `<span class="badge badge-red">overdue</span>`
+              : `<span class="badge badge-amber">aging</span>`,
+            proposalId: p.id,
+            custPhone: cust?.customer_phone || '',
+          });
+        });
+
+      // Type C: lost jobs > 25 days ago, worth a re-touch
+      proposals
+        .filter(p => p.status === 'declined' && daysSince(p.responded_at) >= 25)
+        .forEach(p => {
+          const job  = byId(jobs, p.job_id);
+          const cust = byId(customers, job?.customer_id);
+          items.push({
+            type: 'C', urgency: 0,
+            main: `${cust?.customer_name || 'Unknown'} &mdash; lost job re-touch`,
+            sub: `Declined ${fmtDate(p.responded_at)} &middot; Worth a check-in`,
+            badge: `<span class="badge badge-gray">30 days</span>`,
+            proposalId: p.id,
+            custPhone: cust?.customer_phone || '',
+          });
+        });
+
+      // Sort by urgency descending
+      items.sort((a, b) => b.urgency - a.urgency);
+
+      document.getElementById('followup-count').textContent = `${items.length} need attention`;
+
+      if (!items.length) {
+        document.getElementById('followup-body').innerHTML =
+          '<div class="panel-empty">Nothing here &mdash; looking good.</div>';
+        return;
+      }
+
+      document.getElementById('followup-body').innerHTML = items.map((item, i) => {
+        const endpoint =
+          item.type === 'A' ? '/api/sms/followup' :
+          item.type === 'B' ? '/api/sms/payment-reminder' :
+                              '/api/sms/retouch';
+        const btnLabel =
+          item.type === 'A' ? 'Send follow-up SMS' :
+          item.type === 'B' ? 'Send payment reminder' :
+                              'Send re-touch SMS';
+
+        return `
+          <div class="data-row fading" id="fq-row-${i}" onclick="toggleDrawer('fq-drawer-${i}', this)">
+            <div>
+              <div class="row-main">${item.main}</div>
+              <div class="row-sub">${item.sub}</div>
+            </div>
+            <div class="row-right">${item.badge}</div>
+          </div>
+          <div class="drawer" id="fq-drawer-${i}">
+            <button class="drawer-btn" id="fq-btn-${i}"
+              onclick="sendFqAction('fq-row-${i}','fq-drawer-${i}','fq-btn-${i}','${endpoint}','${item.proposalId}','${item.custPhone}')">
+              ${btnLabel}
+            </button>
+          </div>
+        `;
+      }).join('');
+    }
+
+    async function sendFqAction(rowId, drawerId, btnId, endpoint, proposalId, custPhone) {
+      const btn = document.getElementById(btnId);
+      if (btn) btn.disabled = true;
+      try {
+        await apiPost(endpoint, { client_id: CLIENT_ID, proposal_id: proposalId, customer_phone: custPhone });
+        const drawer = document.getElementById(drawerId);
+        if (drawer) drawer.innerHTML = '<span class="drawer-confirm">Sent.</span>';
+        toast('Sent.', 'success');
+        // Flip badge green on the row
+        const row = document.getElementById(rowId);
+        const badge = row?.querySelector('.badge');
+        if (badge) { badge.className = 'badge badge-green'; badge.textContent = 'sent'; }
+      } catch {
+        if (btn) btn.disabled = false;
+        toast('Failed — try again.', 'error');
+      }
+    }
+
+    /* ── Panel 4: Win rate by job type ──────────────────────────────── */
+    function renderWinRate(proposals, jobs) {
+      const cutoff = daysAgoIso(30);
+      const decided = proposals.filter(p =>
+        ['accepted','declined'].includes(p.status) && p.responded_at >= cutoff
+      );
+
+      // Group by job_type
+      const map = {};
+      decided.forEach(p => {
+        const job  = byId(jobs, p.job_id);
+        const type = job?.job_type || 'other';
+        if (!map[type]) map[type] = { won: 0, lost: 0 };
+        if (p.status === 'accepted') map[type].won++;
+        else map[type].lost++;
+      });
+
+      const rows = Object.entries(map)
+        .filter(([, v]) => v.won + v.lost >= 2)
+        .map(([type, v]) => ({
+          type,
+          rate: Math.round(v.won / (v.won + v.lost) * 100),
+          total: v.won + v.lost,
+        }))
+        .sort((a, b) => b.rate - a.rate);
+
+      if (!rows.length) {
+        document.getElementById('winrate-body').innerHTML =
+          '<div class="panel-empty">Not enough data yet.</div>';
+        return;
+      }
+
+      document.getElementById('winrate-body').innerHTML = rows.map(r => `
+        <div class="bar-row">
+          <div class="bar-label">${escHtml(r.type)}</div>
+          <div class="bar-track">
+            <div class="bar-fill" style="width:${r.rate}%"></div>
+          </div>
+          <div class="bar-pct">${r.rate}%</div>
+        </div>
+      `).join('');
+    }
+
+    /* ── Drawer toggle ──────────────────────────────────────────────── */
+    let openDrawer = null;
+    let openDrawerRow = null;
+
+    function toggleDrawer(drawerId, rowEl) {
+      const drawer = document.getElementById(drawerId);
+      if (!drawer) return;
+
+      if (openDrawer && openDrawer !== drawer) {
+        openDrawer.classList.remove('open');
+        if (openDrawerRow) openDrawerRow.classList.remove('open');
+      }
+
+      const isOpen = drawer.classList.contains('open');
+      drawer.classList.toggle('open', !isOpen);
+      rowEl.classList.toggle('open', !isOpen);
+      openDrawer    = isOpen ? null : drawer;
+      openDrawerRow = isOpen ? null : rowEl;
+    }
+
+    /* ── Fade helper ─────────────────────────────────────────────────── */
+    function fadeRow(rowId, drawerId) {
+      const row    = document.getElementById(rowId);
+      const drawer = document.getElementById(drawerId);
+      [row, drawer].forEach(el => {
+        if (el) {
+          el.classList.add('gone');
+          setTimeout(() => el.remove(), 350);
+        }
+      });
+    }
+
+    /* ── Bootstrap ──────────────────────────────────────────────────── */
+    async function refresh() {
+      try {
+        const { proposals, jobs, customers } = await fetchAll();
+        lastFetchAt = Date.now();
+        tickLastUpdated();
+
+        const metrics = computeMetrics(proposals, jobs);
+        renderMetrics(metrics);
+        renderBilling(proposals, jobs, customers);
+        renderEstimates(proposals, jobs, customers);
+        renderFollowupQueue(proposals, jobs, customers);
+        renderWinRate(proposals, jobs);
+      } catch (err) {
+        console.error('[refresh] error:', err);
+        ['billing-body','estimates-body','followup-body','winrate-body'].forEach(id => {
+          const el = document.getElementById(id);
+          if (el && el.querySelector('.skeleton-row')) {
+            el.innerHTML = `<div class="panel-empty" style="cursor:pointer" onclick="refresh()">Could not load data. Tap to retry.</div>`;
+          }
+        });
+      }
+    }
+
+    refresh();
+    setInterval(refresh, REFRESH_MS);
+  </script>
+</body>
+</html>
