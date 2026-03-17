@@ -48,8 +48,8 @@ def timestamp():
 # ---------------------------------------------------------------------------
 ROLE_PERMISSIONS = {
     "field_tech": ["clock_agent"],
-    "foreman":    ["clock_agent", "proposal_agent", "scheduling_agent"],
-    "office":     ["proposal_agent", "invoice_agent", "scheduling_agent"],
+    "foreman":    ["clock_agent", "proposal_agent", "scheduling_agent", "job_list_agent"],
+    "office":     ["proposal_agent", "invoice_agent", "scheduling_agent", "job_list_agent"],
     "owner":      ["all"],
 }
 
@@ -76,6 +76,19 @@ ROUTING_TABLE = {
         "wrapped up", "took me", "billed", "bill them", "send invoice",
         "send the invoice", "finished up", "worked", "spent",
         "3 hours", "2 hours", "4 hours", "5 hours", "1 hour", "half a day",
+    ],
+    # Job list agent — viewing the schedule for a date or range
+    # Must appear before scheduling_agent so query phrases win on first match.
+    "job_list_agent": [
+        "jobs today", "jobs tomorrow", "jobs this week",
+        "jobs monday", "jobs tuesday", "jobs wednesday",
+        "jobs thursday", "jobs friday", "jobs saturday", "jobs sunday",
+        "today's jobs", "tomorrow's jobs",
+        "what's on", "what's scheduled",
+        "schedule today", "schedule tomorrow", "schedule this week",
+        "schedule monday", "schedule tuesday", "schedule wednesday",
+        "schedule thursday", "schedule friday", "schedule saturday", "schedule sunday",
+        "job list", "show schedule", "pull schedule",
     ],
     # Scheduling agent — booking jobs with a date/time
     "scheduling_agent": [
@@ -157,7 +170,6 @@ def dispatch(agent_name: str, sms_data: dict, employee: dict = None, role: str =
 
         elif agent_name == "scheduling_agent":
             from execution.scheduling_agent import handle_scheduling
-            # Resolve the full client dict — dispatch already has to_number as client_phone
             from execution.db_client import get_client_by_phone
             full_client = get_client_by_phone(to_number)
             if full_client:
@@ -169,6 +181,20 @@ def dispatch(agent_name: str, sms_data: dict, employee: dict = None, role: str =
                 )
             else:
                 print(f"[{timestamp()}] ERROR sms_router: scheduling_agent — client not found for {to_number}")
+
+        elif agent_name == "job_list_agent":
+            from execution.job_list_agent import handle_job_list
+            from execution.db_client import get_client_by_phone
+            full_client = get_client_by_phone(to_number)
+            if full_client:
+                handle_job_list(
+                    client=full_client,
+                    employee=employee,
+                    raw_input=body,
+                    from_number=from_number,
+                )
+            else:
+                print(f"[{timestamp()}] ERROR sms_router: job_list_agent — client not found for {to_number}")
 
         elif agent_name == "proposal_agent":
             from execution.proposal_agent import run as proposal_run
