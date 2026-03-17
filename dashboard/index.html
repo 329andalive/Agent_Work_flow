@@ -1,0 +1,899 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Dispatch Board</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    /* ── Variables ──────────────────────────────────────────────────── */
+    :root {
+      --bg-page:        #F1EFE8;
+      --bg-card:        #FFFFFF;
+      --bg-secondary:   #F1EFE8;
+      --border:         rgba(0,0,0,0.12);
+      --text-primary:   #1a1a18;
+      --text-secondary: #5F5E5A;
+      --text-tertiary:  #888780;
+
+      --green-border:   #639922;
+      --green-dot:      #639922;
+      --green-pill-bg:  #EAF3DE;
+      --amber-border:   #BA7517;
+      --amber-dot:      #BA7517;
+      --amber-pill-bg:  #FAEEDA;
+      --red-border:     #E24B4A;
+      --red-dot:        #E24B4A;
+      --red-pill-bg:    #FCEBEB;
+      --red-banner-bg:  #FCEBEB;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg-page:        #1a1a18;
+        --bg-card:        #242422;
+        --bg-secondary:   #2C2C2A;
+        --border:         rgba(255,255,255,0.10);
+        --text-primary:   #F1EFE8;
+        --text-secondary: #B4B2A9;
+        --text-tertiary:  #888780;
+
+        --green-pill-bg:  #173404;
+        --amber-pill-bg:  #412402;
+        --red-pill-bg:    #501313;
+        --red-banner-bg:  #501313;
+      }
+    }
+
+    /* ── Reset ──────────────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; }
+
+    body {
+      font-family: 'Barlow', sans-serif;
+      background: var(--bg-page);
+      color: var(--text-primary);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* ── Header ─────────────────────────────────────────────────────── */
+    #header {
+      height: 48px;
+      flex-shrink: 0;
+      background: var(--bg-card);
+      border-bottom: 0.5px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 20px;
+    }
+
+    .header-left .brand {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 20px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+      color: var(--text-primary);
+      line-height: 1;
+    }
+
+    .header-left .brand-sub {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--text-tertiary);
+      margin-top: 1px;
+    }
+
+    .header-right {
+      text-align: right;
+    }
+
+    .header-right #live-clock {
+      font-family: 'DM Mono', monospace;
+      font-size: 11px;
+      font-weight: 400;
+      color: var(--text-secondary);
+    }
+
+    .header-right #last-updated {
+      font-family: 'DM Mono', monospace;
+      font-size: 10px;
+      color: var(--text-tertiary);
+      margin-top: 1px;
+    }
+
+    /* ── Board ──────────────────────────────────────────────────────── */
+    #board {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px;
+    }
+
+    /* ── Section labels ─────────────────────────────────────────────── */
+    .section-label {
+      font-family: 'DM Mono', monospace;
+      font-size: 10px;
+      font-weight: 500;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--text-tertiary);
+      padding: 10px 0 4px;
+    }
+
+    .section-label:first-child {
+      padding-top: 2px;
+    }
+
+    /* ── No-show banner ─────────────────────────────────────────────── */
+    .noshow-banner {
+      background: var(--red-banner-bg);
+      border: 0.5px solid var(--border);
+      border-left: 4px solid var(--red-border);
+      border-radius: 6px;
+      padding: 10px 14px;
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 10px;
+    }
+
+    .noshow-banner-text .noshow-title {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+
+    .noshow-banner-text .noshow-sub {
+      font-family: 'DM Mono', monospace;
+      font-size: 11px;
+      color: var(--text-secondary);
+      margin-top: 2px;
+    }
+
+    .noshow-actions {
+      display: flex;
+      gap: 6px;
+      flex-shrink: 0;
+      align-items: center;
+      padding-top: 2px;
+    }
+
+    .noshow-btn {
+      font-family: 'Barlow', sans-serif;
+      font-size: 12px;
+      font-weight: 500;
+      padding: 5px 12px;
+      border-radius: 4px;
+      border: 0.5px solid var(--red-border);
+      background: transparent;
+      color: var(--red-border);
+      cursor: pointer;
+      transition: background 0.15s, opacity 0.15s;
+    }
+
+    .noshow-btn:hover { background: rgba(226,75,74,0.08); }
+    .noshow-btn:disabled { opacity: 0.5; cursor: default; }
+
+    /* ── Job card ───────────────────────────────────────────────────── */
+    .job-card {
+      background: var(--bg-card);
+      border: 0.5px solid var(--border);
+      border-radius: 6px;
+      padding: 14px 16px;
+      margin-bottom: 10px;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 12px;
+    }
+
+    .job-card.status-active    { border-left: 4px solid var(--green-border); }
+    .job-card.status-attention { border-left: 4px solid var(--amber-border); }
+    .job-card.status-upcoming  { border-left: 4px solid var(--border); }
+
+    /* Left column */
+    .job-left {}
+
+    .job-title-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      margin-top: 5px;
+    }
+
+    .status-active    .status-dot { background: var(--green-dot); }
+    .status-attention .status-dot { background: var(--amber-dot); }
+    .status-upcoming  .status-dot { background: var(--border); }
+
+    .job-title-text {}
+
+    .job-type {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 17px;
+      font-weight: 600;
+      color: var(--text-primary);
+      line-height: 1.1;
+    }
+
+    .job-address {
+      font-family: 'Barlow', sans-serif;
+      font-size: 13px;
+      color: var(--text-secondary);
+      margin-top: 2px;
+    }
+
+    /* Pills */
+    .pills-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 8px;
+    }
+
+    .pill {
+      font-family: 'DM Mono', monospace;
+      font-size: 11px;
+      font-weight: 400;
+      padding: 3px 8px;
+      border-radius: 3px;
+      border: 0.5px solid;
+    }
+
+    .pill-tech-active    { background: var(--green-pill-bg); border-color: var(--green-border); color: var(--green-border); }
+    .pill-tech-attention { background: var(--amber-pill-bg); border-color: var(--amber-border); color: var(--amber-border); }
+    .pill-tech-upcoming  { background: var(--bg-secondary);  border-color: var(--border);       color: var(--text-tertiary); }
+    .pill-clock          { background: var(--green-pill-bg); border-color: var(--green-border); color: var(--green-border); }
+    .pill-contact        { background: var(--bg-secondary);  border-color: var(--border);       color: var(--text-tertiary); }
+
+    /* Action buttons */
+    .actions-row {
+      display: flex;
+      gap: 6px;
+      margin-top: 10px;
+      flex-wrap: wrap;
+    }
+
+    .action-btn {
+      font-family: 'Barlow', sans-serif;
+      font-size: 12px;
+      font-weight: 500;
+      padding: 5px 10px;
+      border-radius: 4px;
+      border: 0.5px solid var(--border);
+      background: transparent;
+      color: var(--text-secondary);
+      cursor: pointer;
+      transition: background 0.15s, color 0.15s;
+    }
+
+    .action-btn:hover {
+      background: var(--bg-secondary);
+      color: var(--text-primary);
+    }
+
+    /* Inline compose area */
+    .compose-area {
+      margin-top: 8px;
+      display: none;
+    }
+
+    .compose-area.visible { display: block; }
+
+    .compose-area textarea {
+      width: 100%;
+      font-family: 'Barlow', sans-serif;
+      font-size: 12px;
+      color: var(--text-primary);
+      background: var(--bg-secondary);
+      border: 0.5px solid var(--border);
+      border-radius: 4px;
+      padding: 6px 8px;
+      resize: vertical;
+      min-height: 56px;
+      outline: none;
+    }
+
+    .compose-area textarea:focus { border-color: var(--text-tertiary); }
+
+    .compose-btns {
+      display: flex;
+      gap: 6px;
+      margin-top: 6px;
+    }
+
+    .compose-send {
+      font-family: 'Barlow', sans-serif;
+      font-size: 12px;
+      font-weight: 500;
+      padding: 5px 12px;
+      border-radius: 4px;
+      border: none;
+      background: var(--text-primary);
+      color: var(--bg-page);
+      cursor: pointer;
+    }
+
+    .compose-cancel {
+      font-family: 'Barlow', sans-serif;
+      font-size: 12px;
+      font-weight: 400;
+      padding: 5px 10px;
+      border-radius: 4px;
+      border: 0.5px solid var(--border);
+      background: transparent;
+      color: var(--text-secondary);
+      cursor: pointer;
+    }
+
+    /* Right column — time */
+    .job-right {
+      font-family: 'DM Mono', monospace;
+      font-size: 13px;
+      font-weight: 400;
+      color: var(--text-secondary);
+      white-space: nowrap;
+      padding-top: 2px;
+    }
+
+    /* ── Loading / error states ─────────────────────────────────────── */
+    .board-state {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 200px;
+      font-family: 'DM Mono', monospace;
+      font-size: 13px;
+      color: var(--text-tertiary);
+      gap: 12px;
+    }
+
+    .retry-btn {
+      font-family: 'Barlow', sans-serif;
+      font-size: 13px;
+      font-weight: 500;
+      padding: 6px 14px;
+      border-radius: 4px;
+      border: 0.5px solid var(--border);
+      background: transparent;
+      color: var(--text-secondary);
+      cursor: pointer;
+    }
+
+    .retry-btn:hover { background: var(--bg-secondary); }
+
+    /* ── Toast ──────────────────────────────────────────────────────── */
+    #toast-container {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      z-index: 1000;
+    }
+
+    .toast {
+      font-family: 'DM Mono', monospace;
+      font-size: 12px;
+      padding: 8px 14px;
+      border-radius: 4px;
+      border: 0.5px solid;
+      animation: toast-in 0.2s ease;
+    }
+
+    .toast-success {
+      background: var(--green-pill-bg);
+      border-color: var(--green-border);
+      color: var(--green-border);
+    }
+
+    .toast-error {
+      background: var(--red-pill-bg);
+      border-color: var(--red-border);
+      color: var(--red-border);
+    }
+
+    @keyframes toast-in {
+      from { opacity: 0; transform: translateY(6px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    /* ── Empty state ────────────────────────────────────────────────── */
+    .empty-state {
+      font-family: 'DM Mono', monospace;
+      font-size: 12px;
+      color: var(--text-tertiary);
+      padding: 20px 0 4px;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ── Header ───────────────────────────────────────────────────── -->
+  <header id="header">
+    <div class="header-left">
+      <div class="brand">Dispatch Board</div>
+      <div class="brand-sub" id="header-client-name">Loading...</div>
+    </div>
+    <div class="header-right">
+      <div id="live-clock"></div>
+      <div id="last-updated"></div>
+    </div>
+  </header>
+
+  <!-- ── Board ────────────────────────────────────────────────────── -->
+  <main id="board">
+    <div class="board-state">
+      <span>Loading jobs...</span>
+    </div>
+  </main>
+
+  <!-- ── Toast container ──────────────────────────────────────────── -->
+  <div id="toast-container"></div>
+
+  <!-- ── Supabase SDK ─────────────────────────────────────────────── -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+  <script>
+    /* ── Config ─────────────────────────────────────────────────────── */
+    const SUPABASE_URL  = 'YOUR_SUPABASE_URL';   // TODO: replace
+    const SUPABASE_ANON_KEY = 'YOUR_ANON_KEY';   // TODO: replace
+    const CLIENT_ID     = 'YOUR_CLIENT_ID';      // TODO: replace
+    const API_BASE      = 'https://web-production-043dc.up.railway.app';
+    const REFRESH_MS    = 30_000;
+
+    const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    /* ── Live clock ─────────────────────────────────────────────────── */
+    function updateClock() {
+      const now = new Date();
+      const days  = ['SUN','MON','TUE','WED','THU','FRI','SAT'];
+      const months = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+      const h = now.getHours();
+      const m = String(now.getMinutes()).padStart(2,'0');
+      const ampm = h >= 12 ? 'pm' : 'am';
+      const h12  = ((h % 12) || 12);
+      const str  = `${days[now.getDay()]} ${months[now.getMonth()]} ${now.getDate()} · ${h12}:${m}${ampm}`;
+      document.getElementById('live-clock').textContent = str;
+    }
+
+    updateClock();
+    setInterval(updateClock, 1000);
+
+    /* ── Last-updated tracker ───────────────────────────────────────── */
+    let lastFetchAt = null;
+
+    function tickLastUpdated() {
+      const el = document.getElementById('last-updated');
+      if (!lastFetchAt) { el.textContent = ''; return; }
+      const sec = Math.round((Date.now() - lastFetchAt) / 1000);
+      el.textContent = sec < 5 ? 'just updated' : `updated ${sec}s ago`;
+    }
+
+    setInterval(tickLastUpdated, 5000);
+
+    /* ── Time helpers ───────────────────────────────────────────────── */
+    function fmtTime(hhmm) {
+      if (!hhmm) return 'TBD';
+      const [h, m] = hhmm.split(':').map(Number);
+      const ampm = h >= 12 ? 'pm' : 'am';
+      const h12  = (h % 12) || 12;
+      return `${h12}:${String(m).padStart(2,'0')}${ampm}`;
+    }
+
+    function fmtTimestamp(iso) {
+      if (!iso) return null;
+      const d = new Date(iso);
+      const h = d.getHours(), m = d.getMinutes();
+      const ampm = h >= 12 ? 'pm' : 'am';
+      const h12  = (h % 12) || 12;
+      return `${h12}:${String(m).padStart(2,'0')}${ampm}`;
+    }
+
+    function minsAgo(iso) {
+      if (!iso) return 0;
+      return Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+    }
+
+    function todayIso() {
+      const d = new Date();
+      return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    }
+
+    /* ── Toast ──────────────────────────────────────────────────────── */
+    function toast(msg, type = 'success') {
+      const el = document.createElement('div');
+      el.className = `toast toast-${type}`;
+      el.textContent = msg;
+      document.getElementById('toast-container').appendChild(el);
+      setTimeout(() => el.remove(), 3000);
+    }
+
+    /* ── API calls ──────────────────────────────────────────────────── */
+    async function apiPost(path, body) {
+      console.log(`[API] POST ${path}`, body);
+      try {
+        const res = await fetch(`${API_BASE}${path}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return await res.json();
+      } catch (err) {
+        console.error(`[API] ${path} failed:`, err);
+        throw err;
+      }
+    }
+
+    /* ── Data fetching ──────────────────────────────────────────────── */
+    async function fetchOne(table, id, cols = '*') {
+      if (!id) return null;
+      try {
+        const { data } = await sb.from(table).select(cols).eq('id', id).single();
+        return data;
+      } catch { return null; }
+    }
+
+    async function fetchEmployeeNames(ids) {
+      if (!ids || !ids.length) return [];
+      try {
+        const { data } = await sb.from('employees').select('id,name').in('id', ids);
+        return (data || []).map(e => e.name.split(' ')[0]);
+      } catch { return []; }
+    }
+
+    async function fetchLatestMessage(jobId) {
+      if (!jobId) return null;
+      try {
+        const { data } = await sb
+          .from('messages')
+          .select('created_at, direction')
+          .eq('client_id', CLIENT_ID)
+          .eq('job_id', jobId)
+          .order('created_at', { ascending: false })
+          .limit(1);
+        return (data && data[0]) || null;
+      } catch { return null; }
+    }
+
+    async function fetchOpenTimeEntry(scheduleId) {
+      if (!scheduleId) return null;
+      try {
+        const { data } = await sb
+          .from('time_entries')
+          .select('clock_in, status')
+          .eq('schedule_id', scheduleId)
+          .in('status', ['open', 'closed'])
+          .order('clock_in', { ascending: false })
+          .limit(1);
+        return (data && data[0]) || null;
+      } catch { return null; }
+    }
+
+    async function fetchAllData() {
+      const today = todayIso();
+
+      // 1. Schedule rows
+      const { data: schedRows, error: schedErr } = await sb
+        .from('schedule')
+        .select('*')
+        .eq('client_id', CLIENT_ID)
+        .eq('scheduled_date', today)
+        .neq('status', 'cancelled')
+        .order('scheduled_time', { ascending: true, nullsFirst: false });
+
+      if (schedErr) throw schedErr;
+
+      // 2. Enrich each row (parallel)
+      const enriched = await Promise.all((schedRows || []).map(async row => {
+        const [customer, job, empNames, timeEntry, lastMsg] = await Promise.all([
+          fetchOne('customers', row.customer_id, 'customer_name,customer_address,customer_phone'),
+          fetchOne('jobs', row.job_id, 'job_type'),
+          fetchEmployeeNames(row.assigned_employee_ids || []),
+          fetchOpenTimeEntry(row.id),
+          fetchLatestMessage(row.job_id),
+        ]);
+        return { ...row, customer, job, empNames, timeEntry, lastMsg };
+      }));
+
+      // 3. Open no-show alerts
+      const { data: alertRows } = await sb
+        .from('noshow_alerts')
+        .select('*')
+        .eq('client_id', CLIENT_ID)
+        .eq('status', 'open');
+
+      const enrichedAlerts = await Promise.all((alertRows || []).map(async alert => {
+        const [sched, emp] = await Promise.all([
+          fetchOne('schedule', alert.schedule_id, '*'),
+          fetchOne('employees', alert.employee_id, 'name'),
+        ]);
+        const customer = sched ? await fetchOne('customers', sched.customer_id, 'customer_address') : null;
+        const job      = sched ? await fetchOne('jobs', sched.job_id, 'job_type') : null;
+        return { ...alert, sched, emp, customer, job };
+      }));
+
+      return { rows: enriched, alerts: enrichedAlerts };
+    }
+
+    /* ── Render ─────────────────────────────────────────────────────── */
+    function statusClass(status) {
+      if (status === 'in_progress')    return 'status-active';
+      if (status === 'needs_attention') return 'status-attention';
+      return 'status-upcoming';
+    }
+
+    function pillTechClass(status) {
+      if (status === 'in_progress')    return 'pill-tech-active';
+      if (status === 'needs_attention') return 'pill-tech-attention';
+      return 'pill-tech-upcoming';
+    }
+
+    function renderPills(row) {
+      const sc = row.status;
+      const techLabel = row.empNames.length
+        ? row.empNames.join(', ') + (sc === 'in_progress' ? ' — on site' : sc === 'needs_attention' ? ' — en route' : '')
+        : 'unassigned';
+      const techClass = pillTechClass(sc);
+
+      let html = `<span class="pill ${techClass}">${techLabel}</span>`;
+
+      if (row.timeEntry) {
+        const t = fmtTimestamp(row.timeEntry.clock_in);
+        if (t) html += `<span class="pill pill-clock">Clocked in ${t}</span>`;
+      }
+
+      if (row.lastMsg) {
+        const t = fmtTimestamp(row.lastMsg.created_at);
+        const dir = row.lastMsg.direction === 'inbound' ? 'inbound' : 'SMS';
+        if (t) html += `<span class="pill pill-contact">Last contact: ${t} ${dir}</span>`;
+      }
+
+      return html;
+    }
+
+    function renderActions(row, idx) {
+      if (row.status === 'scheduled') return '';
+      const custPhone = row.customer?.customer_phone || '';
+      const empPhone  = '';  // employee phone not fetched in enrichment — kept as placeholder
+      return `
+        <div class="actions-row">
+          <button class="action-btn" onclick="openCompose('cust-${idx}')">Text customer</button>
+          <button class="action-btn" onclick="openCompose('tech-${idx}')">Text tech</button>
+          <button class="action-btn" onclick="openCompose('note-${idx}')">Add note</button>
+        </div>
+        <div class="compose-area" id="compose-cust-${idx}">
+          <textarea placeholder="Message to customer..."></textarea>
+          <div class="compose-btns">
+            <button class="compose-send" onclick="sendCompose('cust-${idx}','${custPhone}','${row.job_id}','customer')">Send</button>
+            <button class="compose-cancel" onclick="closeCompose('cust-${idx}')">Cancel</button>
+          </div>
+        </div>
+        <div class="compose-area" id="compose-tech-${idx}">
+          <textarea placeholder="Message to tech..."></textarea>
+          <div class="compose-btns">
+            <button class="compose-send" onclick="sendCompose('tech-${idx}','${empPhone}','${row.job_id}','tech')">Send</button>
+            <button class="compose-cancel" onclick="closeCompose('tech-${idx}')">Cancel</button>
+          </div>
+        </div>
+        <div class="compose-area" id="compose-note-${idx}">
+          <textarea placeholder="Add a note..."></textarea>
+          <div class="compose-btns">
+            <button class="compose-send" onclick="sendCompose('note-${idx}',null,'${row.job_id}','note')">Save note</button>
+            <button class="compose-cancel" onclick="closeCompose('note-${idx}')">Cancel</button>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderCard(row, idx) {
+      const sc       = statusClass(row.status);
+      const jobType  = row.job?.job_type ? row.job.job_type.charAt(0).toUpperCase() + row.job.job_type.slice(1) : 'Job';
+      const address  = row.customer?.customer_address || 'Address TBD';
+      const timeDisp = fmtTime(row.scheduled_time);
+
+      return `
+        <div class="job-card ${sc}">
+          <div class="job-left">
+            <div class="job-title-row">
+              <div class="status-dot"></div>
+              <div class="job-title-text">
+                <div class="job-type">${escHtml(jobType)}</div>
+                <div class="job-address">${escHtml(address)}</div>
+              </div>
+            </div>
+            <div class="pills-row">${renderPills(row)}</div>
+            ${renderActions(row, idx)}
+          </div>
+          <div class="job-right">${timeDisp}</div>
+        </div>
+      `;
+    }
+
+    function renderNoshowBanner(alert, idx) {
+      const empName  = alert.emp?.name?.split(' ')[0] || 'Unknown tech';
+      const jobType  = alert.job?.job_type || 'job';
+      const address  = alert.customer?.customer_address || 'address on file';
+      const timeDisp = fmtTime(alert.sched?.scheduled_time);
+      const mins     = minsAgo(alert.sched?.scheduled_date + 'T' + (alert.sched?.scheduled_time || '00:00') + ':00');
+
+      return `
+        <div class="noshow-banner" id="noshow-${alert.id}">
+          <div class="noshow-banner-text">
+            <div class="noshow-title">${escHtml(empName)} &mdash; ${escHtml(jobType)} &mdash; ${escHtml(address)}</div>
+            <div class="noshow-sub">Scheduled ${timeDisp} &middot; ${mins} min overdue &middot; Customer not yet notified</div>
+          </div>
+          <div class="noshow-actions">
+            <button class="noshow-btn" id="btn-onit-${alert.id}" onclick="noshowRespond('${alert.id}','on_it')">On it</button>
+            <button class="noshow-btn" id="btn-reassign-${alert.id}" onclick="noshowRespond('${alert.id}','reassign')">Reassign</button>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderBoard(data) {
+      const { rows, alerts } = data;
+      let html = '';
+
+      // No-show banners
+      if (alerts.length) {
+        html += `<div class="section-label">No-Show Alerts</div>`;
+        alerts.forEach((a, i) => { html += renderNoshowBanner(a, i); });
+      }
+
+      // Group cards
+      const active    = rows.filter(r => r.status === 'in_progress');
+      const attention = rows.filter(r => r.status === 'needs_attention');
+      const upcoming  = rows.filter(r => r.status === 'scheduled');
+
+      let cardIdx = 0;
+
+      if (active.length) {
+        html += `<div class="section-label">Active</div>`;
+        active.forEach(r => { html += renderCard(r, cardIdx++); });
+      }
+
+      if (attention.length) {
+        html += `<div class="section-label">Attention Needed</div>`;
+        attention.forEach(r => { html += renderCard(r, cardIdx++); });
+      }
+
+      if (upcoming.length) {
+        html += `<div class="section-label">Upcoming</div>`;
+        upcoming.forEach(r => { html += renderCard(r, cardIdx++); });
+      }
+
+      if (!active.length && !attention.length && !upcoming.length && !alerts.length) {
+        html += `<div class="empty-state">No jobs scheduled for today.</div>`;
+      }
+
+      document.getElementById('board').innerHTML = html;
+    }
+
+    /* ── Compose actions ────────────────────────────────────────────── */
+    function openCompose(key) {
+      document.getElementById(`compose-${key}`)?.classList.add('visible');
+    }
+
+    function closeCompose(key) {
+      const el = document.getElementById(`compose-${key}`);
+      if (el) {
+        el.classList.remove('visible');
+        el.querySelector('textarea').value = '';
+      }
+    }
+
+    async function sendCompose(key, toPhone, jobId, type) {
+      const el  = document.getElementById(`compose-${key}`);
+      const msg = el?.querySelector('textarea')?.value?.trim();
+      if (!msg) { toast('Please enter a message.', 'error'); return; }
+
+      try {
+        if (type === 'note') {
+          await apiPost('/api/jobs/note', { job_id: jobId, note_text: msg, client_id: CLIENT_ID });
+        } else {
+          await apiPost('/api/sms/send', { client_id: CLIENT_ID, to: toPhone, message: msg });
+        }
+        toast(type === 'note' ? 'Note saved.' : 'Message sent.', 'success');
+        closeCompose(key);
+      } catch {
+        toast('Failed — try again.', 'error');
+      }
+    }
+
+    /* ── No-show respond ────────────────────────────────────────────── */
+    async function noshowRespond(alertId, response) {
+      const btnOnit    = document.getElementById(`btn-onit-${alertId}`);
+      const btnReassign = document.getElementById(`btn-reassign-${alertId}`);
+      if (btnOnit)     btnOnit.disabled    = true;
+      if (btnReassign) btnReassign.disabled = true;
+
+      const clicked = response === 'on_it' ? btnOnit : btnReassign;
+      if (clicked) clicked.textContent = 'Sent';
+
+      try {
+        await apiPost('/api/noshow/respond', { alert_id: alertId, response, client_id: CLIENT_ID });
+        toast('Response sent.', 'success');
+        setTimeout(() => {
+          if (btnOnit)     { btnOnit.disabled    = false; btnOnit.textContent    = 'On it'; }
+          if (btnReassign) { btnReassign.disabled = false; btnReassign.textContent = 'Reassign'; }
+        }, 5000);
+      } catch {
+        toast('Failed — try again.', 'error');
+        if (btnOnit)     { btnOnit.disabled    = false; btnOnit.textContent    = 'On it'; }
+        if (btnReassign) { btnReassign.disabled = false; btnReassign.textContent = 'Reassign'; }
+      }
+    }
+
+    /* ── Escape helper ──────────────────────────────────────────────── */
+    function escHtml(str) {
+      return String(str ?? '')
+        .replace(/&/g,'&amp;')
+        .replace(/</g,'&lt;')
+        .replace(/>/g,'&gt;')
+        .replace(/"/g,'&quot;');
+    }
+
+    /* ── Bootstrap ──────────────────────────────────────────────────── */
+    let firstLoad = true;
+
+    async function refresh() {
+      try {
+        const data = await fetchAllData();
+        lastFetchAt = Date.now();
+        tickLastUpdated();
+        renderBoard(data);
+
+        // Update client name in header on first load
+        if (firstLoad && data.rows.length === 0 && CLIENT_ID !== 'YOUR_CLIENT_ID') {
+          // Optionally fetch client name
+        }
+        firstLoad = false;
+      } catch (err) {
+        console.error('[refresh] error:', err);
+        if (firstLoad) {
+          document.getElementById('board').innerHTML = `
+            <div class="board-state">
+              <span>Could not load jobs. Retrying...</span>
+              <button class="retry-btn" onclick="refresh()">Retry</button>
+            </div>`;
+        }
+      }
+    }
+
+    // Load client name for header
+    async function loadClientName() {
+      if (CLIENT_ID === 'YOUR_CLIENT_ID') {
+        document.getElementById('header-client-name').textContent = 'Configure CLIENT_ID';
+        return;
+      }
+      try {
+        const { data } = await sb.from('clients').select('business_name').eq('id', CLIENT_ID).single();
+        if (data?.business_name) {
+          document.getElementById('header-client-name').textContent = data.business_name;
+        }
+      } catch { /* silent */ }
+    }
+
+    loadClientName();
+    refresh();
+    setInterval(refresh, REFRESH_MS);
+  </script>
+</body>
+</html>
