@@ -23,7 +23,7 @@ import threading
 # Allow running as: python execution/sms_receive.py from project root
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_from_directory
 from datetime import datetime
 from execution.sms_router import route_message
 
@@ -144,6 +144,21 @@ def inbound_webhook():
     thread.start()
 
     return jsonify({"status": "ok"}), 200
+
+
+@app.route("/dashboard/")
+@app.route("/dashboard/index.html")
+def dashboard_board():
+    """Serve the dispatch board dashboard."""
+    dashboard_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "dashboard")
+    return send_from_directory(dashboard_dir, "index.html")
+
+
+@app.route("/dashboard/office.html")
+def dashboard_office():
+    """Serve the office dashboard."""
+    dashboard_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "dashboard")
+    return send_from_directory(dashboard_dir, "office.html")
 
 
 @app.route("/health", methods=["GET"])
