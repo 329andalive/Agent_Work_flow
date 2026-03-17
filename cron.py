@@ -79,6 +79,7 @@ def main():
 
     briefings_sent = 0
     briefings_skipped = 0
+    noshows_fired = 0
 
     for client in clients:
         # ── Morning briefing — only fires once, at 6am local time ──
@@ -95,19 +96,22 @@ def main():
         else:
             briefings_skipped += 1
 
-        # ── No-show check — runs every tick, threshold enforced inside ──
+        # ── No-show check — runs every cron cycle ──
         try:
             noshow_result = check_noshows(client)
-            print(f"[{timestamp()}] INFO cron: {noshow_result}")
+            if "Fired" in noshow_result:
+                print(f"[{timestamp()}] INFO cron: {noshow_result}")
+                noshows_fired += 1
         except Exception as e:
             print(
-                f"[{timestamp()}] ERROR cron: No-show check failed for "
-                f"{client.get('business_name', client.get('id'))} — {e}"
+                f"[{timestamp()}] ERROR cron: noshow check failed for "
+                f"{client.get('business_name', 'unknown')} — {e}"
             )
 
     print(
         f"[{timestamp()}] INFO cron: Finished — "
-        f"{briefings_sent} briefings sent, {briefings_skipped} skipped"
+        f"{briefings_sent} briefings sent, {briefings_skipped} skipped, "
+        f"{noshows_fired} no-show alerts fired"
     )
 
 
