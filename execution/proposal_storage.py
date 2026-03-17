@@ -44,7 +44,7 @@ def upload_proposal_html(html_content: str, customer_name: str) -> str | None:
         client.storage.from_("proposals").upload(
             path=filename,
             file=html_content.encode("utf-8"),
-            file_options={"content-type": "text/html; charset=utf-8"},
+            file_options={"contentType": "text/html; charset=utf-8"},
         )
 
         # Build the public URL

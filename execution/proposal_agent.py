@@ -305,7 +305,6 @@ def run(client_phone: str, customer_phone: str, raw_input: str) -> str | None:
     html = build_proposal_html(
         proposal_text=proposal_text,
         customer_name=customer_name,
-        job_type=job_type,
         business_name=client["business_name"],
         owner_name=client.get("owner_name", "Jeremy"),
     )
