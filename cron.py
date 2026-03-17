@@ -24,6 +24,7 @@ import pytz
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from execution.briefing_agent import send_morning_briefing
+from execution.noshow_agent import check_noshows
 from execution.db_connection import get_client as get_supabase
 
 DEFAULT_TIMEZONE = "America/New_York"
@@ -76,25 +77,38 @@ def main():
         print(f"[{timestamp()}] ERROR cron: Aborting — could not fetch clients")
         sys.exit(1)
 
-    sent    = 0
-    skipped = 0
+    briefings_sent = 0
+    briefings_skipped = 0
 
     for client in clients:
-        if not _is_briefing_hour(client):
-            skipped += 1
-            continue
+        # ── Morning briefing — only fires once, at 6am local time ──
+        if _is_briefing_hour(client):
+            try:
+                result = send_morning_briefing(client)
+                print(f"[{timestamp()}] INFO cron: {result}")
+                briefings_sent += 1
+            except Exception as e:
+                print(
+                    f"[{timestamp()}] ERROR cron: Briefing failed for "
+                    f"{client.get('business_name', client.get('id'))} — {e}"
+                )
+        else:
+            briefings_skipped += 1
 
+        # ── No-show check — runs every tick, threshold enforced inside ──
         try:
-            result = send_morning_briefing(client)
-            print(f"[{timestamp()}] INFO cron: {result}")
-            sent += 1
+            noshow_result = check_noshows(client)
+            print(f"[{timestamp()}] INFO cron: {noshow_result}")
         except Exception as e:
             print(
-                f"[{timestamp()}] ERROR cron: Briefing failed for "
+                f"[{timestamp()}] ERROR cron: No-show check failed for "
                 f"{client.get('business_name', client.get('id'))} — {e}"
             )
 
-    print(f"[{timestamp()}] INFO cron: Finished — {sent} briefings sent, {skipped} skipped")
+    print(
+        f"[{timestamp()}] INFO cron: Finished — "
+        f"{briefings_sent} briefings sent, {briefings_skipped} skipped"
+    )
 
 
 if __name__ == "__main__":

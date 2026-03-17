@@ -241,6 +241,20 @@ def dispatch(agent_name: str, sms_data: dict, employee: dict = None, role: str =
                 owner_phone=from_number,
             )
 
+        elif agent_name == "noshow_response":
+            from execution.noshow_agent import handle_noshow_response
+            from execution.db_client import get_client_by_phone
+            full_client = get_client_by_phone(to_number)
+            if full_client:
+                handle_noshow_response(
+                    client=full_client,
+                    employee=employee,
+                    raw_input=body,
+                    from_number=from_number,
+                )
+            else:
+                print(f"[{timestamp()}] ERROR sms_router: noshow_response — client not found for {to_number}")
+
         elif agent_name == "review_agent":
             # Stub
             print(f"[{timestamp()}] INFO sms_router: review_agent not yet implemented")
@@ -334,6 +348,29 @@ def route_message(sms_data: dict) -> str:
             print(f"[{timestamp()}] INFO sms_router: Routed to → lost_report")
             dispatch("lost_report", sms_data, employee=employee, role=role)
             return "lost_report"
+
+        # Priority 5: Foreman / owner responding to a no-show alert
+        # Only check if the sender is owner or foreman — field techs don't receive alerts
+        if role in ("owner", "foreman"):
+            from execution.noshow_agent import _detect_response as _noshow_detect
+            from execution.db_connection import get_client as _get_supabase
+            noshow_intent = _noshow_detect(body)
+            if noshow_intent:
+                # Confirm an open alert exists before routing — prevents false positives
+                # on messages like "on it" that could mean many things
+                _supabase = _get_supabase()
+                _alert_check = (
+                    _supabase.table("noshow_alerts")
+                    .select("id")
+                    .eq("client_id", client_id)
+                    .eq("status", "open")
+                    .limit(1)
+                    .execute()
+                )
+                if _alert_check.data:
+                    print(f"[{timestamp()}] INFO sms_router: Routed to → noshow_response ({noshow_intent})")
+                    dispatch("noshow_response", sms_data, employee=employee, role=role)
+                    return "noshow_response"
 
         # ------------------------------------------------------------------
         # Step 4: Keyword routing fallback
