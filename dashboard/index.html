@@ -72,6 +72,12 @@
       padding: 0 20px;
     }
 
+    .header-left {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
     .header-left .brand {
       font-family: 'Barlow Condensed', sans-serif;
       font-size: 20px;
@@ -88,6 +94,36 @@
       font-weight: 500;
       color: var(--text-tertiary);
       margin-top: 1px;
+    }
+
+    .nav {
+      display: flex;
+      gap: 6px;
+    }
+
+    .nav-btn {
+      font-family: 'DM Mono', monospace;
+      font-size: 11px;
+      font-weight: 400;
+      letter-spacing: 0.05em;
+      padding: 4px 10px;
+      border-radius: 4px;
+      border: 0.5px solid var(--border);
+      background: transparent;
+      color: var(--text-secondary);
+      cursor: pointer;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      transition: background 0.12s, color 0.12s;
+    }
+
+    .nav-btn:hover { background: var(--bg-secondary); }
+
+    .nav-btn.active {
+      background: var(--text-primary);
+      color: var(--bg-card);
+      border-color: var(--text-primary);
     }
 
     .header-right {
@@ -199,7 +235,6 @@
     .job-card.status-upcoming  { border-left: 4px solid var(--border); }
 
     /* Left column */
-    .job-left {}
 
     .job-title-row {
       display: flex;
@@ -219,7 +254,6 @@
     .status-attention .status-dot { background: var(--amber-dot); }
     .status-upcoming  .status-dot { background: var(--border); }
 
-    .job-title-text {}
 
     .job-type {
       font-family: 'Barlow Condensed', sans-serif;
@@ -427,8 +461,14 @@
   <!-- ── Header ───────────────────────────────────────────────────── -->
   <header id="header">
     <div class="header-left">
-      <div class="brand">Dispatch Board</div>
-      <div class="brand-sub" id="header-client-name">Loading...</div>
+      <div>
+        <div class="brand">Dispatch Board</div>
+        <div class="brand-sub" id="header-client-name">Loading...</div>
+      </div>
+      <nav class="nav">
+        <span class="nav-btn active">Board</span>
+        <a class="nav-btn" href="office.html">Office</a>
+      </nav>
     </div>
     <div class="header-right">
       <div id="live-clock"></div>
@@ -451,9 +491,9 @@
 
   <script>
     /* ── Config ─────────────────────────────────────────────────────── */
-    const SUPABASE_URL  = 'YOUR_SUPABASE_URL';   // TODO: replace
-    const SUPABASE_ANON_KEY = 'YOUR_ANON_KEY';   // TODO: replace
-    const CLIENT_ID     = 'YOUR_CLIENT_ID';      // TODO: replace
+    const SUPABASE_URL  = 'https://wczzlvhpryufohjwmxwd.supabase.co';   // TODO: replace
+    const SUPABASE_ANON_KEY = 'sb_publishable_-3d8IrJdcQOAQpxPDBLOMA_KmeAVdEy';   // TODO: replace
+    const CLIENT_ID     = '8aafcd73-b41c-4f1a-bd01-3e7955798367';      // TODO: replace
     const API_BASE      = 'https://web-production-043dc.up.railway.app';
     const REFRESH_MS    = 30_000;
 
