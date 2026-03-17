@@ -23,6 +23,7 @@ from datetime import datetime, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from execution.briefing_agent import send_morning_briefing
 from execution.db_client import list_all_clients
 from execution.followup_agent import run_scheduled_followups
 from execution.reporting_agent import get_closing_rate_summary
@@ -67,17 +68,42 @@ def _send_monthly_reports():
             print(f"[{_timestamp()}] ERROR cron_runner: monthly report exception for {client_id} — {e}")
 
 
+def _is_morning_hour() -> bool:
+    """True between 06:00 and 09:59 UTC — the window for morning briefings."""
+    return 6 <= datetime.now(timezone.utc).hour < 10
+
+
+def _send_morning_briefings():
+    """Send the daily job briefing to foremans and owners for every active client."""
+    clients = list_all_clients()
+    print(f"[{_timestamp()}] INFO cron_runner: Sending morning briefings to {len(clients)} clients")
+    for client in clients:
+        try:
+            result = send_morning_briefing(client)
+            print(f"[{_timestamp()}] INFO cron_runner: Briefing — {result}")
+        except Exception as e:
+            print(f"[{_timestamp()}] ERROR cron_runner: briefing failed for {client.get('id')} — {e}")
+
+
 def main():
     print(f"[{_timestamp()}] INFO cron_runner: Starting run")
 
-    # --- Task 1 & 2: Scheduled follow-ups + cold proposal handling ---
+    # --- Task 1: Morning briefing (06:00–09:59 UTC only) ---
+    if _is_morning_hour():
+        print(f"[{_timestamp()}] INFO cron_runner: Morning window — sending briefings")
+        try:
+            _send_morning_briefings()
+        except Exception as e:
+            print(f"[{_timestamp()}] ERROR cron_runner: morning briefings failed — {e}")
+
+    # --- Task 2 & 3: Scheduled follow-ups + cold proposal handling ---
     try:
         processed = run_scheduled_followups()
         print(f"[{_timestamp()}] INFO cron_runner: Processed {processed} follow-ups")
     except Exception as e:
         print(f"[{_timestamp()}] ERROR cron_runner: run_scheduled_followups failed — {e}")
 
-    # --- Task 3: Monthly report (first of month only) ---
+    # --- Task 4: Monthly report (first of month only) ---
     if _is_first_of_month():
         print(f"[{_timestamp()}] INFO cron_runner: First of month — sending closing rate reports")
         try:
