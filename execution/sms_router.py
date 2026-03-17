@@ -161,12 +161,18 @@ def dispatch(agent_name: str, sms_data: dict, employee: dict = None, role: str =
 
     try:
         if agent_name == "clock_agent":
-            from execution.clock_agent import run as clock_run
-            clock_run(
-                client_phone=to_number,
-                employee=employee,
-                raw_input=body,
-            )
+            from execution.clock_agent import handle_clock
+            from execution.db_client import get_client_by_phone
+            full_client = get_client_by_phone(to_number)
+            if full_client:
+                handle_clock(
+                    client=full_client,
+                    employee=employee,
+                    raw_input=body,
+                    from_number=from_number,
+                )
+            else:
+                print(f"[{timestamp()}] ERROR sms_router: clock_agent — client not found for {to_number}")
 
         elif agent_name == "scheduling_agent":
             from execution.scheduling_agent import handle_scheduling
@@ -333,12 +339,6 @@ def route_message(sms_data: dict) -> str:
         # Step 4: Keyword routing fallback
         # ------------------------------------------------------------------
         agent = detect_agent(body)
-
-        # clock_agent keywords only apply to field_tech and foreman.
-        # If an owner matches clock keywords ("on site", "headed out"), fall
-        # back to the default agent rather than sending a denial message.
-        if agent == "clock_agent" and role == "owner":
-            agent = DEFAULT_AGENT
 
         print(f"[{timestamp()}] INFO sms_router: Routed to → {agent} (body: '{body[:60]}')")
         dispatch(agent, sms_data, employee=employee, role=role)
