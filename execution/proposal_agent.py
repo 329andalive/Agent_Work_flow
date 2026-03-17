@@ -48,7 +48,8 @@ def timestamp():
 # ---------------------------------------------------------------------------
 JOB_TYPE_KEYWORDS = {
     "emergency": ["emergency", "backup", "overflow", "flooding", "smell", "alarm", "urgent", "asap"],
-    "repair":    ["repair", "fix", "broken", "cracked", "collapsed", "failing", "failed"],
+    "repair":    ["repair", "fix", "broken", "cracked", "collapsed", "failing", "failed",
+                  "replacement", "replace", "baffle", "install", "installation", "new system"],
     "locate":    ["locate", "find", "where is", "mark", "lost lid", "lost cover"],
     "inspect":   ["inspect", "inspection", "check", "evaluate", "assessment", "look at"],
     "pump":      ["pump", "pumped", "pumping", "empty", "emptied", "full", "due", "years"],
@@ -70,19 +71,40 @@ def detect_job_type(text: str) -> str:
 def extract_customer_name(text: str) -> str:
     """
     Try to pull a customer name from the message.
-    Looks for patterns like "for Mike" / "customer is Sarah" / "name is John".
+
+    Handles two patterns:
+      1. Trigger phrases: "for Mike", "customer is Sarah", "name is John"
+      2. Leading name: "CAROL Duggan needs a pump out at..."
+         — owner names the customer first, then describes the job
     Returns "Customer" if nothing found — agents can ask later.
     """
+    import re
+
     text_lower = text.lower()
+
+    # Pattern 1 — trigger phrases
     name_triggers = ["for ", "customer is ", "name is ", "my name is ", "it's ", "its "]
     for trigger in name_triggers:
         idx = text_lower.find(trigger)
         if idx != -1:
             after = text[idx + len(trigger):].strip()
-            # Take the first word as the name — good enough for now
             name = after.split()[0].strip(".,!?").title()
             if len(name) > 1:
                 return name
+
+    # Pattern 2 — "FirstName [LastName] needs/wants/has/is ..."
+    # Handles all-caps names like "CAROL Duggan"
+    leading = re.match(
+        r"^([A-Za-z]+(?:\s+[A-Za-z]+)?)\s+(needs|wants|has|is\s+requesting|called|requesting)\b",
+        text.strip(),
+        re.IGNORECASE,
+    )
+    if leading:
+        candidate = leading.group(1).strip()
+        # Reject single common words that aren't names
+        if candidate.lower() not in {"i", "we", "he", "she", "they", "it", "customer", "owner"}:
+            return candidate.title()
+
     return "Customer"
 
 
