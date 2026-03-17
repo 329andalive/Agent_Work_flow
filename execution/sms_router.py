@@ -48,8 +48,8 @@ def timestamp():
 # ---------------------------------------------------------------------------
 ROLE_PERMISSIONS = {
     "field_tech": ["clock_agent"],
-    "foreman":    ["clock_agent", "proposal_agent"],
-    "office":     ["proposal_agent", "invoice_agent"],
+    "foreman":    ["clock_agent", "proposal_agent", "scheduling_agent"],
+    "office":     ["proposal_agent", "invoice_agent", "scheduling_agent"],
     "owner":      ["all"],
 }
 
@@ -76,6 +76,11 @@ ROUTING_TABLE = {
         "wrapped up", "took me", "billed", "bill them", "send invoice",
         "send the invoice", "finished up", "worked", "spent",
         "3 hours", "2 hours", "4 hours", "5 hours", "1 hour", "half a day",
+    ],
+    # Scheduling agent — booking jobs with a date/time
+    "scheduling_agent": [
+        "schedule", "book", "set up", "add to the schedule", "put on the schedule",
+        "calendar", "appointment",
     ],
     # Proposal agent — new job request keywords
     "proposal_agent": ["quote", "estimate", "proposal", "pricing", "price", "cost", "bid"],
@@ -149,6 +154,21 @@ def dispatch(agent_name: str, sms_data: dict, employee: dict = None, role: str =
                 employee=employee,
                 raw_input=body,
             )
+
+        elif agent_name == "scheduling_agent":
+            from execution.scheduling_agent import handle_scheduling
+            # Resolve the full client dict — dispatch already has to_number as client_phone
+            from execution.db_client import get_client_by_phone
+            full_client = get_client_by_phone(to_number)
+            if full_client:
+                handle_scheduling(
+                    client=full_client,
+                    employee=employee,
+                    raw_input=body,
+                    from_number=from_number,
+                )
+            else:
+                print(f"[{timestamp()}] ERROR sms_router: scheduling_agent — client not found for {to_number}")
 
         elif agent_name == "proposal_agent":
             from execution.proposal_agent import run as proposal_run
