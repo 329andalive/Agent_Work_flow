@@ -81,8 +81,13 @@ def _parse_date_range(raw_input: str, today_iso: str) -> dict:
         print(f"[{timestamp()}] WARN job_list_agent: Claude returned no text — falling back to today")
         return fallback
 
+    # Strip markdown fences Claude sometimes adds (```json ... ```) then parse
+    raw = raw.strip()
+    if raw.startswith("```"):
+        raw = raw.split("\n", 1)[-1]
+        raw = raw.rsplit("```", 1)[0].strip()
     try:
-        parsed = json.loads(raw.strip())
+        parsed = json.loads(raw)
         # Validate required keys exist and are non-empty strings
         if parsed.get("date_from") and parsed.get("date_to"):
             print(

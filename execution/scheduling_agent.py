@@ -79,8 +79,11 @@ def _parse_with_claude(raw_input: str, today_iso: str) -> dict | None:
         print(f"[{timestamp()}] ERROR scheduling_agent: Claude returned no text")
         return None
 
-    # Strip any accidental whitespace/newlines before parsing
+    # Strip markdown fences Claude sometimes adds (```json ... ```) then parse
     raw = raw.strip()
+    if raw.startswith("```"):
+        raw = raw.split("\n", 1)[-1]          # drop the opening ```json line
+        raw = raw.rsplit("```", 1)[0].strip() # drop the closing ```
     try:
         parsed = json.loads(raw)
     except json.JSONDecodeError as e:
