@@ -173,6 +173,97 @@ def dashboard_office():
     return send_from_directory(dashboard_dir, "office.html")
 
 
+@app.route("/dashboard/book.html")
+@app.route("/book")
+def booking_form():
+    """Serve the customer-facing TCR-compliant booking / opt-in form."""
+    dashboard_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "dashboard")
+    return send_from_directory(dashboard_dir, "book.html")
+
+
+@app.route("/book/submit", methods=["POST"])
+def book_submit():
+    """
+    Handle the booking form POST.
+
+    Expected JSON body:
+        client_phone  — Telnyx number of the business (identifies the client)
+        name          — Customer's name
+        phone         — Customer's phone (E.164, normalized by the form)
+        address       — Service address
+        service_type  — Service type selected on the form
+        notes         — Optional extra detail
+        sms_consent   — Must be true (form requires checkbox)
+
+    Flow:
+        1. Validate required fields
+        2. Look up client by client_phone
+        3. Look up or create customer record
+        4. Record consent (source = 'web_form')
+        5. Kick off proposal_agent so owner gets a text immediately
+    """
+    try:
+        data = request.get_json(force=True, silent=True) or {}
+
+        client_phone = data.get("client_phone", "").strip()
+        name         = data.get("name", "").strip()
+        phone        = data.get("phone", "").strip()
+        address      = data.get("address", "").strip()
+        service_type = data.get("service_type", "").strip()
+        notes        = data.get("notes", "").strip()
+        consented    = data.get("sms_consent", False)
+
+        # Basic field validation
+        if not all([client_phone, name, phone, address, service_type]):
+            return jsonify({"status": "error", "message": "Missing required fields."}), 400
+
+        if not consented:
+            return jsonify({"status": "error", "message": "SMS consent is required."}), 400
+
+        # Look up client
+        from execution.db_client import get_client_by_phone
+        client = get_client_by_phone(client_phone)
+        if not client:
+            print(f"[{timestamp()}] WARN book_submit: No client for phone={client_phone}")
+            return jsonify({"status": "error", "message": "Business not found."}), 404
+
+        client_id = client["id"]
+
+        # Look up or create customer
+        from execution.db_customer import get_customer_by_phone, create_customer
+        customer = get_customer_by_phone(client_id, phone)
+        if not customer:
+            create_customer(client_id=client_id, name=name, phone=phone, address=address)
+
+        # Record consent
+        from execution.db_consent import set_consent
+        set_consent(client_id, phone, source="web_form")
+
+        # Build raw_input for proposal_agent from the form fields
+        raw = f"{name} at {address} needs {service_type}."
+        if notes:
+            raw += f" Notes: {notes}"
+
+        # Run proposal_agent in background so the HTTP response is fast
+        def _run_proposal():
+            try:
+                from execution.proposal_agent import run as proposal_run
+                proposal_run(client_phone=client_phone, customer_phone=phone, raw_input=raw)
+            except Exception as ex:
+                print(f"[{timestamp()}] ERROR book_submit: proposal_agent failed — {ex}")
+
+        t = __import__("threading").Thread(target=_run_proposal)
+        t.daemon = True
+        t.start()
+
+        print(f"[{timestamp()}] INFO book_submit: Booking received — {name} / {phone} / {service_type}")
+        return jsonify({"status": "ok"}), 200
+
+    except Exception as e:
+        print(f"[{timestamp()}] ERROR book_submit: Unexpected error — {e}")
+        return jsonify({"status": "error", "message": "Something went wrong."}), 500
+
+
 @app.route("/health", methods=["GET"])
 def health():
     """Simple health check — confirm the server is up."""

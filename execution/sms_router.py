@@ -339,6 +339,33 @@ def route_message(sms_data: dict) -> str:
             role = "owner"
 
         # ------------------------------------------------------------------
+        # Step 3a: Opt-in / opt-out — check before any other routing.
+        # STOP always revokes consent. YES confirms consent if a pending
+        # consent request was sent to this number.
+        # ------------------------------------------------------------------
+        body_stripped = body.strip().upper()
+
+        if body_stripped == "STOP":
+            from execution.db_connection import get_client as _get_supabase_optin
+            from execution.optin_agent import handle_stop
+            _supabase_optin = _get_supabase_optin()
+            full_client_optin = _supabase_optin.table("clients").select("*").eq("id", client_id).single().execute()
+            if full_client_optin.data:
+                handle_stop(full_client_optin.data, from_number)
+            return "optin_stop"
+
+        if body_stripped in ("YES", "START", "UNSTOP"):
+            from execution.db_connection import get_client as _get_supabase_optin
+            from execution.db_consent import check_consent
+            if not check_consent(client_id, from_number):
+                from execution.optin_agent import handle_yes
+                _supabase_optin = _get_supabase_optin()
+                full_client_optin = _supabase_optin.table("clients").select("*").eq("id", client_id).single().execute()
+                if full_client_optin.data:
+                    handle_yes(full_client_optin.data, from_number)
+                return "optin_yes"
+
+        # ------------------------------------------------------------------
         # Step 3: Priority detection — check intent before keyword routing.
         # These intents bypass keyword routing entirely.
         # ------------------------------------------------------------------

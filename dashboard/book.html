@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Request Service</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@600;700&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --green:   #639922;
+      --green-bg: #EAF3DE;
+      --border:  rgba(0,0,0,0.14);
+      --text:    #1a1a18;
+      --muted:   #5F5E5A;
+      --bg:      #F1EFE8;
+      --card:    #FFFFFF;
+      --red:     #c0392b;
+    }
+
+    body {
+      font-family: 'Barlow', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
+      padding: 32px 16px 64px;
+    }
+
+    .card {
+      background: var(--card);
+      border: 0.5px solid var(--border);
+      border-radius: 8px;
+      width: 100%;
+      max-width: 480px;
+      padding: 32px 28px;
+    }
+
+    .brand {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 22px;
+      font-weight: 700;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+      margin-bottom: 4px;
+    }
+
+    .tagline {
+      font-size: 13px;
+      color: var(--muted);
+      margin-bottom: 28px;
+    }
+
+    h1 {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 20px;
+      font-weight: 600;
+      margin-bottom: 20px;
+    }
+
+    .field { margin-bottom: 16px; }
+
+    label {
+      display: block;
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 5px;
+    }
+
+    input[type="text"],
+    input[type="tel"],
+    select,
+    textarea {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      font-family: 'Barlow', sans-serif;
+      font-size: 15px;
+      color: var(--text);
+      background: #fff;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+
+    input:focus, select:focus, textarea:focus {
+      border-color: var(--green);
+    }
+
+    textarea { resize: vertical; min-height: 72px; }
+
+    .consent-box {
+      background: var(--green-bg);
+      border: 1px solid #b8d98a;
+      border-radius: 6px;
+      padding: 14px 16px;
+      margin: 20px 0;
+    }
+
+    .consent-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+    }
+
+    .consent-row input[type="checkbox"] {
+      margin-top: 3px;
+      width: 16px;
+      height: 16px;
+      flex-shrink: 0;
+      accent-color: var(--green);
+    }
+
+    .consent-text {
+      font-size: 13px;
+      line-height: 1.5;
+      color: var(--text);
+    }
+
+    .consent-text strong { font-weight: 600; }
+
+    .stop-note {
+      font-size: 11px;
+      color: var(--muted);
+      margin-top: 8px;
+    }
+
+    button[type="submit"] {
+      width: 100%;
+      padding: 13px;
+      background: var(--green);
+      color: #fff;
+      border: none;
+      border-radius: 5px;
+      font-family: 'Barlow', sans-serif;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.15s;
+    }
+
+    button[type="submit"]:hover { opacity: 0.88; }
+    button[type="submit"]:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .error { color: var(--red); font-size: 13px; margin-top: 4px; }
+
+    /* Success state */
+    .success-card {
+      text-align: center;
+      padding: 48px 28px;
+    }
+
+    .success-icon {
+      font-size: 48px;
+      margin-bottom: 16px;
+    }
+
+    .success-card h2 {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 24px;
+      font-weight: 700;
+      margin-bottom: 10px;
+    }
+
+    .success-card p {
+      font-size: 14px;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+  </style>
+</head>
+<body>
+
+<div class="card" id="form-card">
+  <div class="brand" id="business-name">Holt Sewer &amp; Drain</div>
+  <div class="tagline">Septic &amp; Drain Services — Serving Central Maine</div>
+
+  <h1>Request a Service</h1>
+
+  <form id="book-form" novalidate>
+    <div class="field">
+      <label for="name">Your Name *</label>
+      <input type="text" id="name" name="name" placeholder="Carol Duggan" required autocomplete="name" />
+    </div>
+
+    <div class="field">
+      <label for="phone">Cell Phone *</label>
+      <input type="tel" id="phone" name="phone" placeholder="(207) 555-0100" required autocomplete="tel" />
+    </div>
+
+    <div class="field">
+      <label for="address">Service Address *</label>
+      <input type="text" id="address" name="address" placeholder="75 Long St, Waterville ME" required />
+    </div>
+
+    <div class="field">
+      <label for="service">Service Needed *</label>
+      <select id="service" name="service_type" required>
+        <option value="">— Select —</option>
+        <option>Septic Pump Out</option>
+        <option>Drain Cleaning</option>
+        <option>Septic Inspection</option>
+        <option>Baffle Replacement</option>
+        <option>Riser Installation</option>
+        <option>Line Jetting</option>
+        <option>Camera Inspection</option>
+        <option>Other / Not Sure</option>
+      </select>
+    </div>
+
+    <div class="field">
+      <label for="notes">Additional Details (optional)</label>
+      <textarea id="notes" name="notes" placeholder="Last pumped 5 years ago, 3-bedroom house…"></textarea>
+    </div>
+
+    <!-- ── SMS Opt-In — required for TCR / 10DLC compliance ── -->
+    <div class="consent-box">
+      <div class="consent-row">
+        <input type="checkbox" id="consent" name="sms_consent" required />
+        <div>
+          <label for="consent" style="text-transform:none; letter-spacing:0; font-size:13px; font-weight:500; color:var(--text); margin-bottom:0;">
+            <strong>I agree to receive SMS messages</strong> from
+            <span id="consent-biz">Holt Sewer &amp; Drain</span> about
+            my service request, appointment reminders, and job updates.
+            Message frequency varies. Standard message and data rates may apply.
+          </label>
+          <p class="stop-note">Reply STOP to opt out at any time. Reply HELP for help.</p>
+        </div>
+      </div>
+    </div>
+
+    <button type="submit" id="submit-btn">Request Service</button>
+  </form>
+</div>
+
+<script>
+  // ── Config — swap CLIENT_PHONE for the real Telnyx number ──
+  const API_BASE    = 'https://web-production-043dc.up.railway.app';
+  const CLIENT_PHONE = '+12074190986';   // TODO: replace per client
+
+  const form       = document.getElementById('book-form');
+  const submitBtn  = document.getElementById('submit-btn');
+  const formCard   = document.getElementById('form-card');
+
+  function normalizePhone(raw) {
+    const digits = raw.replace(/\D/g, '');
+    if (digits.length === 10) return '+1' + digits;
+    if (digits.length === 11 && digits[0] === '1') return '+' + digits;
+    return null;
+  }
+
+  function showError(fieldId, msg) {
+    const existing = document.getElementById(fieldId + '-err');
+    if (existing) existing.remove();
+    const el = document.createElement('p');
+    el.className = 'error';
+    el.id = fieldId + '-err';
+    el.textContent = msg;
+    document.getElementById(fieldId).after(el);
+  }
+
+  function clearErrors() {
+    document.querySelectorAll('.error').forEach(e => e.remove());
+  }
+
+  function validate() {
+    clearErrors();
+    let ok = true;
+
+    if (!form.name.value.trim()) {
+      showError('name', 'Please enter your name.');
+      ok = false;
+    }
+
+    const phone = normalizePhone(form.phone.value);
+    if (!phone) {
+      showError('phone', 'Please enter a valid 10-digit phone number.');
+      ok = false;
+    }
+
+    if (!form.address.value.trim()) {
+      showError('address', 'Please enter your service address.');
+      ok = false;
+    }
+
+    if (!form.service_type.value) {
+      showError('service', 'Please select a service type.');
+      ok = false;
+    }
+
+    if (!form.sms_consent.checked) {
+      showError('consent', 'You must agree to receive SMS messages to continue.');
+      ok = false;
+    }
+
+    return { ok, phone };
+  }
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+
+    const { ok, phone } = validate();
+    if (!ok) return;
+
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Submitting…';
+
+    const body = {
+      client_phone:  CLIENT_PHONE,
+      name:          form.name.value.trim(),
+      phone:         phone,
+      address:       form.address.value.trim(),
+      service_type:  form.service_type.value,
+      notes:         form.notes.value.trim(),
+      sms_consent:   true,
+    };
+
+    try {
+      const res = await fetch(`${API_BASE}/book/submit`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify(body),
+      });
+
+      const data = await res.json();
+
+      if (res.ok && data.status === 'ok') {
+        formCard.innerHTML = `
+          <div class="success-card">
+            <div class="success-icon">✅</div>
+            <h2>You're all set!</h2>
+            <p>
+              We received your request and will be in touch shortly to confirm
+              your appointment. You'll get a text from us at the number you
+              provided — keep an eye out.
+            </p>
+            <p style="margin-top:14px; font-size:12px;">
+              Reply STOP to any text to opt out.
+            </p>
+          </div>
+        `;
+      } else {
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Request Service';
+        alert(data.message || 'Something went wrong. Please try again.');
+      }
+    } catch (err) {
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Request Service';
+      alert('Could not connect. Please try again.');
+    }
+  });
+</script>
+</body>
+</html>

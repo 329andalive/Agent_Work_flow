@@ -180,6 +180,84 @@ Owner personality:
 
 
 # ---------------------------------------------------------------------------
+# Consent helpers
+# ---------------------------------------------------------------------------
+
+def _send_optin_request(
+    client_id: str,
+    client_phone: str,
+    customer_phone: str,
+    customer_name: str,
+    job_id: str | None,
+    proposal_id: str | None,
+) -> None:
+    """
+    Send a TCR-compliant opt-in request to a customer who hasn't consented yet.
+    Schedules a pending_consent follow-up so we know to watch for their YES reply.
+    Safe to call multiple times — the pending_consent followup deduplication
+    prevents spamming the customer.
+    """
+    try:
+        supabase = get_supabase()
+
+        # Check if we already have a pending consent followup for this customer
+        cust_row = (
+            supabase.table("customers")
+            .select("id")
+            .eq("client_id", client_id)
+            .eq("customer_phone", customer_phone)
+            .single()
+            .execute()
+        )
+        customer_id = cust_row.data["id"] if cust_row.data else None
+
+        if customer_id:
+            existing = (
+                supabase.table("follow_ups")
+                .select("id")
+                .eq("client_id", client_id)
+                .eq("customer_id", customer_id)
+                .eq("follow_up_type", "pending_consent")
+                .eq("status", "pending")
+                .limit(1)
+                .execute()
+            )
+            if existing.data:
+                print(f"[{_timestamp()}] INFO followup_agent: opt-in already pending for {customer_phone} — skipping")
+                return
+
+        # Look up business name for the message
+        try:
+            biz_row = supabase.table("clients").select("business_name").eq("id", client_id).single().execute()
+            biz_name = biz_row.data.get("business_name", "us") if biz_row.data else "us"
+        except Exception:
+            biz_name = "us"
+
+        msg = (
+            f"Hi {customer_name}, this is {biz_name}. "
+            f"Reply YES to receive text updates about your service request. "
+            f"Msg & data rates may apply. Reply STOP to opt out."
+        )
+        send_sms(to_number=customer_phone, message_body=msg, from_number=client_phone)
+        print(f"[{_timestamp()}] INFO followup_agent: Opt-in request sent to {customer_phone}")
+
+        # Schedule a pending_consent followup to track the pending state
+        if customer_id:
+            from datetime import datetime as _dt, timezone as _tz
+            schedule_followup(
+                client_id=client_id,
+                customer_id=customer_id,
+                job_id=job_id,
+                proposal_id=proposal_id,
+                followup_type="pending_consent",
+                scheduled_for=_dt.now(_tz.utc).isoformat(),
+            )
+
+    except Exception as e:
+        print(f"[{_timestamp()}] ERROR followup_agent: _send_optin_request failed — {e}")
+
+
+# ---------------------------------------------------------------------------
 # Entry point 1: Run scheduled follow-ups (called by cron)
 # ---------------------------------------------------------------------------
 
@@ -233,6 +311,20 @@ def run_scheduled_followups() -> int:
         if proposal_id:
             from execution.db_followups import count_followups_sent_for_proposal
             touch_number = count_followups_sent_for_proposal(proposal_id) + 1
+
+        # --- Consent gate — never send to a customer who hasn't opted in ---
+        from execution.db_consent import check_consent
+        if not check_consent(client_id, customer_phone):
+            print(f"[{_timestamp()}] WARN followup_agent: No consent for {customer_phone} — sending opt-in request")
+            _send_optin_request(
+                client_id=client_id,
+                client_phone=client_phone,
+                customer_phone=customer_phone,
+                customer_name=customer_name,
+                job_id=job_id,
+                proposal_id=proposal_id,
+            )
+            continue
 
         # Generate and send the message
         msg = _generate_followup_message(
