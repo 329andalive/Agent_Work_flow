@@ -85,6 +85,27 @@ def parse_hours(text: str) -> float | None:
     return None
 
 
+def parse_flat_rate(text: str) -> float | None:
+    """
+    Detect when the owner specifies a flat total instead of hours.
+    Patterns: "bill for $275", "charge $275", "invoice for $275", "flat $275"
+    Returns the dollar amount as a float, or None if not found.
+    """
+    patterns = [
+        r'bill\s+(?:her|him|them|for)\s+\$(\d+(?:\.\d+)?)',
+        r'(?:a\s+)?bill\s+for\s+\$(\d+(?:\.\d+)?)',
+        r'charge\s+(?:her|him|them)?\s*\$(\d+(?:\.\d+)?)',
+        r'invoice\s+(?:her|him|them|for)\s+\$(\d+(?:\.\d+)?)',
+        r'flat\s+(?:rate\s+)?\$(\d+(?:\.\d+)?)',
+        r'total\s+(?:is\s+)?\$(\d+(?:\.\d+)?)',
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, text, re.IGNORECASE)
+        if match:
+            return float(match.group(1))
+    return None
+
+
 def parse_materials(text: str) -> tuple[str, float]:
     """
     Extract materials description and cost from the message.
@@ -287,15 +308,21 @@ def run(client_phone: str, customer_phone: str, raw_input: str) -> str | None:
     # Step 3: Parse the raw input
     # ------------------------------------------------------------------
     actual_hours    = parse_hours(raw_input)
+    flat_rate       = parse_flat_rate(raw_input)
     materials_desc, materials_cost = parse_materials(raw_input)
 
-    # If we can't determine hours, ask and bail
-    if actual_hours is None:
+    # If no hours but a flat rate was specified, use it directly — no clarification needed
+    if actual_hours is None and flat_rate is not None:
+        print(f"[{timestamp()}] INFO invoice_agent: Flat rate detected — ${flat_rate} (no hours required)")
+        actual_hours   = 0.0
+        materials_cost = flat_rate   # pass flat rate as the billable amount
+        materials_desc = materials_desc or "services rendered"
+    elif actual_hours is None:
         print(f"[{timestamp()}] INFO invoice_agent: Hours not found — sending clarification request")
         send_sms(to_number=owner_mobile, message_body=HOURS_MISSING_REPLY, from_number=client_phone)
         return None
 
-    print(f"[{timestamp()}] INFO invoice_agent: Parsed → {actual_hours}hrs | materials='{materials_desc}' ${materials_cost}")
+    print(f"[{timestamp()}] INFO invoice_agent: Parsed → {actual_hours}hrs flat_rate=${flat_rate} | materials='{materials_desc}' ${materials_cost}")
 
     # ------------------------------------------------------------------
     # Step 4: Find the customer and their most recent open job
