@@ -90,7 +90,8 @@ def extract_customer_name(text: str) -> str:
         if idx != -1:
             after = text[idx + len(trigger):].strip()
             name = after.split()[0].strip(".,!?").title()
-            if len(name) > 1:
+            # Reject prices ($275), numbers, and single chars — not a name
+            if len(name) > 1 and name[0].isalpha():
                 return name
 
     # Pattern 2 — "FirstName [LastName] needs/wants/has/is ..."

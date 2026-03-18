@@ -80,6 +80,8 @@ ROUTING_TABLE = {
         "all done", "job done", "just finished", "we're done", "just wrapped",
         "wrapped up", "took me", "billed", "bill them", "send invoice",
         "send the invoice", "finished up", "worked", "spent",
+        "send her a bill", "send him a bill", "send them a bill",
+        "a bill for", "bill for", "i pumped", "i ran", "i did",
         "3 hours", "2 hours", "4 hours", "5 hours", "1 hour", "half a day",
     ],
     # Job list agent — viewing the schedule for a date or range
