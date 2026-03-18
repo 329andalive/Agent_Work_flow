@@ -36,6 +36,7 @@ from datetime import datetime, timezone, timedelta, date
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from execution.db_client import get_client_by_phone
+from execution.db_agent_activity import log_activity
 from execution.db_customer import get_customer_by_phone
 from execution.db_jobs import get_jobs_by_client, update_job_completion, update_job_status
 from execution.db_invoices import save_invoice, update_invoice_status
@@ -475,4 +476,15 @@ def run(client_phone: str, customer_phone: str, raw_input: str) -> str | None:
         print(f"[{timestamp()}] WARN invoice_agent: schedule_followup failed — {e}")
 
     print(f"[{timestamp()}] INFO invoice_agent: Complete. job_id={job_id} amount=${final_amount}")
+    try:
+        log_activity(
+            client_phone=client_phone,
+            agent_name="invoice_agent",
+            action_taken="invoice_generated",
+            input_summary=raw_input[:120],
+            output_summary=f"invoice_id={invoice_id} job_id={job_id} amount=${final_amount}",
+            sms_sent=sms_result.get("success", False),
+        )
+    except Exception:
+        pass
     return combined_sms

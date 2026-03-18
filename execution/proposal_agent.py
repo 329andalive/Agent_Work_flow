@@ -28,6 +28,7 @@ from datetime import datetime, timezone, timedelta
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from execution.db_client import get_client_by_phone
+from execution.db_agent_activity import log_activity
 from execution.db_customer import get_customer_by_phone, create_customer
 from execution.db_jobs import create_job, update_job_status
 from execution.db_proposals import save_proposal, update_proposal_status
@@ -391,4 +392,15 @@ def run(client_phone: str, customer_phone: str, raw_input: str) -> str | None:
         print(f"[{timestamp()}] WARN proposal_agent: Status update failed — {e}")
 
     print(f"[{timestamp()}] INFO proposal_agent: Complete. job_id={job_id}")
+    try:
+        log_activity(
+            client_phone=client_phone,
+            agent_name="proposal_agent",
+            action_taken="proposal_generated",
+            input_summary=raw_input[:120],
+            output_summary=f"proposal_id={proposal_id} job_id={job_id} amount=${amount}",
+            sms_sent=sms_result.get("success", False),
+        )
+    except Exception:
+        pass
     return proposal_text

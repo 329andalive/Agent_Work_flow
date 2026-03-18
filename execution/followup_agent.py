@@ -54,6 +54,7 @@ from execution.db_jobs import update_job_status, get_job
 from execution.call_claude import call_claude
 from execution.sms_send import send_sms
 from execution.response_detector import extract_loss_reason
+from execution.db_agent_activity import log_activity
 
 
 def _timestamp():
@@ -257,6 +258,17 @@ def run_scheduled_followups() -> int:
     # --- Check for cold proposals ---
     _process_cold_proposals()
 
+    try:
+        log_activity(
+            client_phone="cron",
+            agent_name="followup_agent",
+            action_taken="scheduled_followups_run",
+            input_summary=f"{len(due)} due followups checked",
+            output_summary=f"{count} followups sent",
+            sms_sent=count > 0,
+        )
+    except Exception:
+        pass
     return count
 
 
@@ -415,6 +427,12 @@ def handle_proposal_response(
         send_sms(to_number=client_phone, message_body=owner_msg, from_number=client_phone)
 
         print(f"[{_timestamp()}] INFO followup_agent: Proposal {proposal_id} ACCEPTED by {customer_name}")
+        try:
+            log_activity(client_phone=client_phone, agent_name="followup_agent",
+                action_taken="proposal_accepted", input_summary=f"customer={customer_name}",
+                output_summary=f"proposal_id={proposal_id} amount=${amount}", sms_sent=True)
+        except Exception:
+            pass
 
     elif response_type == "declined":
         # Update proposal
@@ -453,6 +471,12 @@ def handle_proposal_response(
         update_monthly_outcomes(client_id)
 
         print(f"[{_timestamp()}] INFO followup_agent: Proposal {proposal_id} DECLINED by {customer_name}")
+        try:
+            log_activity(client_phone=client_phone, agent_name="followup_agent",
+                action_taken="proposal_declined", input_summary=f"customer={customer_name}",
+                output_summary=f"proposal_id={proposal_id} amount=${amount}", sms_sent=True)
+        except Exception:
+            pass
 
 
 # ---------------------------------------------------------------------------
@@ -550,6 +574,12 @@ def handle_lost_report(
 
     update_monthly_outcomes(client_id)
     print(f"[{_timestamp()}] INFO followup_agent: Lost report handled — proposal {proposal_id} marked declined")
+    try:
+        log_activity(client_phone=client_phone, agent_name="followup_agent",
+            action_taken="lost_report_handled", input_summary=f"owner={owner_phone}",
+            output_summary=f"proposal_id={proposal_id} customer={customer_name}", sms_sent=True)
+    except Exception:
+        pass
 
 
 # ---------------------------------------------------------------------------
@@ -624,3 +654,9 @@ def handle_loss_reason(
     send_sms(to_number=customer_phone, message_body=confirm_msg, from_number=client_phone)
 
     print(f"[{_timestamp()}] INFO followup_agent: Loss reason recorded: {reason_code} for proposal {proposal_id}")
+    try:
+        log_activity(client_phone=client_phone, agent_name="followup_agent",
+            action_taken="loss_reason_recorded", input_summary=raw_input[:120],
+            output_summary=f"reason={reason_code} proposal_id={proposal_id}", sms_sent=True)
+    except Exception:
+        pass

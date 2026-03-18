@@ -32,6 +32,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from execution.db_connection import get_client as get_supabase
 from execution.db_messages import log_message
 from execution.sms_send import send_sms
+from execution.db_agent_activity import log_activity
 
 
 DEFAULT_TIMEZONE = "America/New_York"
@@ -406,6 +407,12 @@ def handle_clock(
             print(f"[{timestamp()}] WARN clock_agent: log_message failed — {e}")
 
         print(f"[{timestamp()}] INFO clock_agent: Complete. clock_in entry={entry_id}")
+        try:
+            log_activity(client_phone=client_phone, agent_name="clock_agent",
+                action_taken="clock_in", input_summary=raw_input[:120],
+                output_summary=f"entry_id={entry_id} job={job_label or 'none'}", sms_sent=True)
+        except Exception:
+            pass
         return "clock_in"
 
     # ==================================================================
@@ -514,4 +521,10 @@ def handle_clock(
         f"[{timestamp()}] INFO clock_agent: Complete. "
         f"clock_out entry={open_entry['id']} duration={duration_minutes}min"
     )
+    try:
+        log_activity(client_phone=client_phone, agent_name="clock_agent",
+            action_taken="clock_out", input_summary=raw_input[:120],
+            output_summary=f"entry_id={open_entry['id']} duration={duration_minutes}min", sms_sent=True)
+    except Exception:
+        pass
     return "clock_out"

@@ -26,12 +26,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from flask import Flask, request, jsonify, send_from_directory
 from datetime import datetime
 from execution.sms_router import route_message
-
-# ---------------------------------------------------------------------------
-# Deduplication — prevent double-processing when Telnyx retries a webhook
-# ---------------------------------------------------------------------------
-_processed_ids: set = set()
-_processed_lock = threading.Lock()
+from execution.db_webhook_log import is_duplicate, save_webhook, mark_processed, mark_error
 
 app = Flask(__name__)
 
@@ -79,28 +74,19 @@ def parse_telnyx_payload(payload: dict) -> dict | None:
         return None
 
 
-def _process_in_background(sms_data: dict):
+def _process_in_background(sms_data: dict, log_id: str | None):
     """
     Run the agent in a background thread so the webhook can return 200
-    immediately. Deduplicates by message_id so Telnyx retries don't
-    fire the agent twice.
+    immediately. Marks the webhook_log row processed or error on completion.
+    Deduplication is handled upstream in inbound_webhook() via webhook_log.
     """
-    msg_id = sms_data["message_id"]
-
-    with _processed_lock:
-        if msg_id in _processed_ids:
-            print(f"[{timestamp()}] INFO sms_receive: Duplicate message_id={msg_id} — skipping")
-            return
-        _processed_ids.add(msg_id)
-        # Keep the set from growing forever — trim when it gets large
-        if len(_processed_ids) > 1000:
-            _processed_ids.clear()
-
     try:
         agent = route_message(sms_data)
         print(f"[{timestamp()}] INFO sms_receive: Message dispatched → {agent}")
+        mark_processed(log_id)
     except Exception as e:
         print(f"[{timestamp()}] ERROR sms_receive: route_message raised — {e}")
+        mark_error(log_id, str(e))
 
 
 @app.route("/webhook/inbound", methods=["POST"])
@@ -110,6 +96,14 @@ def inbound_webhook():
 
     Returns 200 immediately so Telnyx doesn't retry.
     All agent work runs in a background thread.
+
+    Order of operations (CLAUDE.md Rule #5 — raw payload saved first):
+        1. Parse JSON
+        2. Early-extract message_id for dedup check
+        3. Check webhook_log for duplicate — return 200 early if found
+        4. Save raw payload to webhook_log (before any processing)
+        5. Parse event type — ignore non-SMS events
+        6. Dispatch to background thread
     """
     print(f"[{timestamp()}] INFO sms_receive: Webhook hit — POST /webhook/inbound")
 
@@ -124,12 +118,30 @@ def inbound_webhook():
         print(f"[{timestamp()}] ERROR sms_receive: Failed to read request body — {e}")
         return jsonify({"status": "error"}), 200  # still 200 to stop retries
 
-    # Step 2: Extract the fields we need
+    # Step 2: Early-extract message_id before saving payload.
+    # Telnyx puts it at data.payload.id for inbound events.
+    try:
+        early_msg_id = payload.get("data", {}).get("payload", {}).get("id")
+    except Exception:
+        early_msg_id = None
+
+    # Step 3: Dedup check — if we've seen this message_id before, Telnyx is
+    # retrying. Return 200 immediately so it stops retrying.
+    if early_msg_id and is_duplicate(early_msg_id):
+        print(f"[{timestamp()}] INFO sms_receive: Duplicate message_id={early_msg_id} — returning 200 early")
+        return jsonify({"status": "duplicate"}), 200
+
+    # Step 4: Save raw payload FIRST (CLAUDE.md Rule #5).
+    # Raw data must survive even if downstream processing fails.
+    log_id = save_webhook(payload, early_msg_id)
+
+    # Step 5: Parse the Telnyx event — skip delivery receipts, sent events, etc.
     sms_data = parse_telnyx_payload(payload)
     if sms_data is None:
+        mark_processed(log_id)   # non-SMS event — logged and done
         return jsonify({"status": "ignored"}), 200
 
-    # Step 3: Log the inbound message
+    # Step 6: Log the inbound SMS details
     print(
         f"[{timestamp()}] INBOUND SMS | "
         f"id={sms_data['message_id']} | "
@@ -138,8 +150,8 @@ def inbound_webhook():
         f"body='{sms_data['body'][:80]}'"
     )
 
-    # Step 4: Spin up a background thread — return 200 immediately
-    thread = threading.Thread(target=_process_in_background, args=(sms_data,))
+    # Step 7: Spin up a background thread — return 200 immediately
+    thread = threading.Thread(target=_process_in_background, args=(sms_data, log_id))
     thread.daemon = True
     thread.start()
 

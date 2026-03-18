@@ -33,6 +33,7 @@ from execution.db_connection import get_client as get_supabase
 from execution.db_jobs import create_job, update_job_status
 from execution.db_messages import log_message
 from execution.sms_send import send_sms
+from execution.db_agent_activity import log_activity
 
 
 def timestamp():
@@ -451,4 +452,15 @@ def handle_scheduling(
         f"[{timestamp()}] INFO scheduling_agent: Complete. "
         f"job_id={job_id} schedule_id={schedule_id}"
     )
+    try:
+        log_activity(
+            client_phone=client_phone,
+            agent_name="scheduling_agent",
+            action_taken="job_scheduled",
+            input_summary=raw_input[:120],
+            output_summary=f"job_id={job_id} schedule_id={schedule_id} date={sched_date}",
+            sms_sent=sms_result.get("success", False),
+        )
+    except Exception:
+        pass
     return "ok"

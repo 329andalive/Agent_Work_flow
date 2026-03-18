@@ -15,6 +15,7 @@ from datetime import datetime
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from execution.db_lost_jobs import update_monthly_outcomes as _update_monthly_outcomes, get_monthly_outcomes
+from execution.db_agent_activity import log_activity
 
 
 def get_closing_rate_summary(client_id: str, months: int = 1) -> str:
@@ -61,6 +62,17 @@ def get_closing_rate_summary(client_id: str, months: int = 1) -> str:
     if len(summary) > 295:
         summary = summary[:292] + "..."
 
+    try:
+        log_activity(
+            client_phone=client_id,   # no phone in scope — store client_id
+            agent_name="reporting_agent",
+            action_taken="monthly_report_generated",
+            input_summary=month,
+            output_summary=summary[:120],
+            sms_sent=False,
+        )
+    except Exception:
+        pass
     return summary
 
 

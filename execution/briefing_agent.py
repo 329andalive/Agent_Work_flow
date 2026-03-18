@@ -29,6 +29,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from execution.db_connection import get_client as get_supabase
 from execution.sms_send import send_sms
+from execution.db_agent_activity import log_activity
 
 
 def timestamp():
@@ -328,4 +329,15 @@ def send_morning_briefing(client: dict) -> str:
     # ------------------------------------------------------------------
     summary = f"Sent to {sent_count} recipients for {business_name}"
     print(f"[{timestamp()}] INFO briefing_agent: Complete. {summary}")
+    try:
+        log_activity(
+            client_phone=client_phone,
+            agent_name="briefing_agent",
+            action_taken="briefing_sent",
+            input_summary=today_iso,
+            output_summary=summary,
+            sms_sent=sent_count > 0,
+        )
+    except Exception:
+        pass
     return summary

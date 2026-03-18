@@ -28,6 +28,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from execution.call_claude import call_claude
 from execution.db_connection import get_client as get_supabase
 from execution.sms_send import send_sms
+from execution.db_agent_activity import log_activity
 
 
 DEFAULT_TIMEZONE   = "America/New_York"
@@ -374,6 +375,17 @@ def check_noshows(client: dict) -> str:
         else f"No no-shows detected for {business_name}"
     )
     print(f"[{timestamp()}] INFO noshow_agent: Complete. {summary}")
+    try:
+        log_activity(
+            client_phone=client.get("phone", ""),
+            agent_name="noshow_agent",
+            action_taken="noshow_check",
+            input_summary=today_iso,
+            output_summary=summary,
+            sms_sent=alerts_fired > 0,
+        )
+    except Exception:
+        pass
     return summary
 
 
@@ -603,6 +615,12 @@ def handle_noshow_response(
         _set_schedule_status(schedule_id, "scheduled")
 
         print(f"[{timestamp()}] INFO noshow_agent: Complete. on_it response processed.")
+        try:
+            log_activity(client_phone=client_phone, agent_name="noshow_agent",
+                action_taken="noshow_on_it", input_summary=raw_input[:120],
+                output_summary=f"alert_id={alert_id} customer_notified={bool(cust_phone)}", sms_sent=True)
+        except Exception:
+            pass
         return "on_it"
 
     # ==================================================================
@@ -648,4 +666,10 @@ def handle_noshow_response(
     _resolve_alert(alert_id, "reassign", now_utc)
 
     print(f"[{timestamp()}] INFO noshow_agent: Complete. reassign response processed.")
+    try:
+        log_activity(client_phone=client_phone, agent_name="noshow_agent",
+            action_taken="noshow_reassign", input_summary=raw_input[:120],
+            output_summary=f"alert_id={alert_id} customer_notified={bool(cust_phone)}", sms_sent=True)
+    except Exception:
+        pass
     return "reassign"

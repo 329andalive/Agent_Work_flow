@@ -30,6 +30,7 @@ from execution.call_claude import call_claude
 from execution.db_connection import get_client as get_supabase
 from execution.db_messages import log_message
 from execution.sms_send import send_sms
+from execution.db_agent_activity import log_activity
 
 
 def timestamp():
@@ -336,4 +337,15 @@ def handle_job_list(
 
     status = "no_jobs" if not rows else "ok"
     print(f"[{timestamp()}] INFO job_list_agent: Complete. jobs_returned={len(rows)} status={status}")
+    try:
+        log_activity(
+            client_phone=client_phone,
+            agent_name="job_list_agent",
+            action_taken="job_list_queried",
+            input_summary=raw_input[:120],
+            output_summary=f"{len(rows)} jobs {date_from} to {date_to}",
+            sms_sent=sms_result.get("success", False),
+        )
+    except Exception:
+        pass
     return status
