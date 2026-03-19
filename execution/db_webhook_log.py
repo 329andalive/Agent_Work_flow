@@ -15,6 +15,8 @@ Required Supabase table (run once in SQL editor):
       received_at timestamptz DEFAULT now(),
       raw_payload jsonb        NOT NULL,
       message_id  text,
+      event_type  text,
+      tenant_id   text,
       processed   boolean      NOT NULL DEFAULT false,
       error       text
   );
@@ -22,6 +24,10 @@ Required Supabase table (run once in SQL editor):
   CREATE INDEX IF NOT EXISTS idx_webhook_log_message_id
       ON webhook_log (message_id)
       WHERE message_id IS NOT NULL;
+
+  -- Run these if upgrading an existing webhook_log table:
+  ALTER TABLE webhook_log ADD COLUMN IF NOT EXISTS event_type text;
+  ALTER TABLE webhook_log ADD COLUMN IF NOT EXISTS tenant_id  text;
 """
 
 import os
@@ -66,15 +72,21 @@ def is_duplicate(message_id: str) -> bool:
         return False
 
 
-def save_webhook(raw_payload: dict, message_id: str | None) -> str | None:
+def save_webhook(
+    raw_payload: dict,
+    message_id: str | None,
+    event_type: str | None = None,
+    tenant_id: str | None = None,
+) -> str | None:
     """
     Persist the raw Telnyx JSON payload to webhook_log.
     Must be called BEFORE any other processing.
 
     Args:
         raw_payload: The full JSON dict received from Telnyx
-        message_id:  Telnyx message ID extracted from the payload (may be None
-                     for non-SMS events like message.sent / message.finalized)
+        message_id:  Telnyx message ID (may be None for non-SMS events)
+        event_type:  Telnyx event type string (e.g. 'message.received')
+        tenant_id:   Client UUID — identifies which tenant this payload belongs to
 
     Returns:
         The new log record's UUID string, or None on failure.
@@ -84,9 +96,13 @@ def save_webhook(raw_payload: dict, message_id: str | None) -> str | None:
         row = {"raw_payload": raw_payload}
         if message_id:
             row["message_id"] = message_id
+        if event_type:
+            row["event_type"] = event_type
+        if tenant_id:
+            row["tenant_id"] = tenant_id
         result = supabase.table("webhook_log").insert(row).execute()
         log_id = (result.data or [{}])[0].get("id")
-        print(f"[{_ts()}] INFO db_webhook_log: Saved raw payload log_id={log_id} message_id={message_id}")
+        print(f"[{_ts()}] INFO db_webhook_log: Saved log_id={log_id} event={event_type} tenant={tenant_id}")
         return log_id
     except Exception as e:
         print(f"[{_ts()}] ERROR db_webhook_log: save_webhook failed — {e}")

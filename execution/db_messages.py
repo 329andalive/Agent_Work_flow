@@ -71,6 +71,37 @@ def log_message(
         return None
 
 
+def update_message_status(telnyx_message_id: str, delivery_status: str) -> bool:
+    """
+    Update the delivery_status of an outbound message when Telnyx sends
+    a status event (message.sent, message.delivered, message.failed).
+
+    Args:
+        telnyx_message_id: Telnyx's message ID (stored at send time)
+        delivery_status:   New status string ('sent', 'delivered', 'failed', 'finalized')
+
+    Returns:
+        True on success, False if no row found or on DB error.
+    """
+    try:
+        supabase = get_client()
+        result = (
+            supabase.table("messages")
+            .update({"delivery_status": delivery_status})
+            .eq("telnyx_message_id", telnyx_message_id)
+            .execute()
+        )
+        updated = len(result.data or [])
+        if updated:
+            print(f"[{timestamp()}] INFO db_messages: Updated delivery_status={delivery_status} for telnyx_id={telnyx_message_id}")
+        else:
+            print(f"[{timestamp()}] WARN db_messages: No message row for telnyx_id={telnyx_message_id}")
+        return updated > 0
+    except Exception as e:
+        print(f"[{timestamp()}] ERROR db_messages: update_message_status failed — {e}")
+        return False
+
+
 def get_conversation_history(
     client_id: str,
     customer_phone: str,

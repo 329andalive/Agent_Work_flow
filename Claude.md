@@ -155,6 +155,18 @@ They are the institutional memory of this system.
 4. Update the directive
 5. System is now stronger
 
+**5. Webhook payload rule — non-negotiable**
+Save the raw inbound webhook payload to the database 
+BEFORE any processing begins. This is the first line 
+of every webhook handler, no exceptions. If downstream 
+processing fails, the raw data must still exist for 
+recovery and debugging.
+
+**6. Multi-tenancy is sacred**
+Every single database query must filter by client_phone 
+or tenant identifier. No exceptions. Never return data 
+from one client to another. When in doubt, add the filter.
+
 ---
 
 ## Claude API Call Structure
@@ -189,6 +201,35 @@ Input: {raw_user_input}
 
 ## Supabase Schema
 
+**The cards/needs_attention table**
+```
+needs_attention table
+id                uuid (auto)
+client_phone      text
+card_type         text  
+priority          text (low, medium, high)
+related_record    text (job_id, customer_id, message_id)
+raw_context       text
+claude_suggestion text
+status            text (open, resolved, dismissed)
+created_at        timestamp (auto)
+resolved_by       text
+resolved_at       timestamp
+```
+
+**The agent_activity log table**
+```
+agent_activity table
+id            uuid (auto)
+client_phone  text
+agent_name    text
+action_taken  text
+input_summary text
+output_summary text
+sms_sent      boolean
+created_at    timestamp (auto)
+```
+
 **clients table**
 ```
 id            uuid (auto)
@@ -197,6 +238,18 @@ owner_name    text
 phone         text (used as lookup key)
 personality   text (full personality layer doc)
 created_at    timestamp (auto)
+```
+**The customers table**
+```
+customers table
+id              uuid (auto)
+client_phone    text (which trade business they belong to)
+customer_phone  text
+customer_name   text
+address         text
+notes           text
+last_contact    timestamp
+created_at      timestamp (auto)
 ```
 
 **jobs table**
@@ -232,3 +285,24 @@ Test client record: create a record in Supabase for your own number
 - Never send SMS to real customers during testing
 - Never skip loading the Personality Layer — ever
 - Never make the output sound generic — that defeats the purpose
+
+## Current Build Status
+Phase 1 — In Progress
+
+Working:
+- Inbound SMS webhook routing
+- Role-based permissions (owner, foreman, field_tech, office)
+- Proposal generation via Claude → styled HTML → SMS link
+- Proposal follow-up tracking (accepted/declined/lost)
+- Clock in/out stub
+- Scheduling agent (SMS parse → job + schedule → confirm)
+- Job list query by day
+
+Pending:
+- 10DLC registration (SMS sending blocked until approved)
+- GUI dashboard (not started)
+- needs_attention card system (not started)
+- Customer matching logic (not started)
+
+Do not suggest features beyond Phase 1 and Phase 2 
+until explicitly asked.
