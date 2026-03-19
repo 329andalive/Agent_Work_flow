@@ -433,29 +433,55 @@ def run(client_phone: str, customer_phone: str, raw_input: str) -> str | None:
         update_invoice_status(invoice_id, "sent")
 
     # ------------------------------------------------------------------
-    # Step 8: Run job cost agent → get private margin summary
+    # Step 8: Generate a signed token URL for the invoice.
+    # The HTML is rendered server-side via Flask /i/<token> route.
+    # ------------------------------------------------------------------
+    from execution.token_generator import generate_token
+
+    base_url = os.environ.get("BOLTS11_BASE_URL", "https://bolts11.com")
+    token = generate_token(job_id=job_id, client_phone=client_phone, link_type="invoice")
+
+    if token:
+        invoice_url = f"{base_url}/i/{token}"
+        print(f"[{timestamp()}] INFO invoice_agent: Invoice link → {invoice_url}")
+    else:
+        invoice_url = None
+        print(f"[{timestamp()}] WARN invoice_agent: Token generation failed — sending raw text only")
+
+    # ------------------------------------------------------------------
+    # Step 9: Run job cost agent → get private margin summary
     # ------------------------------------------------------------------
     cost_summary = calculate_job_cost(job_id=job_id, client_id=client_id)
     print(f"[{timestamp()}] INFO invoice_agent: Job cost summary → {cost_summary}")
 
     # ------------------------------------------------------------------
-    # Step 9: Build the combined owner SMS
+    # Step 10: Build the combined owner SMS
     #
     # FORMAT:
-    #   [INVOICE TEXT]
+    #   Invoice for [Customer] — forward this link:
+    #   [INVOICE URL]
     #
     #   JOB COST SUMMARY
     #   [COST SUMMARY LINE]
     #
-    # The INVOICE portion is what the owner forwards to the customer.
+    # The INVOICE URL is what the owner forwards to the customer.
     # The JOB COST SUMMARY is private — never goes to the customer.
     # ------------------------------------------------------------------
-    combined_sms = (
-        f"{invoice_text}\n\n"
-        f"---\n"
-        f"JOB COST (owner only)\n"
-        f"{cost_summary}"
-    )
+    if invoice_url:
+        combined_sms = (
+            f"Invoice for {customer_name} — forward this link:\n"
+            f"{invoice_url}\n\n"
+            f"---\n"
+            f"JOB COST (owner only)\n"
+            f"{cost_summary}"
+        )
+    else:
+        combined_sms = (
+            f"{invoice_text}\n\n"
+            f"---\n"
+            f"JOB COST (owner only)\n"
+            f"{cost_summary}"
+        )
 
     # ------------------------------------------------------------------
     # Step 10: Send combined SMS to the OWNER'S Telnyx number

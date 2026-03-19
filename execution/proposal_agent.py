@@ -320,23 +320,20 @@ def run(client_phone: str, customer_phone: str, raw_input: str) -> str | None:
         proposal_id = None
 
     # ------------------------------------------------------------------
-    # Step 8: Build HTML, upload to Supabase Storage, text link to owner's mobile.
-    # Fallback: send raw text if upload fails.
+    # Step 8: Generate a signed token URL for the proposal.
+    # The HTML is rendered server-side via Flask /p/<token> route.
+    # Fallback: send raw text if token generation fails.
     # ------------------------------------------------------------------
-    from execution.proposal_html import build_proposal_html
-    from execution.proposal_storage import upload_proposal_html
+    from execution.token_generator import generate_token
 
-    html = build_proposal_html(
-        proposal_text=proposal_text,
-        customer_name=customer_name,
-        business_name=client["business_name"],
-        owner_name=client.get("owner_name", "Jeremy"),
-    )
-    proposal_url = upload_proposal_html(html, customer_name)
+    base_url = os.environ.get("BOLTS11_BASE_URL", "https://bolts11.com")
+    token = generate_token(job_id=job_id, client_phone=client_phone, link_type="proposal")
 
-    if proposal_url:
+    if token:
+        proposal_url = f"{base_url}/p/{token}"
         sms_body = f"New proposal for {customer_name} — review and forward: {proposal_url}"
     else:
+        print(f"[{timestamp()}] WARN proposal_agent: Token generation failed — sending raw text fallback")
         sms_body = f"New proposal for {customer_name}:\n\n{proposal_text}"
 
     print(f"[{timestamp()}] INFO proposal_agent: Sending proposal link via SMS to {owner_mobile}")

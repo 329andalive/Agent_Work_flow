@@ -93,9 +93,10 @@ Each agent has a directive in `directives/agents/{agent_name}.md`
 ├── CLAUDE.md                          # This file
 ├── .env                               # All API keys — never commit
 ├── execution/                         # Python scripts (deterministic)
-│   ├── sms_receive.py                 # Inbound SMS webhook handler
+│   ├── sms_receive.py                 # Inbound SMS webhook handler + Flask routes
 │   ├── sms_send.py                    # Outbound SMS via Telnyx
 │   ├── call_claude.py                 # Claude API wrapper
+│   ├── token_generator.py             # Signed token URLs for proposals/invoices
 │   ├── db_get_client.py               # Fetch client from Supabase
 │   ├── db_save_job.py                 # Save job record to Supabase
 │   └── load_personality.py            # Load client personality doc
@@ -111,6 +112,10 @@ Each agent has a directive in `directives/agents/{agent_name}.md`
 │   └── clients/                       # One folder per client
 │       └── {client_phone}/
 │           └── personality.md         # The master context document
+├── templates/                         # Jinja2 HTML templates
+│   ├── proposal.html                  # Mobile-first proposal view
+│   ├── invoice.html                   # Mobile-first invoice view (PAY NOW)
+│   └── error.html                     # Branded error/expired pages
 ├── .tmp/                              # Temp files — never commit
 └── tests/                             # Test scripts
 ```
@@ -124,10 +129,33 @@ TELNYX_API_KEY=
 TELNYX_PHONE_NUMBER=+12074190986
 SUPABASE_URL=https://wczzlvhpryufohjwmxwd.supabase.co
 SUPABASE_SERVICE_KEY=
+BOLTS11_BASE_URL=https://bolts11.com
 ```
 
-Never hardcode credentials. Always load from `.env` using 
+Never hardcode credentials. Always load from `.env` using
 `python-dotenv`. Never commit `.env` to git.
+
+---
+
+## Routes (Flask — sms_receive.py)
+
+```
+POST /webhooks/telnyx          — Primary Telnyx inbound webhook (Ed25519 verified)
+POST /webhooks/telnyx/failover — Telnyx failover webhook
+POST /webhook/inbound          — Legacy inbound webhook (deprecated)
+POST /book/submit              — Customer booking form submission
+GET  /p/<token>                — Serve proposal via signed token (72hr expiry)
+GET  /i/<token>                — Serve invoice via signed token (72hr expiry)
+GET  /dashboard/               — Dispatch board
+GET  /dashboard/office.html    — Office dashboard
+GET  /book                     — Customer booking form
+GET  /health                   — Health check
+```
+
+Token routes (`/p/` and `/i/`) handle:
+- Invalid tokens → branded error page
+- Expired tokens → branded expiry page with contact link
+- Valid tokens → update viewed_at, render Jinja2 template, log to agent_activity
 
 ---
 
@@ -260,6 +288,20 @@ agent_used    text
 raw_input     text
 output        text
 created_at    timestamp (auto)
+```
+
+**invoice_links table (signed token URLs)**
+```
+invoice_links table
+id            uuid PRIMARY KEY DEFAULT gen_random_uuid()
+token         text UNIQUE NOT NULL (8 char alphanumeric)
+job_id        text
+client_phone  text
+type          text (proposal or invoice)
+created_at    timestamptz DEFAULT now()
+expires_at    timestamptz NOT NULL (72 hours from creation)
+viewed_at     timestamptz
+expired       boolean DEFAULT false
 ```
 
 ---
