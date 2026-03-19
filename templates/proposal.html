@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Proposal from {{ business_name }}</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, 'Segoe UI', Roboto, Georgia, serif;
+      background: #f5f5f0;
+      color: #1a1a1a;
+      padding: 1rem;
+      min-height: 100vh;
+    }
+    .card {
+      max-width: 600px;
+      margin: 0 auto;
+      background: #fff;
+      border-radius: 10px;
+      box-shadow: 0 2px 16px rgba(0,0,0,0.08);
+      overflow: hidden;
+    }
+    .header {
+      background: #1a3a2a;
+      color: #fff;
+      padding: 1.5rem;
+    }
+    .header h1 {
+      font-size: 1.3rem;
+      font-weight: 600;
+      letter-spacing: 0.01em;
+    }
+    .header .logo-placeholder {
+      width: 48px;
+      height: 48px;
+      background: rgba(255,255,255,0.15);
+      border-radius: 8px;
+      margin-bottom: 0.75rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.4rem;
+    }
+    .header .meta {
+      margin-top: 0.5rem;
+      font-size: 0.85rem;
+      opacity: 0.8;
+    }
+    .body {
+      padding: 1.5rem;
+      line-height: 1.7;
+      font-size: 0.95rem;
+    }
+    .customer-info {
+      background: #f8f7f4;
+      border-radius: 8px;
+      padding: 1rem 1.25rem;
+      margin-bottom: 1.25rem;
+      border-left: 3px solid #1a3a2a;
+    }
+    .customer-info p {
+      margin-bottom: 0.3rem;
+      font-size: 0.9rem;
+    }
+    .customer-info strong {
+      color: #1a3a2a;
+    }
+    .proposal-text p {
+      margin-bottom: 0.9rem;
+    }
+    .pricing {
+      background: #f8f7f4;
+      border-radius: 8px;
+      padding: 1.25rem;
+      margin: 1.25rem 0;
+    }
+    .pricing h3 {
+      font-size: 0.95rem;
+      color: #1a3a2a;
+      margin-bottom: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .pricing .line-item {
+      display: flex;
+      justify-content: space-between;
+      padding: 0.4rem 0;
+      font-size: 0.9rem;
+      border-bottom: 1px solid #e8e6e1;
+    }
+    .pricing .line-item:last-child {
+      border-bottom: none;
+    }
+    .pricing .total {
+      display: flex;
+      justify-content: space-between;
+      padding: 0.6rem 0 0;
+      margin-top: 0.5rem;
+      border-top: 2px solid #1a3a2a;
+      font-weight: 700;
+      font-size: 1.05rem;
+    }
+    .validity {
+      font-size: 0.85rem;
+      color: #666;
+      margin: 1rem 0;
+      padding: 0.75rem;
+      background: #fffbf0;
+      border-radius: 6px;
+      border: 1px solid #f0e6cc;
+    }
+    .actions {
+      display: flex;
+      gap: 0.75rem;
+      margin-top: 1.5rem;
+      padding: 0 0 0.5rem;
+    }
+    .btn {
+      flex: 1;
+      display: block;
+      text-align: center;
+      padding: 0.9rem 1rem;
+      border-radius: 8px;
+      font-size: 1rem;
+      font-weight: 600;
+      text-decoration: none;
+      cursor: pointer;
+      border: none;
+      transition: opacity 0.2s;
+    }
+    .btn:active { opacity: 0.85; }
+    .btn-accept {
+      background: #1a3a2a;
+      color: #fff;
+    }
+    .btn-decline {
+      background: #e8e6e1;
+      color: #333;
+    }
+    .footer {
+      background: #f0ede8;
+      padding: 0.75rem 1.5rem;
+      font-size: 0.75rem;
+      color: #999;
+      text-align: center;
+      border-top: 1px solid #e0ddd8;
+    }
+    .footer a { color: #999; text-decoration: none; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="header">
+      <div class="logo-placeholder">{{ business_name[0] if business_name else 'B' }}</div>
+      <h1>{{ business_name }}</h1>
+      <div class="meta">Proposal for {{ customer_name }} &middot; {{ date }}</div>
+    </div>
+    <div class="body">
+      {% if customer_name or customer_address %}
+      <div class="customer-info">
+        {% if customer_name %}<p><strong>Customer:</strong> {{ customer_name }}</p>{% endif %}
+        {% if customer_address %}<p><strong>Location:</strong> {{ customer_address }}</p>{% endif %}
+      </div>
+      {% endif %}
+
+      <div class="proposal-text">
+        {% for line in proposal_lines %}
+          {% if line.strip() %}
+            <p>{{ line }}</p>
+          {% endif %}
+        {% endfor %}
+      </div>
+
+      {% if line_items %}
+      <div class="pricing">
+        <h3>Pricing</h3>
+        {% for item in line_items %}
+        <div class="line-item">
+          <span>{{ item.description }}</span>
+          <span>{{ item.amount }}</span>
+        </div>
+        {% endfor %}
+        {% if total %}
+        <div class="total">
+          <span>Estimated Total</span>
+          <span>{{ total }}</span>
+        </div>
+        {% endif %}
+      </div>
+      {% endif %}
+
+      <div class="validity">
+        This proposal is valid for 30 days from {{ date }}.
+      </div>
+
+      <div class="actions">
+        <a href="sms:{{ client_phone }}?body=ACCEPT%20{{ token }}" class="btn btn-accept">Accept Proposal</a>
+        <a href="sms:{{ client_phone }}?body=DECLINE%20{{ token }}" class="btn btn-decline">Decline</a>
+      </div>
+    </div>
+    <div class="footer">
+      Powered by <a href="https://bolts11.com">Bolts11</a>
+    </div>
+  </div>
+</body>
+</html>
