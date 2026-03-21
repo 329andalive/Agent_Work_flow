@@ -241,9 +241,17 @@
 </div>
 
 <script>
-  // ── Config — swap CLIENT_PHONE for the real Telnyx number ──
-  const API_BASE    = 'https://web-production-043dc.up.railway.app';
-  const CLIENT_PHONE = '+12074190986';   // TODO: replace per client
+  // ── Config (loaded dynamically) ──
+  const API_BASE     = window.location.origin;
+  let   CLIENT_PHONE = '';
+
+  (async function loadConfig() {
+    try {
+      const res = await fetch(API_BASE + '/api/client/config');
+      const cfg = await res.json();
+      if (cfg.success) CLIENT_PHONE = cfg.client_phone || '';
+    } catch(e) { console.warn('Config load failed:', e); }
+  })();
 
   const form       = document.getElementById('book-form');
   const submitBtn  = document.getElementById('submit-btn');

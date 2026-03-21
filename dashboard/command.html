@@ -1,0 +1,904 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Command Center — Bolts11</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700&family=Barlow:wght@400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    /* ── Variables ──────────────────────────────────────────────────── */
+    :root {
+      --bg-page:      #0d0f14;
+      --bg-surface:   #141720;
+      --bg-raised:    #1c2030;
+      --bg-input:     #1c2030;
+      --border:       rgba(255,255,255,0.07);
+      --border-hover: rgba(255,255,255,0.12);
+      --text-primary: #e2e8f0;
+      --text-muted:   #64748b;
+      --text-dim:     #475569;
+      --blue:         #3b82f6;
+      --blue-dim:     rgba(59,130,246,0.15);
+      --green:        #22c55e;
+      --green-dim:    rgba(34,197,94,0.15);
+      --amber:        #f59e0b;
+      --amber-dim:    rgba(245,158,11,0.15);
+      --red:          #ef4444;
+      --red-dim:      rgba(239,68,68,0.15);
+      --purple:       #a855f7;
+      --teal:         #14b8a6;
+    }
+
+    /* ── Reset ──────────────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; overflow: hidden; }
+    body {
+      font-family: 'Barlow', sans-serif;
+      background: var(--bg-page);
+      color: var(--text-primary);
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── Header ─────────────────────────────────────────────────────── */
+    #header {
+      height: 48px;
+      flex-shrink: 0;
+      background: var(--bg-surface);
+      border-bottom: 0.5px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 20px;
+    }
+    .header-left { display: flex; align-items: center; gap: 16px; }
+    .brand {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 20px; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.03em;
+    }
+    .brand-sub {
+      font-family: 'DM Mono', monospace;
+      font-size: 10px; color: var(--text-muted);
+      text-transform: uppercase; letter-spacing: 0.08em;
+    }
+    .nav { display: flex; gap: 6px; }
+    .nav-btn {
+      font-family: 'DM Mono', monospace;
+      font-size: 11px; letter-spacing: 0.05em;
+      padding: 4px 10px; border-radius: 4px;
+      border: 0.5px solid var(--border);
+      background: transparent; color: var(--text-muted);
+      cursor: pointer; text-decoration: none;
+      transition: background 0.12s;
+    }
+    .nav-btn:hover { background: var(--bg-raised); }
+    .nav-btn.active { background: var(--blue); color: #fff; border-color: var(--blue); }
+
+    .sms-badge {
+      font-family: 'DM Mono', monospace; font-size: 10px;
+      padding: 3px 8px; border-radius: 4px; font-weight: 500;
+    }
+    .sms-badge.blocked { background: var(--amber-dim); color: var(--amber); }
+    .sms-badge.active { background: var(--green-dim); color: var(--green); }
+
+    /* ── Main layout ───────────────────────────────────────────────── */
+    #main { flex: 1; display: flex; overflow: hidden; }
+
+    /* ── Left sidebar ──────────────────────────────────────────────── */
+    #sidebar {
+      width: 200px; flex-shrink: 0;
+      background: var(--bg-surface);
+      border-right: 0.5px solid var(--border);
+      padding: 16px 14px;
+      display: flex; flex-direction: column; gap: 16px;
+      overflow-y: auto;
+    }
+    .sidebar-section-title {
+      font-family: 'DM Mono', monospace;
+      font-size: 9px; text-transform: uppercase;
+      letter-spacing: 0.1em; color: var(--text-dim);
+      margin-bottom: 6px;
+    }
+    .stat-row {
+      display: flex; justify-content: space-between;
+      align-items: center; padding: 4px 0;
+      font-size: 12px; color: var(--text-muted);
+    }
+    .stat-value {
+      font-family: 'DM Mono', monospace;
+      font-size: 12px; font-weight: 500;
+    }
+    .stat-value.green { color: var(--green); }
+    .stat-value.amber { color: var(--amber); }
+    .stat-value.red { color: var(--red); }
+
+    .sidebar-link {
+      display: block; padding: 6px 8px; border-radius: 4px;
+      font-size: 12px; color: var(--text-muted);
+      text-decoration: none; transition: background 0.1s;
+    }
+    .sidebar-link:hover { background: var(--bg-raised); color: var(--text-primary); }
+
+    /* ── Center: Chat ──────────────────────────────────────────────── */
+    #chat-panel {
+      flex: 1; display: flex; flex-direction: column;
+      min-width: 0;
+    }
+    #chat-messages {
+      flex: 1; overflow-y: auto; padding: 16px;
+      display: flex; flex-direction: column; gap: 10px;
+    }
+
+    .msg { max-width: 85%; display: flex; flex-direction: column; gap: 3px; }
+    .msg.user { align-self: flex-end; }
+    .msg.system { align-self: flex-start; }
+
+    .msg-bubble {
+      padding: 10px 14px; border-radius: 10px;
+      font-size: 13px; line-height: 1.5;
+      word-break: break-word;
+    }
+    .msg.user .msg-bubble { background: var(--blue-dim); color: var(--text-primary); border-bottom-right-radius: 2px; }
+    .msg.system .msg-bubble { background: var(--bg-raised); color: var(--text-primary); border-bottom-left-radius: 2px; }
+
+    .msg-meta {
+      font-family: 'DM Mono', monospace;
+      font-size: 10px; color: var(--text-dim);
+    }
+    .msg.user .msg-meta { text-align: right; }
+
+    /* Agent result cards */
+    .agent-card {
+      background: var(--bg-surface); border: 0.5px solid var(--border);
+      border-radius: 8px; padding: 12px 14px; margin-top: 4px;
+      font-size: 12px;
+    }
+    .agent-card-title {
+      font-family: 'DM Mono', monospace;
+      font-size: 10px; text-transform: uppercase;
+      letter-spacing: 0.08em; color: var(--blue);
+      margin-bottom: 8px;
+    }
+    .agent-card-row {
+      display: flex; justify-content: space-between;
+      padding: 3px 0; color: var(--text-muted);
+    }
+    .agent-card-row .val { color: var(--text-primary); font-weight: 500; }
+    .agent-card-actions { display: flex; gap: 8px; margin-top: 10px; }
+    .agent-card-actions a, .agent-card-actions button {
+      font-family: 'DM Mono', monospace;
+      font-size: 10px; padding: 4px 10px; border-radius: 4px;
+      border: 0.5px solid var(--border); background: transparent;
+      color: var(--blue); cursor: pointer; text-decoration: none;
+      transition: background 0.1s;
+    }
+    .agent-card-actions a:hover, .agent-card-actions button:hover {
+      background: var(--blue-dim);
+    }
+
+    .status-tag {
+      font-family: 'DM Mono', monospace;
+      font-size: 10px; padding: 2px 8px; border-radius: 3px;
+      display: inline-block; margin-top: 6px;
+    }
+    .status-tag.blocked { background: var(--amber-dim); color: var(--amber); }
+    .status-tag.sent { background: var(--green-dim); color: var(--green); }
+
+    .system-status {
+      font-family: 'DM Mono', monospace;
+      font-size: 11px; color: var(--text-dim);
+      padding: 4px 0;
+    }
+
+    /* Typing indicator */
+    .typing { display: flex; gap: 4px; padding: 8px 14px; align-self: flex-start; }
+    .typing span {
+      width: 6px; height: 6px; border-radius: 50%;
+      background: var(--text-dim);
+      animation: typingDot 1.2s infinite ease-in-out;
+    }
+    .typing span:nth-child(2) { animation-delay: 0.15s; }
+    .typing span:nth-child(3) { animation-delay: 0.3s; }
+    @keyframes typingDot {
+      0%, 60%, 100% { opacity: 0.3; transform: scale(0.8); }
+      30% { opacity: 1; transform: scale(1); }
+    }
+
+    /* Chat input */
+    #chat-input-bar {
+      flex-shrink: 0; padding: 12px 16px;
+      background: var(--bg-surface);
+      border-top: 0.5px solid var(--border);
+      display: flex; gap: 8px; align-items: flex-end;
+    }
+    #chat-input {
+      flex: 1; font-family: 'Barlow', sans-serif;
+      font-size: 14px; color: var(--text-primary);
+      background: var(--bg-input); border: 0.5px solid var(--border);
+      border-radius: 8px; padding: 10px 14px;
+      resize: none; outline: none; min-height: 42px; max-height: 120px;
+      line-height: 1.4;
+    }
+    #chat-input:focus { border-color: var(--blue); }
+    #chat-input::placeholder { color: var(--text-dim); }
+
+    .chat-btn {
+      width: 42px; height: 42px; border-radius: 8px;
+      border: none; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      transition: opacity 0.1s; flex-shrink: 0;
+    }
+    .chat-btn:hover { opacity: 0.85; }
+    .chat-btn.send { background: var(--blue); }
+    .chat-btn.voice {
+      background: transparent; border: 0.5px solid var(--border);
+      position: relative;
+    }
+    .chat-btn.voice:hover::after {
+      content: 'Voice coming soon';
+      position: absolute; bottom: 100%; left: 50%;
+      transform: translateX(-50%); margin-bottom: 6px;
+      background: var(--bg-raised); color: var(--text-muted);
+      font-family: 'DM Mono', monospace; font-size: 10px;
+      padding: 4px 8px; border-radius: 4px; white-space: nowrap;
+      border: 0.5px solid var(--border);
+    }
+    .chat-btn svg { width: 18px; height: 18px; }
+
+    /* ── Right panel ───────────────────────────────────────────────── */
+    #right-panel {
+      width: 320px; flex-shrink: 0;
+      background: var(--bg-surface);
+      border-left: 0.5px solid var(--border);
+      overflow-y: auto; padding: 0;
+    }
+
+    /* Quick actions bar */
+    .quick-bar {
+      display: flex; gap: 6px; padding: 12px 14px;
+      border-bottom: 0.5px solid var(--border);
+      position: sticky; top: 0; z-index: 2;
+      background: var(--bg-surface);
+    }
+    .quick-btn {
+      flex: 1; font-family: 'DM Mono', monospace;
+      font-size: 10px; text-transform: uppercase;
+      letter-spacing: 0.05em;
+      padding: 6px 4px; border-radius: 4px;
+      border: 0.5px solid var(--border);
+      background: transparent; color: var(--text-muted);
+      cursor: pointer; text-align: center;
+      transition: all 0.1s;
+    }
+    .quick-btn:hover { background: var(--blue-dim); color: var(--blue); border-color: var(--blue); }
+
+    /* Accordion sections */
+    .acc-section { border-bottom: 0.5px solid var(--border); }
+    .acc-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 10px 14px; cursor: pointer;
+      transition: background 0.1s;
+    }
+    .acc-header:hover { background: var(--bg-raised); }
+    .acc-title {
+      font-family: 'DM Mono', monospace;
+      font-size: 11px; text-transform: uppercase;
+      letter-spacing: 0.06em; color: var(--text-muted);
+      font-weight: 500;
+    }
+    .acc-arrow {
+      font-size: 10px; color: var(--text-dim);
+      transition: transform 0.2s;
+    }
+    .acc-section.open .acc-arrow { transform: rotate(90deg); }
+    .acc-body {
+      padding: 0 14px 14px; display: none;
+    }
+    .acc-section.open .acc-body { display: block; }
+
+    /* Form elements */
+    .form-group { margin-bottom: 10px; }
+    .form-label {
+      display: block; font-size: 11px; color: var(--text-muted);
+      margin-bottom: 4px; font-weight: 500;
+    }
+    .form-input, .form-select, .form-textarea {
+      width: 100%; font-family: 'Barlow', sans-serif;
+      font-size: 13px; color: var(--text-primary);
+      background: var(--bg-input); border: 0.5px solid var(--border);
+      border-radius: 6px; padding: 8px 10px; outline: none;
+    }
+    .form-input:focus, .form-select:focus, .form-textarea:focus {
+      border-color: var(--blue);
+    }
+    .form-input::placeholder, .form-textarea::placeholder { color: var(--text-dim); }
+    .form-textarea { resize: vertical; min-height: 60px; }
+    .form-select { appearance: none; cursor: pointer; }
+
+    .form-submit {
+      width: 100%; font-family: 'DM Mono', monospace;
+      font-size: 12px; font-weight: 500;
+      letter-spacing: 0.04em;
+      padding: 10px; border-radius: 6px;
+      border: none; cursor: pointer;
+      background: var(--blue); color: #fff;
+      transition: opacity 0.15s;
+      margin-top: 4px;
+    }
+    .form-submit:hover { opacity: 0.9; }
+    .form-submit:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    /* Line items (invoice) */
+    .line-items-table { width: 100%; font-size: 12px; margin-bottom: 8px; }
+    .line-items-table th {
+      font-family: 'DM Mono', monospace; font-size: 10px;
+      text-transform: uppercase; color: var(--text-dim);
+      text-align: left; padding: 4px 4px; letter-spacing: 0.05em;
+    }
+    .line-items-table td { padding: 4px; }
+    .line-items-table input {
+      width: 100%; background: var(--bg-input);
+      border: 0.5px solid var(--border); border-radius: 4px;
+      padding: 6px 8px; color: var(--text-primary);
+      font-family: 'Barlow', sans-serif; font-size: 12px;
+      outline: none;
+    }
+    .line-items-table input:focus { border-color: var(--blue); }
+    .add-line-btn {
+      font-family: 'DM Mono', monospace; font-size: 10px;
+      color: var(--blue); background: none; border: none;
+      cursor: pointer; padding: 4px 0;
+    }
+    .remove-line-btn {
+      background: none; border: none; color: var(--text-dim);
+      cursor: pointer; font-size: 14px;
+    }
+    .remove-line-btn:hover { color: var(--red); }
+
+    /* Toast */
+    .toast-container {
+      position: fixed; top: 60px; right: 336px;
+      z-index: 100; display: flex; flex-direction: column; gap: 6px;
+    }
+    .toast {
+      padding: 8px 14px; border-radius: 6px;
+      font-family: 'DM Mono', monospace; font-size: 11px;
+      border-left: 3px solid; min-width: 220px;
+      animation: toastIn 0.2s ease-out;
+    }
+    .toast.success { background: var(--green-dim); color: var(--green); border-color: var(--green); }
+    .toast.error { background: var(--red-dim); color: var(--red); border-color: var(--red); }
+    .toast.warning { background: var(--amber-dim); color: var(--amber); border-color: var(--amber); }
+    @keyframes toastIn { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }
+
+    /* Activity feed */
+    .feed-title {
+      font-family: 'DM Mono', monospace;
+      font-size: 9px; text-transform: uppercase;
+      letter-spacing: 0.1em; color: var(--text-dim);
+      padding: 12px 14px 6px;
+    }
+    .feed-row {
+      display: flex; align-items: center; gap: 8px;
+      padding: 6px 14px; font-size: 11px;
+      transition: background 0.1s; cursor: default;
+    }
+    .feed-row:hover { background: var(--bg-raised); }
+    .agent-badge {
+      font-family: 'DM Mono', monospace;
+      font-size: 9px; padding: 2px 6px; border-radius: 3px;
+      text-transform: uppercase; letter-spacing: 0.04em;
+      font-weight: 500; flex-shrink: 0;
+    }
+    .agent-badge.proposal { background: var(--blue-dim); color: var(--blue); }
+    .agent-badge.invoice { background: var(--green-dim); color: var(--green); }
+    .agent-badge.clock { background: var(--amber-dim); color: var(--amber); }
+    .agent-badge.schedule { background: rgba(168,85,247,0.15); color: var(--purple); }
+    .agent-badge.clarification { background: rgba(20,184,166,0.15); color: var(--teal); }
+    .agent-badge.other { background: rgba(255,255,255,0.05); color: var(--text-dim); }
+    .feed-action { color: var(--text-muted); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .feed-time { font-family: 'DM Mono', monospace; font-size: 10px; color: var(--text-dim); flex-shrink: 0; }
+
+    /* ── Mobile ────────────────────────────────────────────────────── */
+    @media (max-width: 900px) {
+      #sidebar { display: none; }
+      #right-panel { display: none; }
+      #chat-panel { width: 100%; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ── Header ────────────────────────────────────────────────────── -->
+  <div id="header">
+    <div class="header-left">
+      <div>
+        <div class="brand">BOLTS11</div>
+        <div class="brand-sub">Command Center</div>
+      </div>
+      <nav class="nav">
+        <a href="index.html" class="nav-btn">Dispatch</a>
+        <a href="office.html" class="nav-btn">Office</a>
+        <a href="command.html" class="nav-btn active">Command</a>
+      </nav>
+    </div>
+    <div>
+      <span id="sms-status-badge" class="sms-badge blocked">SMS BLOCKED — 10DLC PENDING</span>
+    </div>
+  </div>
+
+  <!-- ── Main ──────────────────────────────────────────────────────── -->
+  <div id="main">
+
+    <!-- Left sidebar -->
+    <div id="sidebar">
+      <div>
+        <div class="sidebar-section-title">System Status</div>
+        <div class="stat-row"><span>Railway</span><span class="stat-value green">connected</span></div>
+        <div class="stat-row"><span>Supabase</span><span id="sb-status" class="stat-value green">connected</span></div>
+        <div class="stat-row"><span>SMS (Telnyx)</span><span id="sms-sidebar" class="stat-value amber">blocked</span></div>
+        <div class="stat-row"><span>Square</span><span id="square-env" class="stat-value">sandbox</span></div>
+      </div>
+      <div>
+        <div class="sidebar-section-title">Live Counts</div>
+        <div class="stat-row"><span>Open Jobs</span><span id="open-jobs" class="stat-value">—</span></div>
+      </div>
+      <div>
+        <div class="sidebar-section-title">Navigation</div>
+        <a href="index.html" class="sidebar-link">Dispatch Board</a>
+        <a href="office.html" class="sidebar-link">Office Dashboard</a>
+        <a href="book.html" class="sidebar-link">Booking Form</a>
+      </div>
+    </div>
+
+    <!-- Center: Chat -->
+    <div id="chat-panel">
+      <div id="chat-messages">
+        <div class="msg system">
+          <div class="msg-bubble">Command Center ready. Type a command like you'd text the Telnyx number — or use the forms on the right.</div>
+          <div class="msg-meta">system</div>
+        </div>
+      </div>
+      <div id="chat-input-bar">
+        <textarea id="chat-input" rows="1" placeholder='Try: "estimate for Carol Reynolds 88 elm st belfast pump out"'></textarea>
+        <button class="chat-btn send" onclick="sendChat()" title="Send (Enter)">
+          <svg fill="none" viewBox="0 0 24 24" stroke="white" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+        </button>
+        <button class="chat-btn voice" disabled title="Voice coming soon">
+          <svg fill="none" viewBox="0 0 24 24" stroke="#64748b" stroke-width="2"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- Right panel -->
+    <div id="right-panel">
+      <div class="quick-bar">
+        <button class="quick-btn" onclick="toggleSection('sec-estimate')">Estimate</button>
+        <button class="quick-btn" onclick="toggleSection('sec-invoice')">Invoice</button>
+        <button class="quick-btn" onclick="toggleSection('sec-clock')">Clock</button>
+      </div>
+
+      <!-- A: New Estimate -->
+      <div class="acc-section open" id="sec-estimate">
+        <div class="acc-header" onclick="toggleSection('sec-estimate')">
+          <span class="acc-title">New Estimate</span>
+          <span class="acc-arrow">&#9654;</span>
+        </div>
+        <div class="acc-body">
+          <div class="form-group"><label class="form-label">Customer Name</label><input class="form-input" id="est-name" placeholder="Carol Reynolds"></div>
+          <div class="form-group"><label class="form-label">Phone (+1 format)</label><input class="form-input" id="est-phone" placeholder="+12075551234"></div>
+          <div class="form-group"><label class="form-label">Address (123 Main St, Your City, ST)</label><input class="form-input" id="est-address" placeholder="123 Main St, Your City"></div>
+          <div class="form-group"><label class="form-label">Job Type</label>
+            <select class="form-select" id="est-type">
+              <option>Septic Pump-out</option><option>Drain Clean</option>
+              <option>Excavation</option><option>Electrical</option>
+              <option>Plumbing</option><option>Other</option>
+            </select>
+          </div>
+          <div class="form-group"><label class="form-label">Notes for Claude (optional — extra context)</label><textarea class="form-textarea" id="est-notes" placeholder="3 bedroom, last pumped 4 years ago"></textarea></div>
+          <button class="form-submit" onclick="submitEstimate()">Generate Estimate &rarr;</button>
+        </div>
+      </div>
+
+      <!-- B: New Invoice -->
+      <div class="acc-section open" id="sec-invoice">
+        <div class="acc-header" onclick="toggleSection('sec-invoice')">
+          <span class="acc-title">New Invoice</span>
+          <span class="acc-arrow">&#9654;</span>
+        </div>
+        <div class="acc-body">
+          <div class="form-group"><label class="form-label">Customer Name</label><input class="form-input" id="inv-name" placeholder="Tim Reynolds"></div>
+          <div class="form-group"><label class="form-label">Hours Worked</label><input class="form-input" id="inv-hours" placeholder="3.5" type="number" step="0.5"></div>
+          <table class="line-items-table">
+            <thead><tr><th>Description</th><th style="width:60px">Qty</th><th style="width:70px">Rate</th><th style="width:24px"></th></tr></thead>
+            <tbody id="inv-lines">
+              <tr><td><input placeholder="Pump out 1000 gal"></td><td><input value="1" type="number"></td><td><input placeholder="275" type="number"></td><td><button class="remove-line-btn" onclick="this.closest('tr').remove()">&times;</button></td></tr>
+            </tbody>
+          </table>
+          <button class="add-line-btn" onclick="addInvoiceLine()">+ Add line item</button>
+          <div class="form-group" style="margin-top:8px"><label class="form-label">Notes (optional)</label><textarea class="form-textarea" id="inv-notes" placeholder="Replaced baffle, parts $95"></textarea></div>
+          <button class="form-submit" onclick="submitInvoice()">Generate Invoice &rarr;</button>
+        </div>
+      </div>
+
+      <!-- C: Schedule Job -->
+      <div class="acc-section" id="sec-schedule">
+        <div class="acc-header" onclick="toggleSection('sec-schedule')">
+          <span class="acc-title">Schedule Job</span>
+          <span class="acc-arrow">&#9654;</span>
+        </div>
+        <div class="acc-body">
+          <div class="form-group"><label class="form-label">Customer Name</label><input class="form-input" id="sch-name" placeholder="Mike Jones"></div>
+          <div class="form-group"><label class="form-label">Address</label><input class="form-input" id="sch-address" placeholder="22 Elm Ave, Bangor"></div>
+          <div class="form-group"><label class="form-label">Date</label><input class="form-input" id="sch-date" type="date"></div>
+          <div class="form-group"><label class="form-label">Time</label><input class="form-input" id="sch-time" type="time"></div>
+          <div class="form-group"><label class="form-label">Notes (optional)</label><textarea class="form-textarea" id="sch-notes" placeholder="Bring camera for inspection"></textarea></div>
+          <button class="form-submit" onclick="submitSchedule()">Schedule Job &rarr;</button>
+        </div>
+      </div>
+
+      <!-- D: Clock In/Out -->
+      <div class="acc-section" id="sec-clock">
+        <div class="acc-header" onclick="toggleSection('sec-clock')">
+          <span class="acc-title">Clock In / Out</span>
+          <span class="acc-arrow">&#9654;</span>
+        </div>
+        <div class="acc-body">
+          <div class="form-group"><label class="form-label">Employee Name</label><input class="form-input" id="clk-name" placeholder="Employee Name"></div>
+          <div class="form-group" style="display:flex;gap:8px">
+            <button class="form-submit" style="background:var(--green)" onclick="submitClock('IN')">Clock In</button>
+            <button class="form-submit" style="background:var(--red)" onclick="submitClock('OUT')">Clock Out</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- E: Follow-up -->
+      <div class="acc-section" id="sec-followup">
+        <div class="acc-header" onclick="toggleSection('sec-followup')">
+          <span class="acc-title">Send Follow-up</span>
+          <span class="acc-arrow">&#9654;</span>
+        </div>
+        <div class="acc-body">
+          <div class="form-group"><label class="form-label">Customer Name</label><input class="form-input" id="fu-name" placeholder="Carol Reynolds"></div>
+          <div class="form-group"><label class="form-label">Message (optional override)</label><textarea class="form-textarea" id="fu-msg" placeholder="Just checking in on the estimate..."></textarea></div>
+          <button class="form-submit" onclick="submitFollowup()">Send Follow-up &rarr;</button>
+        </div>
+      </div>
+
+      <!-- F: Manual SMS -->
+      <div class="acc-section" id="sec-sms">
+        <div class="acc-header" onclick="toggleSection('sec-sms')">
+          <span class="acc-title">Manual SMS</span>
+          <span class="acc-arrow">&#9654;</span>
+        </div>
+        <div class="acc-body">
+          <div class="form-group"><label class="form-label">To Number (+1 format)</label><input class="form-input" id="sms-to" placeholder="+12075551234"></div>
+          <div class="form-group"><label class="form-label">Message</label><textarea class="form-textarea" id="sms-msg" placeholder="Your message here..." oninput="document.getElementById('sms-count').textContent=this.value.length+'/160'"></textarea><div style="text-align:right;font-family:'DM Mono',monospace;font-size:10px;color:var(--text-dim);margin-top:2px" id="sms-count">0/160</div></div>
+          <button class="form-submit" onclick="submitSms()">Send SMS &rarr;</button>
+        </div>
+      </div>
+
+      <!-- G: Set Opt-in -->
+      <div class="acc-section" id="sec-optin">
+        <div class="acc-header" onclick="toggleSection('sec-optin')">
+          <span class="acc-title">Set Customer Opt-In</span>
+          <span class="acc-arrow">&#9654;</span>
+        </div>
+        <div class="acc-body">
+          <div class="form-group"><label class="form-label">Customer Phone (+1 format)</label><input class="form-input" id="opt-phone" placeholder="+12075551234"></div>
+          <div class="form-group" style="display:flex;gap:8px">
+            <button class="form-submit" style="background:var(--green)" onclick="submitOptin()">Opt In</button>
+            <button class="form-submit" style="background:var(--red)" onclick="submitOptout()">Opt Out</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Activity feed -->
+      <div class="feed-title">Recent Activity</div>
+      <div id="activity-feed"></div>
+    </div>
+
+  </div>
+
+  <!-- Toast container -->
+  <div class="toast-container" id="toast-container"></div>
+
+  <script>
+    /* ── Config (loaded dynamically from /api/client/config) ────── */
+    const API_BASE      = window.location.origin;
+    let   CLIENT_PHONE  = '';
+    let   OWNER_PHONE   = '';
+    const REFRESH_MS    = 30000;
+
+    // Load client config on startup
+    (async function loadConfig() {
+      try {
+        const res = await fetch(API_BASE + '/api/client/config');
+        const cfg = await res.json();
+        if (cfg.success) {
+          CLIENT_PHONE = cfg.client_phone || '';
+          OWNER_PHONE  = cfg.owner_mobile || '';
+        }
+      } catch(e) { console.warn('Config load failed:', e); }
+    })();
+
+    /* ── Toast ───────────────────────────────────────────────────── */
+    function toast(msg, type='success') {
+      const el = document.createElement('div');
+      el.className = 'toast ' + type;
+      el.textContent = msg;
+      document.getElementById('toast-container').appendChild(el);
+      if (type === 'success') setTimeout(() => el.remove(), 4000);
+      else el.onclick = () => el.remove();
+    }
+
+    /* ── Chat ────────────────────────────────────────────────────── */
+    const chatEl = document.getElementById('chat-messages');
+    const inputEl = document.getElementById('chat-input');
+
+    function addMessage(text, type, extra) {
+      const msg = document.createElement('div');
+      msg.className = 'msg ' + type;
+      const now = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+      let html = '<div class="msg-bubble">' + escHtml(text) + '</div>';
+      html += '<div class="msg-meta">' + (type === 'user' ? 'you' : 'system') + ' · ' + now + '</div>';
+      if (extra) html += extra;
+      msg.innerHTML = html;
+      chatEl.appendChild(msg);
+      chatEl.scrollTop = chatEl.scrollHeight;
+    }
+
+    function addSystemStatus(text) {
+      const el = document.createElement('div');
+      el.className = 'system-status';
+      el.textContent = text;
+      chatEl.appendChild(el);
+      chatEl.scrollTop = chatEl.scrollHeight;
+    }
+
+    function addAgentCard(data) {
+      const msg = document.createElement('div');
+      msg.className = 'msg system';
+      const now = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+      let card = '<div class="agent-card">';
+      card += '<div class="agent-card-title">' + escHtml(data.agent || 'agent') + '</div>';
+      card += '<div class="agent-card-row"><span>Result</span><span class="val">' + escHtml(data.message || 'Done') + '</span></div>';
+      if (data.raw_input) card += '<div class="agent-card-row"><span>Input</span><span class="val" style="font-size:11px">' + escHtml(data.raw_input).substring(0,60) + '</span></div>';
+      card += '</div>';
+      const smsTag = data.sms_status === 'blocked_10dlc'
+        ? '<span class="status-tag blocked">SMS BLOCKED — 10DLC PENDING</span>'
+        : '<span class="status-tag sent">SMS SENT</span>';
+      msg.innerHTML = '<div class="msg-bubble">' + card + smsTag + '</div><div class="msg-meta">system · ' + now + '</div>';
+      chatEl.appendChild(msg);
+      chatEl.scrollTop = chatEl.scrollHeight;
+    }
+
+    let typingEl = null;
+    function showTyping() {
+      typingEl = document.createElement('div');
+      typingEl.className = 'typing';
+      typingEl.innerHTML = '<span></span><span></span><span></span>';
+      chatEl.appendChild(typingEl);
+      chatEl.scrollTop = chatEl.scrollHeight;
+    }
+    function hideTyping() { if (typingEl) { typingEl.remove(); typingEl = null; } }
+
+    async function sendChat() {
+      const text = inputEl.value.trim();
+      if (!text) return;
+      inputEl.value = '';
+      inputEl.style.height = 'auto';
+      addMessage(text, 'user');
+      showTyping();
+      try {
+        const res = await apiPost('/api/command', {
+          action: 'chat', client_phone: CLIENT_PHONE,
+          operator_phone: OWNER_PHONE,
+          payload: { message: text }
+        });
+        hideTyping();
+        if (res.success) {
+          addAgentCard(res);
+        } else {
+          addMessage('Error: ' + (res.error || 'Unknown'), 'system');
+        }
+      } catch (err) {
+        hideTyping();
+        addMessage('Connection error — check Railway logs', 'system');
+      }
+    }
+
+    inputEl.addEventListener('keydown', e => {
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChat(); }
+    });
+    inputEl.addEventListener('input', () => {
+      inputEl.style.height = 'auto';
+      inputEl.style.height = Math.min(inputEl.scrollHeight, 120) + 'px';
+    });
+
+    /* ── Override panel submitters ───────────────────────────────── */
+    async function submitEstimate() {
+      const btn = event.target; btn.disabled = true; btn.textContent = 'Generating...';
+      try {
+        const res = await apiPost('/api/command', {
+          action: 'proposal', client_phone: CLIENT_PHONE, operator_phone: OWNER_PHONE,
+          payload: {
+            customer_name: v('est-name'), phone: v('est-phone'),
+            address: v('est-address'), job_type: v('est-type'), notes: v('est-notes')
+          }
+        });
+        handleResult(res, 'Estimate generated');
+        addSystemStatus('Manual override: Estimate generated for ' + v('est-name'));
+        addAgentCard(res);
+      } catch(e) { toast('Estimate failed — check logs', 'error'); }
+      btn.disabled = false; btn.textContent = 'Generate Estimate →';
+    }
+
+    async function submitInvoice() {
+      const btn = event.target; btn.disabled = true; btn.textContent = 'Generating...';
+      try {
+        const res = await apiPost('/api/command', {
+          action: 'invoice', client_phone: CLIENT_PHONE, operator_phone: OWNER_PHONE,
+          payload: { customer_name: v('inv-name'), hours: v('inv-hours'), notes: v('inv-notes') }
+        });
+        handleResult(res, 'Invoice generated');
+        addSystemStatus('Manual override: Invoice generated for ' + v('inv-name'));
+        addAgentCard(res);
+      } catch(e) { toast('Invoice failed — check logs', 'error'); }
+      btn.disabled = false; btn.textContent = 'Generate Invoice →';
+    }
+
+    async function submitSchedule() {
+      const btn = event.target; btn.disabled = true; btn.textContent = 'Scheduling...';
+      try {
+        const res = await apiPost('/api/command', {
+          action: 'schedule', client_phone: CLIENT_PHONE, operator_phone: OWNER_PHONE,
+          payload: { customer_name: v('sch-name'), address: v('sch-address'), date: v('sch-date'), time: v('sch-time'), notes: v('sch-notes') }
+        });
+        handleResult(res, 'Job scheduled');
+        addSystemStatus('Manual override: Job scheduled for ' + v('sch-name'));
+        addAgentCard(res);
+      } catch(e) { toast('Schedule failed — check logs', 'error'); }
+      btn.disabled = false; btn.textContent = 'Schedule Job →';
+    }
+
+    async function submitClock(action) {
+      try {
+        const res = await apiPost('/api/command', {
+          action: 'clock', client_phone: CLIENT_PHONE, operator_phone: OWNER_PHONE,
+          payload: { employee_name: v('clk-name'), clock_action: action }
+        });
+        handleResult(res, 'Clock ' + action + ' recorded');
+        addSystemStatus('Clock ' + action + ': ' + v('clk-name'));
+        addAgentCard(res);
+      } catch(e) { toast('Clock action failed', 'error'); }
+    }
+
+    async function submitFollowup() {
+      try {
+        const res = await apiPost('/api/command', {
+          action: 'followup', client_phone: CLIENT_PHONE, operator_phone: OWNER_PHONE,
+          payload: { customer_name: v('fu-name'), message: v('fu-msg') }
+        });
+        handleResult(res, 'Follow-up sent');
+        addSystemStatus('Follow-up sent to ' + v('fu-name'));
+      } catch(e) { toast('Follow-up failed', 'error'); }
+    }
+
+    async function submitSms() {
+      try {
+        const res = await apiPost('/api/command', {
+          action: 'sms', client_phone: CLIENT_PHONE, operator_phone: OWNER_PHONE,
+          payload: { to_number: v('sms-to'), message: v('sms-msg') }
+        });
+        handleResult(res, res.sms_status === 'sent' ? 'SMS sent' : 'SMS blocked');
+      } catch(e) { toast('SMS failed', 'error'); }
+    }
+
+    async function submitOptin() {
+      try {
+        const res = await apiPost('/api/command', {
+          action: 'optin', client_phone: CLIENT_PHONE, operator_phone: OWNER_PHONE,
+          payload: { phone: v('opt-phone') }
+        });
+        handleResult(res, 'Opt-in updated');
+      } catch(e) { toast('Opt-in failed', 'error'); }
+    }
+
+    async function submitOptout() {
+      toast('Opt-out not yet implemented — use SET OPTIN in chat', 'warning');
+    }
+
+    function handleResult(res, label) {
+      if (res.success) {
+        toast(label, res.sms_status === 'blocked_10dlc' ? 'warning' : 'success');
+      } else {
+        toast('Error: ' + (res.error || 'Unknown'), 'error');
+      }
+    }
+
+    /* ── Accordion ───────────────────────────────────────────────── */
+    function toggleSection(id) {
+      document.getElementById(id).classList.toggle('open');
+    }
+
+    /* ── Invoice line items ──────────────────────────────────────── */
+    function addInvoiceLine() {
+      const row = document.createElement('tr');
+      row.innerHTML = '<td><input placeholder="Description"></td><td><input value="1" type="number"></td><td><input placeholder="0" type="number"></td><td><button class="remove-line-btn" onclick="this.closest(\'tr\').remove()">&times;</button></td>';
+      document.getElementById('inv-lines').appendChild(row);
+    }
+
+    /* ── Activity feed ───────────────────────────────────────────── */
+    async function loadActivity() {
+      try {
+        const res = await fetch(API_BASE + '/api/activity');
+        const data = await res.json();
+        const feed = document.getElementById('activity-feed');
+        if (!data.activity || !data.activity.length) {
+          feed.innerHTML = '<div style="padding:8px 14px;font-size:11px;color:var(--text-dim)">No recent activity</div>';
+          return;
+        }
+        feed.innerHTML = data.activity.map(a => {
+          const badge = agentBadge(a.agent_name);
+          const time = a.created_at ? new Date(a.created_at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}) : '';
+          return '<div class="feed-row">' + badge + '<span class="feed-action">' + escHtml(a.action_taken || '') + '</span><span class="feed-time">' + time + '</span></div>';
+        }).join('');
+      } catch(e) { /* silent */ }
+    }
+
+    function agentBadge(name) {
+      const n = (name || '').toLowerCase();
+      let cls = 'other';
+      if (n.includes('proposal')) cls = 'proposal';
+      else if (n.includes('invoice')) cls = 'invoice';
+      else if (n.includes('clock')) cls = 'clock';
+      else if (n.includes('schedul')) cls = 'schedule';
+      else if (n.includes('clarif')) cls = 'clarification';
+      const label = (name || 'system').replace('_agent','').replace('_',' ');
+      return '<span class="agent-badge ' + cls + '">' + escHtml(label) + '</span>';
+    }
+
+    /* ── Sidebar stats ───────────────────────────────────────────── */
+    async function loadStats() {
+      try {
+        const res = await fetch(API_BASE + '/api/stats');
+        const data = await res.json();
+        document.getElementById('open-jobs').textContent = data.open_jobs ?? '—';
+        document.getElementById('square-env').textContent = data.square_env || 'sandbox';
+        const smsActive = data.sms_active;
+        document.getElementById('sms-sidebar').textContent = smsActive ? 'active' : 'blocked';
+        document.getElementById('sms-sidebar').className = 'stat-value ' + (smsActive ? 'green' : 'amber');
+        const badge = document.getElementById('sms-status-badge');
+        if (smsActive) { badge.className = 'sms-badge active'; badge.textContent = 'SMS ACTIVE'; }
+        else { badge.className = 'sms-badge blocked'; badge.textContent = 'SMS BLOCKED — 10DLC PENDING'; }
+      } catch(e) {
+        document.getElementById('sb-status').textContent = 'error';
+        document.getElementById('sb-status').className = 'stat-value red';
+      }
+    }
+
+    /* ── Helpers ──────────────────────────────────────────────────── */
+    function v(id) { return document.getElementById(id)?.value?.trim() || ''; }
+    function escHtml(s) { return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+    async function apiPost(path, body) {
+      const res = await fetch(API_BASE + path, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      return await res.json();
+    }
+
+    /* ── Init ────────────────────────────────────────────────────── */
+    loadActivity();
+    loadStats();
+    setInterval(loadActivity, REFRESH_MS);
+    setInterval(loadStats, REFRESH_MS);
+  </script>
+</body>
+</html>

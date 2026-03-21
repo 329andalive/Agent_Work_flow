@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Client Onboarding — Bolts11</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700&family=Barlow:wght@400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    :root{--bg:#0d0f14;--surface:#141720;--raised:#1c2030;--border:rgba(255,255,255,0.07);--border-h:rgba(255,255,255,0.12);--text:#e2e8f0;--muted:#64748b;--dim:#475569;--blue:#3b82f6;--blue-d:rgba(59,130,246,0.15);--green:#22c55e;--green-d:rgba(34,197,94,0.15);--amber:#f59e0b;--amber-d:rgba(245,158,11,0.15);--red:#ef4444;--red-d:rgba(239,68,68,0.15)}
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}html,body{height:100%;overflow:hidden}
+    body{font-family:'Barlow',sans-serif;background:var(--bg);color:var(--text);display:flex;flex-direction:column}
+    #header{height:48px;flex-shrink:0;background:var(--surface);border-bottom:.5px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 20px}
+    .header-left{display:flex;align-items:center;gap:16px}
+    .brand{font-family:'Barlow Condensed',sans-serif;font-size:20px;font-weight:700;text-transform:uppercase;letter-spacing:.03em}
+    .brand-sub{font-family:'DM Mono',monospace;font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}
+    .nav{display:flex;gap:6px}
+    .nav-btn{font-family:'DM Mono',monospace;font-size:11px;letter-spacing:.05em;padding:4px 10px;border-radius:4px;border:.5px solid var(--border);background:transparent;color:var(--muted);cursor:pointer;text-decoration:none;transition:background .12s}
+    .nav-btn:hover{background:var(--raised)}.nav-btn.active{background:var(--blue);color:#fff;border-color:var(--blue)}
+    #body{flex:1;overflow-y:auto;padding:16px 20px}
+    .section-title{font-family:'Barlow Condensed',sans-serif;font-size:18px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;margin-bottom:12px}
+    .card{background:var(--surface);border:.5px solid var(--border);border-radius:8px;padding:16px;margin-bottom:16px}
+    .form-row{display:flex;gap:10px;margin-bottom:10px;flex-wrap:wrap}
+    .form-group{flex:1;min-width:180px}
+    .form-label{display:block;font-size:11px;color:var(--muted);margin-bottom:4px;font-weight:500}
+    .form-input,.form-select,.form-textarea{width:100%;font-family:'Barlow',sans-serif;font-size:13px;color:var(--text);background:var(--raised);border:.5px solid var(--border);border-radius:6px;padding:8px 10px;outline:none}
+    .form-input:focus,.form-select:focus{border-color:var(--blue)}
+    .form-input::placeholder{color:var(--dim)}.form-select{appearance:none;cursor:pointer}
+    .btn{font-family:'DM Mono',monospace;font-size:12px;font-weight:500;letter-spacing:.04em;padding:10px 20px;border-radius:6px;border:none;cursor:pointer;transition:opacity .15s}
+    .btn:hover{opacity:.9}.btn:disabled{opacity:.4;cursor:not-allowed}
+    .btn-blue{background:var(--blue);color:#fff}.btn-green{background:var(--green);color:#fff}.btn-red{background:var(--red);color:#fff}
+    .btn-outline{background:transparent;color:var(--blue);border:1px solid var(--blue)}
+    .success-card{background:var(--green-d);border:1px solid var(--green);border-radius:8px;padding:14px;margin-top:12px;display:none}
+    .success-card .label{font-family:'DM Mono',monospace;font-size:10px;color:var(--green);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px}
+    .success-card .link{font-size:13px;color:var(--text);word-break:break-all}
+    .copy-btn{font-family:'DM Mono',monospace;font-size:10px;padding:3px 8px;border-radius:4px;border:.5px solid var(--border);background:transparent;color:var(--blue);cursor:pointer;margin-left:6px}
+    /* Pipeline table */
+    .pipeline-title{font-family:'Barlow Condensed',sans-serif;font-size:16px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px}
+    .pipeline-sub{font-family:'DM Mono',monospace;font-size:10px;color:var(--muted);margin-bottom:12px}
+    table{width:100%;border-collapse:collapse;font-size:12px}
+    th{font-family:'DM Mono',monospace;font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--dim);text-align:left;padding:6px 8px;border-bottom:.5px solid var(--border)}
+    td{padding:8px;border-bottom:.5px solid var(--border);vertical-align:middle}
+    tr:hover td{background:var(--raised)}
+    .badge{font-family:'DM Mono',monospace;font-size:10px;padding:2px 8px;border-radius:3px;font-weight:500;text-transform:uppercase;letter-spacing:.04em}
+    .badge-amber{background:var(--amber-d);color:var(--amber)}.badge-blue{background:var(--blue-d);color:var(--blue)}
+    .badge-green{background:var(--green-d);color:var(--green)}.badge-red{background:var(--red-d);color:var(--red)}
+    /* Step progress bar */
+    .steps{display:flex;gap:3px}
+    .step-box{width:14px;height:14px;border-radius:3px;background:var(--raised);position:relative}
+    .step-box.done{background:var(--green)}.step-box.current{background:var(--blue);animation:pulse 1.5s infinite}
+    .step-box[title]:hover::after{content:attr(title);position:absolute;bottom:100%;left:50%;transform:translateX(-50%);background:var(--raised);color:var(--muted);font-family:'DM Mono',monospace;font-size:9px;padding:2px 6px;border-radius:3px;white-space:nowrap;margin-bottom:4px;border:.5px solid var(--border)}
+    @keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
+    .action-btn{font-family:'DM Mono',monospace;font-size:10px;padding:3px 8px;border-radius:4px;border:.5px solid var(--border);background:transparent;cursor:pointer;margin-right:4px;transition:all .1s}
+    .action-btn:hover{background:var(--blue-d);color:var(--blue);border-color:var(--blue)}
+    .action-btn.approve{color:var(--green);border-color:var(--green)}.action-btn.approve:hover{background:var(--green-d)}
+    /* Drawer */
+    .drawer-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.6);z-index:100;display:none}
+    .drawer{position:fixed;top:0;right:0;width:480px;max-width:90vw;height:100%;background:var(--surface);z-index:101;display:none;flex-direction:column;overflow:hidden;border-left:.5px solid var(--border)}
+    .drawer-header{padding:16px;border-bottom:.5px solid var(--border);display:flex;justify-content:space-between;align-items:center}
+    .drawer-body{flex:1;overflow-y:auto;padding:16px}
+    .drawer-footer{padding:12px 16px;border-top:.5px solid var(--border)}
+    .drawer .detail-row{display:flex;justify-content:space-between;padding:6px 0;font-size:12px;border-bottom:.5px solid var(--border)}
+    .drawer .detail-label{color:var(--muted)}.drawer .detail-value{color:var(--text);font-weight:500;max-width:60%;text-align:right}
+    .drawer .section-label{font-family:'DM Mono',monospace;font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:.06em;margin:12px 0 6px}
+    .personality-block{background:var(--raised);border-radius:6px;padding:12px;font-family:'DM Mono',monospace;font-size:11px;line-height:1.6;color:var(--muted);white-space:pre-wrap;max-height:300px;overflow-y:auto}
+    .personality-edit{width:100%;min-height:200px;font-family:'DM Mono',monospace;font-size:11px;background:var(--raised);color:var(--text);border:.5px solid var(--border);border-radius:6px;padding:12px;resize:vertical;outline:none;display:none}
+    .personality-edit:focus{border-color:var(--blue)}
+    .toast-c{position:fixed;top:60px;right:20px;z-index:200;display:flex;flex-direction:column;gap:6px}
+    .toast{padding:8px 14px;border-radius:6px;font-family:'DM Mono',monospace;font-size:11px;border-left:3px solid;animation:fadeIn .2s}
+    .toast.s{background:var(--green-d);color:var(--green);border-color:var(--green)}.toast.e{background:var(--red-d);color:var(--red);border-color:var(--red)}
+    @keyframes fadeIn{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:none}}
+    #last-updated{font-family:'DM Mono',monospace;font-size:10px;color:var(--dim)}
+  </style>
+</head>
+<body>
+  <div id="header">
+    <div class="header-left">
+      <div><div class="brand">BOLTS11</div><div class="brand-sub">Client Onboarding</div></div>
+      <nav class="nav">
+        <a href="index.html" class="nav-btn">Dispatch</a>
+        <a href="office.html" class="nav-btn">Office</a>
+        <a href="command.html" class="nav-btn">Command</a>
+        <a href="onboarding.html" class="nav-btn active">Onboarding</a>
+      </nav>
+    </div>
+    <div id="last-updated"></div>
+  </div>
+
+  <div id="body">
+    <!-- CREATE NEW CLIENT -->
+    <div class="section-title">Create New Client</div>
+    <div class="card">
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">Business Name *</label><input class="form-input" id="c-name" placeholder="Your Business Name"></div>
+        <div class="form-group"><label class="form-label">Owner Name *</label><input class="form-input" id="c-owner" placeholder="Owner Full Name"></div>
+        <div class="form-group"><label class="form-label">Owner Mobile * (+1)</label><input class="form-input" id="c-mobile" placeholder="+15550001234"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">Trade Vertical</label>
+          <select class="form-select" id="c-vertical">
+            <option value="">Select...</option><option>Septic & Sewer</option><option>Plumbing</option>
+            <option>HVAC</option><option>Electrical</option><option>Excavation</option>
+            <option>Drain Cleaning</option><option>General Contracting</option><option>Other</option>
+          </select>
+        </div>
+        <div class="form-group"><label class="form-label">Telnyx Phone Number</label><input class="form-input" id="c-telnyx" placeholder="+12071234567 (manual for now)"></div>
+        <div class="form-group"><label class="form-label">Admin Note (private)</label><input class="form-input" id="c-note" placeholder="Referred by Mike"></div>
+      </div>
+      <button class="btn btn-blue" id="create-btn" onclick="createClient()">Create Client & Send Setup Link &rarr;</button>
+      <div class="success-card" id="success-card">
+        <div class="label">Setup link created</div>
+        <div style="margin-bottom:6px">Sent to <strong id="sc-name"></strong></div>
+        <div class="link" id="sc-link"></div>
+        <div style="margin-top:8px"><button class="copy-btn" onclick="copyLink()">Copy Link</button></div>
+      </div>
+    </div>
+
+    <!-- PIPELINE -->
+    <div style="display:flex;justify-content:space-between;align-items:baseline;margin-top:8px">
+      <div class="pipeline-title">Onboarding Pipeline</div>
+      <div class="pipeline-sub" id="pipeline-counts"></div>
+    </div>
+    <div class="card" style="padding:0;overflow-x:auto">
+      <table>
+        <thead><tr><th>Business</th><th>Owner</th><th>Trade</th><th>Telnyx #</th><th>Progress</th><th>Status</th><th>Last Activity</th><th>Actions</th></tr></thead>
+        <tbody id="pipeline-body"><tr><td colspan="8" style="color:var(--dim);padding:20px;text-align:center">Loading...</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Review drawer -->
+  <div class="drawer-overlay" id="drawer-overlay" onclick="closeDrawer()"></div>
+  <div class="drawer" id="drawer">
+    <div class="drawer-header">
+      <span style="font-family:'Barlow Condensed',sans-serif;font-size:16px;font-weight:600" id="drawer-title">Review</span>
+      <button style="background:none;border:none;color:var(--muted);font-size:18px;cursor:pointer" onclick="closeDrawer()">&times;</button>
+    </div>
+    <div class="drawer-body" id="drawer-body"></div>
+    <div class="drawer-footer" id="drawer-footer"></div>
+  </div>
+
+  <div class="toast-c" id="toast-c"></div>
+
+  <script>
+    const API_BASE = window.location.origin;
+    let lastLink = '';
+    let sessions = [];
+
+    function toast(m,t='s'){const e=document.createElement('div');e.className='toast '+t;e.textContent=m;document.getElementById('toast-c').appendChild(e);setTimeout(()=>e.remove(),3500)}
+    function v(id){return document.getElementById(id)?.value?.trim()||''}
+    function esc(s){return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+
+    async function createClient(){
+      const btn=document.getElementById('create-btn');btn.disabled=true;btn.textContent='Creating...';
+      try{
+        const res=await fetch(API_BASE+'/api/onboarding/create',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({client_name:v('c-name'),owner_name:v('c-owner'),owner_mobile:v('c-mobile'),trade_vertical:v('c-vertical'),telnyx_phone:v('c-telnyx'),admin_note:v('c-note')})});
+        const d=await res.json();
+        if(d.success){
+          lastLink=d.onboarding_url;
+          document.getElementById('sc-name').textContent=v('c-owner')||v('c-name');
+          document.getElementById('sc-link').textContent=d.onboarding_url;
+          document.getElementById('success-card').style.display='block';
+          toast('Client created');
+          loadPipeline();
+        }else{toast(d.error||'Failed','e')}
+      }catch(e){toast('Network error','e')}
+      btn.disabled=false;btn.textContent='Create Client & Send Setup Link →';
+    }
+    function copyLink(){navigator.clipboard.writeText(lastLink);toast('Link copied')}
+
+    async function loadPipeline(){
+      try{
+        const res=await fetch(API_BASE+'/api/onboarding/list');
+        const d=await res.json();sessions=d.sessions||[];
+        const tbody=document.getElementById('pipeline-body');
+        if(!sessions.length){tbody.innerHTML='<tr><td colspan="8" style="color:var(--dim);padding:20px;text-align:center">No clients yet</td></tr>';return}
+        const counts={pending:0,in_progress:0,completed:0,approved:0};
+        sessions.forEach(s=>counts[s.status]=(counts[s.status]||0)+1);
+        document.getElementById('pipeline-counts').textContent=`${counts.pending} waiting · ${counts.in_progress} in progress · ${counts.completed} review · ${counts.approved} active`;
+        tbody.innerHTML=sessions.map((s,i)=>{
+          const steps=[];const reached=s.step_reached||0;const names=['Company','Trade','Personality','Team','Pricing','Logo'];
+          for(let n=1;n<=6;n++){let c=n<reached?'done':n===reached?'current':'';steps.push(`<div class="step-box ${c}" title="${names[n-1]}"></div>`)}
+          const badge=s.status==='pending'?'<span class="badge badge-amber">WAITING</span>':s.status==='in_progress'?'<span class="badge badge-blue">IN PROGRESS</span>':s.status==='completed'?'<span class="badge badge-green">REVIEW NEEDED</span>':'<span class="badge badge-green">ACTIVE</span>';
+          const la=s.last_activity_at?new Date(s.last_activity_at).toLocaleDateString():'—';
+          const approveBtn=s.status==='completed'?`<button class="action-btn approve" onclick="approveClient(${i})">Approve</button>`:'';
+          return `<tr>
+            <td><strong>${esc(s.company_name||'—')}</strong></td>
+            <td>${esc(s.owner_name||'—')}</td>
+            <td style="font-size:11px">${esc(s.trade_vertical||'—')}</td>
+            <td style="font-family:'DM Mono',monospace;font-size:11px">${esc(s.telnyx_phone||'—')}</td>
+            <td><div class="steps">${steps.join('')}</div></td>
+            <td>${badge}</td>
+            <td style="font-family:'DM Mono',monospace;font-size:11px">${la}</td>
+            <td>
+              <button class="action-btn" onclick="copySessionLink(${i})">Copy</button>
+              <button class="action-btn" onclick="openReview(${i})">Review</button>
+              ${approveBtn}
+            </td>
+          </tr>`}).join('');
+        document.getElementById('last-updated').textContent='Updated '+new Date().toLocaleTimeString();
+      }catch(e){console.error(e)}
+    }
+
+    function copySessionLink(i){const s=sessions[i];const url=API_BASE+'/onboard/'+s.token;navigator.clipboard.writeText(url);toast('Link copied')}
+
+    function openReview(i){
+      const s=sessions[i];
+      document.getElementById('drawer-title').textContent=s.company_name||'Review';
+      const b=document.getElementById('drawer-body');
+      let html='';
+      html+='<div class="section-label">Company Info</div>';
+      [['Business',s.company_name],['Owner',s.owner_name],['Mobile',s.owner_mobile],['Trade',s.trade_vertical],['City',s.company_city],['State',s.company_state]].forEach(([l,v])=>{html+=`<div class="detail-row"><span class="detail-label">${l}</span><span class="detail-value">${esc(v||'—')}</span></div>`});
+      html+='<div class="section-label">Service</div>';
+      [['Service Area',s.service_area_desc],['Radius',s.service_radius_miles?s.service_radius_miles+' miles':'—'],['Tone',s.tone_preference],['Customer Type',s.customer_type],['Pricing Style',s.pricing_style]].forEach(([l,v])=>{html+=`<div class="detail-row"><span class="detail-label">${l}</span><span class="detail-value">${esc(v||'—')}</span></div>`});
+      html+='<div class="section-label">Personality MD</div>';
+      html+='<div class="personality-block" id="pm-view">'+(esc(s.personality_md||'Not yet generated'))+'</div>';
+      html+='<textarea class="personality-edit" id="pm-edit">'+(esc(s.personality_md||''))+'</textarea>';
+      html+='<button class="action-btn" style="margin-top:6px" onclick="toggleEditMd()">Edit Personality MD</button>';
+      b.innerHTML=html;
+      const footer=document.getElementById('drawer-footer');
+      if(s.status==='completed'){
+        footer.innerHTML='<button class="btn btn-green" style="width:100%" onclick="approveFromDrawer('+i+')">Approve & Activate Client &rarr;</button>';
+      }else{footer.innerHTML=''}
+      document.getElementById('drawer').style.display='flex';
+      document.getElementById('drawer-overlay').style.display='block';
+    }
+    function closeDrawer(){document.getElementById('drawer').style.display='none';document.getElementById('drawer-overlay').style.display='none'}
+    function toggleEditMd(){
+      const v=document.getElementById('pm-view');const e=document.getElementById('pm-edit');
+      if(e.style.display==='none'||!e.style.display){e.style.display='block';v.style.display='none'}else{e.style.display='none';v.style.display='block'}
+    }
+
+    async function approveClient(i){
+      if(!confirm('Activate this client?'))return;
+      const s=sessions[i];const md=document.getElementById('pm-edit')?.value||s.personality_md;
+      try{
+        const res=await fetch(API_BASE+'/api/onboarding/'+s.token+'/approve',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({personality_md:md})});
+        const d=await res.json();
+        if(d.success){toast('Client activated');closeDrawer();loadPipeline()}else{toast(d.error||'Failed','e')}
+      }catch(e){toast('Network error','e')}
+    }
+    function approveFromDrawer(i){approveClient(i)}
+
+    loadPipeline();setInterval(loadPipeline,60000);
+  </script>
+</body>
+</html>

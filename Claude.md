@@ -59,13 +59,14 @@ it personally. Never generic. Never robotic.
 
 ## Active Agents
 ```
-proposal_agent      — generates estimates from job descriptions
-invoice_agent       — creates invoices from completed job notes  
-followup_agent      — follows up on unanswered estimates
-review_agent        — requests Google reviews after job completion
-content_agent       — creates social/marketing content
-safety_agent        — generates safety checklists and OSHA docs
-voice_controller    — routes voice commands to the right agent
+proposal_agent        — generates estimates from job descriptions
+invoice_agent         — creates invoices from completed job notes
+clarification_agent   — intercepts ambiguous SMS, asks follow-ups, routes
+followup_agent        — follows up on unanswered estimates
+review_agent          — requests Google reviews after job completion
+content_agent         — creates social/marketing content
+safety_agent          — generates safety checklists and OSHA docs
+voice_controller      — routes voice commands to the right agent
 ```
 
 Each agent has a directive in `directives/agents/{agent_name}.md`
@@ -97,9 +98,22 @@ Each agent has a directive in `directives/agents/{agent_name}.md`
 │   ├── sms_send.py                    # Outbound SMS via Telnyx
 │   ├── call_claude.py                 # Claude API wrapper
 │   ├── token_generator.py             # Signed token URLs for proposals/invoices
+│   ├── document_html.py              # Builds edit/view HTML for proposals & invoices
+│   ├── db_document.py                # DB ops for document edit/learn system
+│   ├── document_storage.py           # Upload document HTML to Supabase Storage
+│   ├── clarification_agent.py        # Claude-powered intent classification + on-site approval
+│   ├── db_clarification.py           # DB ops for pending_clarifications + customer_approvals
 │   ├── db_get_client.py               # Fetch client from Supabase
 │   ├── db_save_job.py                 # Save job record to Supabase
-│   └── load_personality.py            # Load client personality doc
+│   ├── load_personality.py            # Load client personality doc
+│   ├── onboarding_templates.py       # DEPRECATED fallback — pricing now in DB
+│   └── db_pricing.py                 # Pricing benchmarks + adjustment logging
+├── routes/                            # Flask Blueprints
+│   ├── document_routes.py            # /doc/edit, /doc/save, /doc/send
+│   ├── invoice_routes.py            # /webhooks/square (Square payment webhook)
+│   ├── command_routes.py            # /api/command, /api/activity, /api/stats
+│   ├── onboarding_routes.py        # /api/onboarding/*, /onboard/<token>
+│   └── routes_debug.py              # /debug (dev-only debug dashboard)
 ├── directives/                        # SOPs and context docs
 │   ├── agents/                        # One .md per agent
 │   │   ├── proposal_agent.md
@@ -112,6 +126,13 @@ Each agent has a directive in `directives/agents/{agent_name}.md`
 │   └── clients/                       # One folder per client
 │       └── {client_phone}/
 │           └── personality.md         # The master context document
+├── dashboard/                         # Browser-based UI (static HTML)
+│   ├── index.html                    # Dispatch Board
+│   ├── office.html                   # Office Dashboard
+│   ├── command.html                  # Command Center (chat + override panel)
+│   ├── onboarding.html              # Client onboarding admin dashboard
+│   ├── onboard_wizard.html          # Client-facing 6-step setup wizard
+│   └── book.html                     # Customer booking form
 ├── templates/                         # Jinja2 HTML templates
 │   ├── proposal.html                  # Mobile-first proposal view
 │   ├── invoice.html                   # Mobile-first invoice view (PAY NOW)
@@ -150,12 +171,70 @@ GET  /dashboard/               — Dispatch board
 GET  /dashboard/office.html    — Office dashboard
 GET  /book                     — Customer booking form
 GET  /health                   — Health check
+GET  /dashboard/command.html   — Command Center dashboard
+GET  /command                  — Command Center (short alias)
+POST /api/command              — Execute agent action from dashboard
+GET  /api/activity             — Recent agent activity for live feed
+GET  /api/stats                — Sidebar stats (open jobs, SMS status)
+GET  /dashboard/onboarding.html — Client onboarding admin dashboard
+POST /api/onboarding/create    — Create client + onboarding session
+GET  /onboard/<token>          — Public client setup wizard
+POST /api/onboarding/<token>/save     — Save wizard step progress
+POST /api/onboarding/<token>/complete — Mark wizard complete + generate personality
+GET  /api/onboarding/list      — List all onboarding sessions (admin)
+POST /api/onboarding/<token>/approve  — Approve + activate client
+GET  /api/onboarding/pricing-template/<v> — Pricing benchmarks from DB (fallback to hardcode)
+GET  /api/onboarding/specialties/<v>  — Specialties from DB (fallback to hardcode)
+GET  /api/verticals                   — All active trade verticals from DB
+GET  /doc/edit/<edit_token>    — Editable document page (Blueprint: document_bp)
+POST /doc/save                 — Save edited line items/notes + trigger learning
+POST /doc/send                 — Send document to customer via SMS
 ```
 
 Token routes (`/p/` and `/i/`) handle:
 - Invalid tokens → branded error page
 - Expired tokens → branded expiry page with contact link
 - Valid tokens → update viewed_at, render Jinja2 template, log to agent_activity
+
+Document routes (`/doc/`) handle:
+- edit_token-based auth (secret URL, no login)
+- Line item editing with auto-recalculate
+- Edit diffing logged to estimate_edits table
+- Learning loop: after 2+ edits, Claude analyzes patterns → client_prompt_overrides
+
+---
+
+## Platform Hard Rules
+
+**HARD RULE #1 — Phone number required on every customer**
+Every customer record must have a phone number. No exceptions.
+- `db_customer.create_customer()` raises `ValueError` if phone is missing
+- Any agent that creates a customer without a phone fails loudly
+- SQL: `ALTER TABLE customers ALTER COLUMN customer_phone SET NOT NULL`
+
+**HARD RULE #2 — SMS opt-in required before texting customers**
+Every customer must have explicit SMS opt-in before the platform
+texts them. This is a legal requirement (10DLC/CTIA).
+- Columns: `sms_consent boolean DEFAULT false`, `sms_consent_at timestamptz`, `sms_consent_src text`
+- Every agent that sends SMS to a CUSTOMER (not employee) must check
+  `customer.sms_consent` first
+- If false: block the SMS, log `sms_blocked_no_optin` to agent_activity
+- Opt-in is set via: `SET OPTIN +1XXXXXXXXXX` from owner's phone,
+  or customer replies START to the business number
+
+## SMS Routing Order (sms_router.py)
+
+All inbound SMS is processed in this exact sequence, first match wins:
+```
+1. STOP / YES / START / UNSTOP — opt-in/opt-out (always first)
+2. Priority intents — loss_reason, accepted, declined, lost_report
+3. No-show response — owner/foreman with open alert
+4. Pending clarification — employee has active clarification session
+5. Customer approval reply — YES/NO/STOP from customer
+6. Explicit keywords — ESTIMATE, SCHEDULE, DONE, CLOCK IN/OUT, SET OPTIN
+7. High-confidence keywords — invoice/clock/job_list/noshow phrases
+8. Everything else → clarification_agent (Claude classifies intent)
+```
 
 ---
 
@@ -272,10 +351,13 @@ created_at    timestamp (auto)
 customers table
 id              uuid (auto)
 client_phone    text (which trade business they belong to)
-customer_phone  text
+customer_phone  text NOT NULL (HARD RULE #1)
 customer_name   text
 address         text
 notes           text
+sms_consent     boolean NOT NULL DEFAULT false (HARD RULE #2)
+sms_consent_at  timestamptz
+sms_consent_src text (web_form / owner_command / customer_reply)
 last_contact    timestamp
 created_at      timestamp (auto)
 ```
@@ -302,6 +384,170 @@ created_at    timestamptz DEFAULT now()
 expires_at    timestamptz NOT NULL (72 hours from creation)
 viewed_at     timestamptz
 expired       boolean DEFAULT false
+```
+
+**pending_clarifications table (multi-step intent gathering)**
+```
+pending_clarifications table
+id                      uuid PRIMARY KEY DEFAULT gen_random_uuid()
+client_id               uuid REFERENCES clients(id)
+employee_phone          text
+original_message        text
+stage                   integer DEFAULT 1 (1=asked intent, 2=asked address)
+collected_intent        text (estimate/schedule/completion/both)
+collected_address       text
+collected_customer_name text
+collected_scope         text
+expires_at              timestamptz DEFAULT now() + interval '30 minutes'
+created_at              timestamptz DEFAULT now()
+```
+
+**customer_approvals table (on-site estimate approval)**
+```
+customer_approvals table
+id                  uuid PRIMARY KEY DEFAULT gen_random_uuid()
+client_id           uuid REFERENCES clients(id)
+customer_id         uuid REFERENCES customers(id)
+job_id              uuid REFERENCES jobs(id)
+proposal_id         uuid REFERENCES proposals(id)
+tech_phone          text
+customer_phone      text
+estimate_amount     numeric(10,2)
+sent_at             timestamptz DEFAULT now()
+expires_at          timestamptz DEFAULT now() + interval '10 minutes'
+status              text DEFAULT 'pending' (pending/approved/declined/expired)
+followup_1_sent_at  timestamptz
+followup_2_sent_at  timestamptz
+approved_at         timestamptz
+created_at          timestamptz DEFAULT now()
+```
+
+**onboarding_sessions table (client setup wizard)**
+```
+onboarding_sessions table
+id                    uuid PRIMARY KEY DEFAULT gen_random_uuid()
+client_id             uuid REFERENCES clients(id)
+token                 text UNIQUE NOT NULL
+status                text DEFAULT 'pending' (pending/in_progress/completed/approved)
+created_at            timestamptz DEFAULT now()
+expires_at            timestamptz DEFAULT now() + interval '7 days'
+completed_at          timestamptz
+last_activity_at      timestamptz DEFAULT now()
+step_reached          integer DEFAULT 1
+company_name          text
+owner_name            text
+owner_email           text
+owner_mobile          text
+company_address       text
+company_city          text
+company_state         text
+company_zip           text
+company_phone         text
+years_in_business     text
+trade_vertical        text
+trade_specialties     text[]
+service_radius_miles  integer
+service_area_desc     text
+tone_preference       text
+customer_type         text
+pricing_style         text
+tagline               text
+how_they_found_us     text
+employees_json        jsonb
+pricing_json          jsonb
+logo_url              text
+personality_md        text
+personality_md_approved boolean DEFAULT false
+```
+
+**trade_verticals table (registry of supported trades)**
+```
+trade_verticals table
+id              uuid PRIMARY KEY DEFAULT gen_random_uuid()
+vertical_key    text UNIQUE NOT NULL
+vertical_label  text NOT NULL
+icon            text
+sort_order      integer DEFAULT 0
+active          boolean DEFAULT true
+specialties     text[]
+created_at      timestamptz DEFAULT now()
+```
+
+**pricing_benchmarks table (researched service pricing)**
+```
+pricing_benchmarks table
+id              uuid PRIMARY KEY DEFAULT gen_random_uuid()
+vertical_key    text NOT NULL
+vertical_label  text NOT NULL
+service_name    text NOT NULL
+price_low       numeric(10,2)
+price_typical   numeric(10,2)
+price_high      numeric(10,2)
+price_unit      text DEFAULT 'per job'
+sort_order      integer DEFAULT 0
+notes           text
+region          text DEFAULT 'northeast_us'
+active          boolean DEFAULT true
+created_at      timestamptz DEFAULT now()
+updated_at      timestamptz DEFAULT now()
+```
+
+**pricing_adjustments table (learning foundation)**
+```
+pricing_adjustments table
+id              uuid PRIMARY KEY DEFAULT gen_random_uuid()
+client_id       uuid REFERENCES clients(id)
+vertical_key    text
+service_name    text
+original_price  numeric(10,2)
+adjusted_price  numeric(10,2)
+delta           numeric(10,2)
+direction       text (up / down / same)
+context         text (proposal_edit / invoice_edit / onboarding_setup / manual_override)
+created_at      timestamptz DEFAULT now()
+```
+
+**estimate_edits table (edit diff log)**
+```
+estimate_edits table
+id              uuid (auto)
+document_type   text (proposal or invoice)
+document_id     text
+client_id       text
+field_changed   text
+original_value  text
+new_value       text
+created_at      timestamptz DEFAULT now()
+```
+
+**client_prompt_overrides table (learning loop)**
+```
+client_prompt_overrides table
+id                    uuid (auto)
+client_id             text UNIQUE
+estimate_style_notes  text
+invoice_style_notes   text
+updated_at            timestamptz
+```
+
+**proposals table (updated columns)**
+```
++ line_items    jsonb (array of {description, qty, unit_price, total})
++ edit_token    uuid DEFAULT gen_random_uuid()
++ html_url      text
++ subtotal      numeric
++ tax_rate      numeric
++ tax_amount    numeric
+```
+
+**invoices table (updated columns)**
+```
++ line_items    jsonb (array of {description, qty, unit_price, total})
++ edit_token    uuid DEFAULT gen_random_uuid()
++ html_url      text
++ subtotal      numeric
++ tax_rate      numeric
++ tax_amount    numeric
 ```
 
 ---

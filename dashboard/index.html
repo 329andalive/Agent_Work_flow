@@ -491,13 +491,30 @@
 
   <script>
     /* ── Config ─────────────────────────────────────────────────────── */
-    const SUPABASE_URL  = 'https://wczzlvhpryufohjwmxwd.supabase.co';   // TODO: replace
-    const SUPABASE_ANON_KEY = 'sb_publishable_-3d8IrJdcQOAQpxPDBLOMA_KmeAVdEy';   // TODO: replace
-    const CLIENT_ID     = '8aafcd73-b41c-4f1a-bd01-3e7955798367';      // TODO: replace
-    const API_BASE      = 'https://web-production-043dc.up.railway.app';
-    const REFRESH_MS    = 30_000;
+    let   SUPABASE_URL      = '';
+    let   SUPABASE_ANON_KEY = '';
+    let   CLIENT_ID         = '';
+    const API_BASE          = window.location.origin;
+    const REFRESH_MS        = 30_000;
 
-    const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    let sb = null;
+
+    // Load config dynamically then init Supabase
+    (async function loadConfig() {
+      try {
+        const res = await fetch(API_BASE + '/api/client/config');
+        const cfg = await res.json();
+        if (cfg.success) {
+          CLIENT_ID       = cfg.client_id || '';
+          SUPABASE_URL    = cfg.supabase_url || '';
+          SUPABASE_ANON_KEY = cfg.supabase_anon_key || '';
+          if (SUPABASE_URL && SUPABASE_ANON_KEY) {
+            sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+            refreshAll();
+          }
+        }
+      } catch(e) { console.warn('Config load failed:', e); }
+    })();
 
     /* ── Live clock ─────────────────────────────────────────────────── */
     function updateClock() {

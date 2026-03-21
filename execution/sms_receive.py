@@ -32,6 +32,18 @@ from execution.db_webhook_log import is_duplicate, save_webhook, mark_processed,
 _project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 app = Flask(__name__, template_folder=os.path.join(_project_root, "templates"))
 
+# Register blueprints
+from routes.document_routes import document_bp
+from routes.invoice_routes import invoice_bp
+from routes.routes_debug import debug_bp
+from routes.command_routes import command_bp
+from routes.onboarding_routes import onboarding_bp
+app.register_blueprint(document_bp)
+app.register_blueprint(invoice_bp)
+app.register_blueprint(debug_bp)
+app.register_blueprint(command_bp)
+app.register_blueprint(onboarding_bp)
+
 
 def timestamp():
     """Return a formatted timestamp string for log lines."""
@@ -310,8 +322,10 @@ def telnyx_webhook():
         return jsonify({"status": "duplicate"}), 200
 
     # Step 6: Resolve tenant_id from the Telnyx number (to_number)
+    # Skip DB lookup for delivery receipt events — they are outbound status
+    # updates and don't need a client lookup. Saves a DB round-trip per event.
     tenant_id = None
-    if to_number:
+    if event_type not in _DELIVERY_EVENTS and to_number:
         try:
             from execution.db_client import get_client_by_phone
             tenant_client = get_client_by_phone(to_number)
@@ -399,6 +413,21 @@ def dashboard_office():
     """Serve the office dashboard."""
     dashboard_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "dashboard")
     return send_from_directory(dashboard_dir, "office.html")
+
+
+@app.route("/dashboard/command.html")
+@app.route("/command")
+def dashboard_command():
+    """Serve the Command Center dashboard."""
+    dashboard_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "dashboard")
+    return send_from_directory(dashboard_dir, "command.html")
+
+
+@app.route("/dashboard/onboarding.html")
+def dashboard_onboarding():
+    """Serve the client onboarding admin dashboard."""
+    dashboard_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "dashboard")
+    return send_from_directory(dashboard_dir, "onboarding.html")
 
 
 @app.route("/dashboard/book.html")
@@ -697,6 +726,23 @@ def view_invoice(token):
         if methods_match:
             payment_methods = methods_match.group(1).strip()
 
+    # Square payment link + paid status
+    payment_link_url = link.get("payment_link_url") or ""
+    is_paid = bool(invoice.get("paid_at")) if invoice else False
+
+    # Parse structured line_items if present on the invoice
+    structured_items = []
+    if invoice and invoice.get("line_items"):
+        raw_items = invoice["line_items"]
+        if isinstance(raw_items, str):
+            try:
+                import json as _json
+                structured_items = _json.loads(raw_items)
+            except Exception:
+                pass
+        elif isinstance(raw_items, list):
+            structured_items = raw_items
+
     biz_name = client["business_name"] if client else "Business"
     date_str = datetime.now().strftime("%B %d, %Y")
 
@@ -707,12 +753,14 @@ def view_invoice(token):
         date=date_str,
         invoice_number=invoice_number,
         invoice_lines=invoice_lines,
-        line_items=[],
+        line_items=structured_items,
         total_amount=total_amount,
         job_description=job_description,
         job_description_lines=job_description_lines,
         payment_terms=payment_terms or "Due on receipt",
         payment_methods=payment_methods or "Check, cash, or Venmo",
+        payment_link_url=payment_link_url,
+        is_paid=is_paid,
     )
 
 

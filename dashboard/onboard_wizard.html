@@ -1,0 +1,543 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+  <title>Setup Your Business — Bolts11</title>
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    html{-webkit-text-size-adjust:100%}
+    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#f8f9fa;color:#1a1a1a;min-height:100vh;font-size:16px;line-height:1.5}
+    .wrap{max-width:560px;margin:0 auto;padding:16px}
+    /* Header */
+    .hdr{text-align:center;padding:20px 0 12px;position:sticky;top:0;background:#f8f9fa;z-index:10}
+    .hdr-logo{font-size:22px;font-weight:800;color:#1a5c3a;letter-spacing:.02em}
+    .hdr-sub{font-size:13px;color:#666;margin-top:2px}
+    .progress{display:flex;gap:4px;margin:14px 0 0;justify-content:center}
+    .progress .seg{height:5px;flex:1;max-width:60px;border-radius:3px;background:#ddd;transition:background .3s}
+    .progress .seg.done{background:#1a5c3a}
+    .progress .seg.active{background:#2d8a56}
+    .step-label{font-size:12px;color:#888;text-align:center;margin-top:6px}
+    .save-later{display:block;text-align:center;font-size:13px;color:#1a5c3a;text-decoration:none;margin:8px 0 0;cursor:pointer}
+    .save-later:hover{text-decoration:underline}
+    /* Card */
+    .card{background:#fff;border-radius:12px;box-shadow:0 1px 8px rgba(0,0,0,.06);padding:24px 20px;margin-top:12px}
+    .card h2{font-size:20px;font-weight:700;margin-bottom:4px}
+    .card .sub{font-size:14px;color:#666;margin-bottom:20px}
+    /* Form */
+    .fg{margin-bottom:16px}
+    .fg label{display:block;font-size:14px;font-weight:600;margin-bottom:4px}
+    .fg label .req{color:#c00}
+    .fg .hint{font-size:12px;color:#888;margin-top:3px}
+    input[type=text],input[type=tel],input[type=email],input[type=number],input[type=date],input[type=time],select,textarea{
+      width:100%;font-size:16px;padding:12px;border:1.5px solid #d0d5dd;border-radius:8px;background:#fff;
+      color:#1a1a1a;outline:none;-webkit-appearance:none;font-family:inherit;min-height:44px}
+    input:focus,select:focus,textarea:focus{border-color:#1a5c3a;box-shadow:0 0 0 3px rgba(26,92,58,.12)}
+    input::placeholder,textarea::placeholder{color:#aaa}
+    textarea{resize:vertical;min-height:80px}
+    select{cursor:pointer}
+    /* Radio cards */
+    .radio-cards{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px}
+    .radio-card{display:flex;align-items:center;gap:10px;padding:14px 12px;border:1.5px solid #d0d5dd;border-radius:8px;cursor:pointer;transition:all .15s;min-height:44px;font-size:14px}
+    .radio-card:hover{border-color:#1a5c3a}
+    .radio-card.selected{border-color:#1a5c3a;background:#f0f9f4}
+    .radio-card input{display:none}
+    .radio-dot{width:18px;height:18px;border-radius:50%;border:2px solid #ccc;flex-shrink:0;display:flex;align-items:center;justify-content:center}
+    .radio-card.selected .radio-dot{border-color:#1a5c3a}.radio-card.selected .radio-dot::after{content:'';width:10px;height:10px;border-radius:50%;background:#1a5c3a}
+    /* Checkboxes */
+    .check-grid{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px}
+    .check-pill{padding:8px 14px;border:1.5px solid #d0d5dd;border-radius:20px;font-size:13px;cursor:pointer;transition:all .15s;user-select:none}
+    .check-pill:hover{border-color:#1a5c3a}.check-pill.selected{background:#1a5c3a;color:#fff;border-color:#1a5c3a}
+    /* Slider */
+    .slider-wrap{margin:12px 0 16px}
+    .slider-val{text-align:center;font-size:15px;font-weight:600;color:#1a5c3a;margin-bottom:8px}
+    input[type=range]{width:100%;height:6px;-webkit-appearance:none;background:#ddd;border-radius:3px;outline:none}
+    input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:24px;height:24px;border-radius:50%;background:#1a5c3a;cursor:pointer}
+    /* Employee rows */
+    .emp-row{display:flex;gap:8px;margin-bottom:8px;align-items:flex-end;flex-wrap:wrap}
+    .emp-row .fg{flex:1;min-width:120px;margin-bottom:0}
+    .emp-row .fg label{font-size:12px}
+    .emp-remove{background:none;border:none;color:#c00;font-size:18px;cursor:pointer;padding:8px;line-height:1}
+    /* Pricing table */
+    .price-table{width:100%;font-size:14px;margin-bottom:12px}
+    .price-table th{font-size:12px;font-weight:600;color:#666;text-align:left;padding:6px 4px;border-bottom:1px solid #eee}
+    .price-table td{padding:4px}
+    .price-table input{font-size:14px;padding:8px;min-height:40px}
+    .price-table .svc-name{font-size:13px}
+    .add-btn{background:none;border:none;color:#1a5c3a;font-size:13px;font-weight:600;cursor:pointer;padding:6px 0}
+    .rm-btn{background:none;border:none;color:#c00;font-size:16px;cursor:pointer}
+    /* Upload */
+    .upload-area{border:2px dashed #d0d5dd;border-radius:12px;padding:40px 20px;text-align:center;cursor:pointer;transition:border-color .15s;margin-bottom:16px}
+    .upload-area:hover{border-color:#1a5c3a}
+    .upload-area .icon{font-size:32px;margin-bottom:8px}
+    .upload-area p{font-size:14px;color:#666}
+    .upload-preview{max-width:200px;max-height:120px;margin:12px auto;display:none}
+    .skip-link{display:block;text-align:center;font-size:13px;color:#888;margin-top:8px;cursor:pointer}
+    .skip-link:hover{color:#1a5c3a}
+    /* Summary */
+    .summary-row{display:flex;justify-content:space-between;padding:8px 0;font-size:14px;border-bottom:1px solid #f0f0f0}
+    .summary-label{color:#666}.summary-val{font-weight:600}
+    /* Buttons */
+    .btn-next{display:block;width:100%;padding:14px;background:#1a5c3a;color:#fff;font-size:16px;font-weight:700;border:none;border-radius:8px;cursor:pointer;margin-top:20px;min-height:48px;transition:opacity .15s}
+    .btn-next:hover{opacity:.9}.btn-next:disabled{opacity:.4;cursor:not-allowed}
+    .btn-back{display:inline-block;font-size:13px;color:#888;margin-top:10px;cursor:pointer;text-decoration:none;text-align:center;width:100%}
+    .btn-back:hover{color:#1a5c3a}
+    /* Error */
+    .field-error{color:#c00;font-size:12px;margin-top:3px;display:none}
+    /* Success screen */
+    .success-screen{text-align:center;padding:40px 20px}
+    .success-screen .check{font-size:64px;color:#1a5c3a;margin-bottom:16px}
+    .success-screen h2{font-size:22px;margin-bottom:8px}
+    .success-screen p{font-size:14px;color:#666;margin-bottom:8px}
+    /* Resume banner */
+    .resume-banner{background:#f0f9f4;border:1px solid #b3dfc4;border-radius:8px;padding:14px;margin-bottom:12px;text-align:center}
+    .resume-banner p{font-size:14px;margin-bottom:8px}
+    .resume-banner button{padding:8px 16px;border-radius:6px;border:none;cursor:pointer;font-size:13px;font-weight:600;margin:0 4px}
+    .resume-btn{background:#1a5c3a;color:#fff}.restart-btn{background:#eee;color:#333}
+    /* Step visibility */
+    .step{display:none}.step.active{display:block}
+    /* Saved message */
+    .saved-msg{text-align:center;padding:40px 20px}
+    .saved-msg p{font-size:14px;color:#666}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <!-- Header -->
+    <div class="hdr">
+      <div class="hdr-logo">BOLTS11</div>
+      <div class="hdr-sub" id="hdr-sub">Business Setup</div>
+      <div class="progress" id="progress"></div>
+      <div class="step-label" id="step-label">Step 1 of 6</div>
+      <a class="save-later" onclick="saveLater()">Save & continue later</a>
+    </div>
+
+    <!-- Resume banner -->
+    <div class="resume-banner" id="resume-banner" style="display:none">
+      <p>Welcome back! Pick up where you left off?</p>
+      <button class="resume-btn" onclick="resumeSession()">Resume</button>
+      <button class="restart-btn" onclick="goToStep(1)">Start Over</button>
+    </div>
+
+    <!-- Step 1: Company Info -->
+    <div class="step active" id="step-1">
+      <div class="card">
+        <h2>Let's start with the basics</h2>
+        <div class="sub">Tell us about your business</div>
+        <div class="fg"><label>Business Name <span class="req">*</span></label><input type="text" id="s1-name" placeholder="Your Business Name"><div class="field-error" id="e-s1-name">Required</div></div>
+        <div class="fg"><label>Your Name <span class="req">*</span></label><input type="text" id="s1-owner" placeholder="Your Full Name"><div class="field-error" id="e-s1-owner">Required</div></div>
+        <div class="fg"><label>Your Mobile Number <span class="req">*</span></label><input type="tel" id="s1-mobile" placeholder="(555) 555-0100"><div class="hint">This is where you'll receive notifications</div><div class="field-error" id="e-s1-mobile">Required</div></div>
+        <div class="fg"><label>Business Phone</label><input type="tel" id="s1-phone" placeholder="Same as mobile is fine"></div>
+        <div class="fg"><label>Business Address <span class="req">*</span></label><input type="text" id="s1-address" placeholder="123 Main St"><div class="field-error" id="e-s1-address">Required</div></div>
+        <div style="display:flex;gap:8px">
+          <div class="fg" style="flex:2"><label>City <span class="req">*</span></label><input type="text" id="s1-city" placeholder="Your City"></div>
+          <div class="fg" style="flex:1"><label>State <span class="req">*</span></label><input type="text" id="s1-state" placeholder="ME" maxlength="2"></div>
+          <div class="fg" style="flex:1"><label>ZIP <span class="req">*</span></label><input type="text" id="s1-zip" placeholder="04915" maxlength="5"></div>
+        </div>
+        <div class="fg"><label>Years in Business</label><select id="s1-years"><option value="">Select...</option><option>Less than 1 year</option><option>1-3 years</option><option>3-10 years</option><option>10+ years</option></select></div>
+        <button class="btn-next" onclick="nextStep(1)">Next: Your Trade &rarr;</button>
+      </div>
+    </div>
+
+    <!-- Step 2: Trade -->
+    <div class="step" id="step-2">
+      <div class="card">
+        <h2>What kind of work do you do?</h2>
+        <div class="fg"><label>Primary Trade <span class="req">*</span></label></div>
+        <div class="radio-cards" id="s2-trades"></div>
+        <div class="fg" id="s2-other-wrap" style="display:none"><label>Describe your trade</label><input type="text" id="s2-other" placeholder="What kind of work?"></div>
+        <div class="fg"><label>Specialties</label><div class="hint">Select all that apply</div></div>
+        <div class="check-grid" id="s2-specs"></div>
+        <div class="fg"><label>How far do you travel for jobs?</label>
+          <div class="slider-wrap"><div class="slider-val" id="s2-radius-label">25 miles</div><input type="range" id="s2-radius" min="10" max="100" step="5" value="25" oninput="document.getElementById('s2-radius-label').textContent=this.value+' miles'"></div>
+        </div>
+        <div class="fg"><label>Describe your service area</label><textarea id="s2-area" placeholder="We serve [your county] and surrounding areas."></textarea><div class="hint">This is what your AI assistant will tell customers</div></div>
+        <button class="btn-next" onclick="nextStep(2)">Next: Your Style &rarr;</button>
+        <a class="btn-back" onclick="goToStep(1)">&larr; Back</a>
+      </div>
+    </div>
+
+    <!-- Step 3: Personality -->
+    <div class="step" id="step-3">
+      <div class="card">
+        <h2>How should we talk to your customers?</h2>
+        <div class="sub">Your AI assistant will match your style</div>
+        <div class="fg"><label>Your communication tone <span class="req">*</span></label></div>
+        <div class="radio-cards" id="s3-tones"></div>
+        <div class="fg"><label>Who are most of your customers? <span class="req">*</span></label></div>
+        <div class="radio-cards" id="s3-customers"></div>
+        <div class="fg"><label>How do you handle pricing? <span class="req">*</span></label></div>
+        <div class="radio-cards" id="s3-pricing"></div>
+        <div class="fg"><label>Do you have a tagline or motto?</label><input type="text" id="s3-tagline" placeholder="Reliable service you can count on"><div class="hint">Leave blank if you don't have one</div></div>
+        <div class="fg"><label>How did you find Bolts11?</label><select id="s3-source"><option value="">Select...</option><option>Referral</option><option>Social Media</option><option>Google</option><option>Trade Show</option><option>Cold Outreach</option><option>Other</option></select></div>
+        <button class="btn-next" onclick="nextStep(3)">Next: Your Team &rarr;</button>
+        <a class="btn-back" onclick="goToStep(2)">&larr; Back</a>
+      </div>
+    </div>
+
+    <!-- Step 4: Employees -->
+    <div class="step" id="step-4">
+      <div class="card">
+        <h2>Who's on your team?</h2>
+        <div class="sub">Add the people who will use the system. You can add more later.</div>
+        <div id="emp-list"></div>
+        <button class="add-btn" onclick="addEmployee()">+ Add Another Team Member</button>
+        <button class="btn-next" onclick="nextStep(4)">Next: Your Pricing &rarr;</button>
+        <a class="btn-back" onclick="goToStep(3)">&larr; Back</a>
+      </div>
+    </div>
+
+    <!-- Step 5: Pricing -->
+    <div class="step" id="step-5">
+      <div class="card">
+        <h2>What do you typically charge?</h2>
+        <div class="sub">This helps your AI give accurate estimates. All prices are private — customers never see your cost sheet.</div>
+        <table class="price-table"><thead><tr><th>Service</th><th style="width:60px">Low $</th><th style="width:60px">Typical $</th><th style="width:60px">High $</th><th style="width:28px"></th></tr></thead><tbody id="price-body"></tbody></table>
+        <button class="add-btn" onclick="addPriceRow()">+ Add custom service</button>
+        <div class="hint" style="margin-top:8px">Your AI will use these ranges when generating estimates.</div>
+        <button class="btn-next" onclick="nextStep(5)">Next: Your Logo &rarr;</button>
+        <a class="btn-back" onclick="goToStep(4)">&larr; Back</a>
+      </div>
+    </div>
+
+    <!-- Step 6: Logo + Summary -->
+    <div class="step" id="step-6">
+      <div class="card">
+        <h2>One last thing — your logo</h2>
+        <div class="sub">Optional, but it makes your proposals and invoices look great.</div>
+        <div class="upload-area" onclick="document.getElementById('logo-file').click()">
+          <div class="icon">&#128247;</div>
+          <p>Tap to upload your logo</p>
+          <p style="font-size:12px;color:#aaa;margin-top:4px">JPG, PNG, or SVG — max 5MB</p>
+        </div>
+        <input type="file" id="logo-file" accept="image/*" style="display:none" onchange="previewLogo(this)">
+        <img class="upload-preview" id="logo-preview">
+        <a class="skip-link" onclick="skipLogo()">Skip for now — I'll add it later</a>
+        <hr style="margin:20px 0;border:none;border-top:1px solid #eee">
+        <h2 style="font-size:17px;margin-bottom:12px">Does everything look right?</h2>
+        <div id="summary"></div>
+        <button class="btn-next" onclick="submitWizard()">Submit & Finish Setup &rarr;</button>
+        <a class="btn-back" onclick="goToStep(5)">&larr; Go Back and Edit</a>
+      </div>
+    </div>
+
+    <!-- Success -->
+    <div class="step" id="step-success">
+      <div class="card">
+        <div class="success-screen">
+          <div class="check">&#10003;</div>
+          <h2 id="success-name">You're all set!</h2>
+          <p>We'll review your setup and have your system ready within 24 hours.</p>
+          <p>You'll receive a text when it's live.</p>
+          <p style="margin-top:16px;font-weight:600">Questions? Contact your Bolts11 representative.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Saved later -->
+    <div class="step" id="step-saved">
+      <div class="card">
+        <div class="saved-msg">
+          <h2>Progress saved!</h2>
+          <p>Come back anytime with your link to finish up.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    /* ── Config ─────────────────────────────────────────────────── */
+    const API_BASE = window.location.origin;
+    const TOKEN = window.location.pathname.split('/').pop();
+    let session = {};
+    let currentStep = 1;
+    const STEP_NAMES = ['','Company','Trade','Personality','Team','Pricing','Logo'];
+    let TRADES = []; // Loaded dynamically from /api/verticals
+    const TONES = [{label:'Friendly & Casual'},{label:'Professional'},{label:'Short & Direct'},{label:'Warm & Personal'}];
+    const CUSTOMERS = [{label:'Homeowners'},{label:'Property Managers'},{label:'Businesses / Commercial'},{label:'Mix of all of these'}];
+    const PRICINGS = [{label:'Give firm quotes upfront'},{label:'Give ballpark estimates, finalize on site'},{label:'Time & materials — charge actual time + parts'},{label:'It depends on the job'}];
+
+    /* ── Init: load verticals from DB, then build cards ─────────── */
+    (async function initTrades(){
+      try{
+        const res = await fetch(API_BASE+'/api/verticals');
+        const d = await res.json();
+        if(d.success && d.verticals && d.verticals.length){
+          TRADES = d.verticals.map(v=>({icon:v.icon||'',label:v.vertical_label,key:v.vertical_key}));
+        }
+      }catch(e){console.warn('Verticals load failed, using defaults');}
+      if(!TRADES.length){
+        TRADES=[{icon:'🚽',label:'Septic & Sewer',key:'septic'},{icon:'🔧',label:'Plumbing',key:'plumbing'},{icon:'❄️',label:'HVAC',key:'hvac'},{icon:'⚡',label:'Electrical',key:'electrical'},{icon:'🚜',label:'Excavation',key:'excavation'},{icon:'🌊',label:'Drain Cleaning',key:'drain'},{icon:'🔨',label:'General Contracting',key:'general'},{icon:'🌿',label:'Landscaping',key:'landscaping'},{icon:'🏠',label:'Property Maintenance',key:'property_mgmt'}];
+      }
+      buildRadioCards('s2-trades', TRADES.map(t=>t.icon+' '+t.label), onTradeSelect);
+      loadSession();
+    })();
+    buildRadioCards('s3-tones', TONES.map(t=>t.label));
+    buildRadioCards('s3-customers', CUSTOMERS.map(t=>t.label));
+    buildRadioCards('s3-pricing', PRICINGS.map(t=>t.label));
+
+    async function loadSession(){
+      try{
+        const res=await fetch(API_BASE+'/api/onboarding/'+TOKEN+'/data');
+        const d=await res.json();
+        if(!d.success)return;
+        session=d.session||{};
+        populateFields();
+        if((session.step_reached||1)>1){
+          document.getElementById('resume-banner').style.display='block';
+        }
+        updateProgress(1);
+      }catch(e){console.error(e)}
+    }
+
+    function populateFields(){
+      const s=session;
+      if(s.company_name)document.getElementById('s1-name').value=s.company_name;
+      if(s.owner_name)document.getElementById('s1-owner').value=s.owner_name;
+      if(s.owner_mobile)document.getElementById('s1-mobile').value=formatPhone(s.owner_mobile);
+      if(s.company_phone)document.getElementById('s1-phone').value=formatPhone(s.company_phone);
+      if(s.company_address)document.getElementById('s1-address').value=s.company_address;
+      if(s.company_city)document.getElementById('s1-city').value=s.company_city;
+      if(s.company_state)document.getElementById('s1-state').value=s.company_state;
+      if(s.company_zip)document.getElementById('s1-zip').value=s.company_zip;
+      if(s.years_in_business)document.getElementById('s1-years').value=s.years_in_business;
+      if(s.trade_vertical)selectRadio('s2-trades',TRADES.map(t=>t.icon+' '+t.label).find(l=>l.includes(s.trade_vertical))||'');
+      if(s.service_radius_miles){document.getElementById('s2-radius').value=s.service_radius_miles;document.getElementById('s2-radius-label').textContent=s.service_radius_miles+' miles'}
+      if(s.service_area_desc)document.getElementById('s2-area').value=s.service_area_desc;
+      if(s.tone_preference)selectRadio('s3-tones',s.tone_preference);
+      if(s.customer_type)selectRadio('s3-customers',s.customer_type);
+      if(s.pricing_style)selectRadio('s3-pricing',s.pricing_style);
+      if(s.tagline)document.getElementById('s3-tagline').value=s.tagline;
+      if(s.how_they_found_us)document.getElementById('s3-source').value=s.how_they_found_us;
+      // Pre-fill owner as first employee
+      if(!session.employees_json||!session.employees_json.length){
+        initEmployees([{name:s.owner_name||'',phone:s.owner_mobile||'',role:'Owner'}]);
+      }else{initEmployees(typeof s.employees_json==='string'?JSON.parse(s.employees_json):s.employees_json)}
+    }
+
+    function resumeSession(){document.getElementById('resume-banner').style.display='none';goToStep(session.step_reached||1)}
+
+    /* ── Progress bar ───────────────────────────────────────────── */
+    function updateProgress(step){
+      currentStep=step;
+      const bar=document.getElementById('progress');
+      bar.innerHTML='';
+      for(let i=1;i<=6;i++){
+        const seg=document.createElement('div');
+        seg.className='seg'+(i<step?' done':'')+(i===step?' active':'');
+        bar.appendChild(seg);
+      }
+      document.getElementById('step-label').textContent='Step '+step+' of 6 — '+STEP_NAMES[step];
+      document.querySelectorAll('.step').forEach(s=>s.classList.remove('active'));
+      const el=document.getElementById('step-'+step)||document.getElementById('step-success');
+      if(el)el.classList.add('active');
+      window.scrollTo(0,0);
+      if(step<=6){
+        document.getElementById('hdr-sub').textContent=(session.company_name||'Business')+' Setup';
+      }
+    }
+
+    function goToStep(n){updateProgress(n)}
+
+    /* ── Radio cards builder ────────────────────────────────────── */
+    function buildRadioCards(containerId,labels,onChange){
+      const c=document.getElementById(containerId);
+      c.innerHTML=labels.map(l=>`<div class="radio-card" onclick="selectCard(this,'${containerId}'${onChange?',true':''})"><div class="radio-dot"></div><span>${l}</span></div>`).join('');
+    }
+    function selectCard(el,containerId,trigger){
+      el.parentElement.querySelectorAll('.radio-card').forEach(c=>c.classList.remove('selected'));
+      el.classList.add('selected');
+      if(trigger)onTradeSelect(el.querySelector('span').textContent.replace(/^[^\s]+\s/,''));
+    }
+    function selectRadio(containerId,value){
+      if(!value)return;
+      document.querySelectorAll('#'+containerId+' .radio-card').forEach(c=>{
+        if(c.textContent.includes(value))c.classList.add('selected');
+      });
+    }
+    function getSelectedRadio(containerId){
+      const sel=document.querySelector('#'+containerId+' .radio-card.selected span');
+      return sel?sel.textContent.replace(/^[^\s]+\s/,'').trim():'';
+    }
+
+    /* ── Trade selection → load specialties ─────────────────────── */
+    async function onTradeSelect(label){
+      const clean=label.replace(/^[^\s]+\s/,'').trim();
+      document.getElementById('s2-other-wrap').style.display=clean==='Other'?'block':'none';
+      // Find the vertical_key from the TRADES array
+      const trade=TRADES.find(t=>t.label===clean);
+      const key=trade?trade.key:clean.toLowerCase().replace(/[^a-z_]/g,'');
+      try{
+        const res=await fetch(API_BASE+'/api/onboarding/specialties/'+encodeURIComponent(key));
+        const d=await res.json();
+        const specs=d.specialties||[];
+        document.getElementById('s2-specs').innerHTML=specs.map(s=>`<div class="check-pill" onclick="this.classList.toggle('selected')">${s}</div>`).join('');
+        // Pre-load pricing benchmarks for step 5
+        const pRes=await fetch(API_BASE+'/api/onboarding/pricing-template/'+encodeURIComponent(key));
+        const pD=await pRes.json();
+        loadPricingTable(pD.services||[]);
+      }catch(e){console.error(e)}
+    }
+
+    /* ── Employees ──────────────────────────────────────────────── */
+    function initEmployees(list){
+      document.getElementById('emp-list').innerHTML='';
+      (list||[]).forEach((emp,i)=>addEmployee(emp.name,emp.phone,emp.role,i===0));
+    }
+    function addEmployee(name,phone,role,locked){
+      const list=document.getElementById('emp-list');
+      const idx=list.children.length;
+      const row=document.createElement('div');row.className='emp-row';
+      row.innerHTML=`<div class="fg"><label>Name</label><input type="text" class="emp-name" placeholder="Tim Reynolds" value="${name||''}"></div>
+        <div class="fg"><label>Mobile</label><input type="tel" class="emp-phone" placeholder="(555) 555-0123" value="${phone?formatPhone(phone):''}"></div>
+        <div class="fg" style="min-width:100px"><label>Role</label><select class="emp-role"${locked?' disabled':''}><option>Owner</option><option>Foreman</option><option>Field Tech</option><option>Office</option></select></div>
+        ${locked?'':'<button class="emp-remove" onclick="this.parentElement.remove()">&times;</button>'}`;
+      if(role)row.querySelector('.emp-role').value=role;
+      list.appendChild(row);
+    }
+    function collectEmployees(){
+      return [...document.querySelectorAll('.emp-row')].map(r=>({
+        name:r.querySelector('.emp-name').value.trim(),
+        phone:toE164(r.querySelector('.emp-phone').value),
+        role:r.querySelector('.emp-role').value
+      })).filter(e=>e.name);
+    }
+
+    /* ── Pricing table ──────────────────────────────────────────── */
+    function loadPricingTable(services){
+      const tbody=document.getElementById('price-body');
+      tbody.innerHTML=services.map(t=>{
+        const name=t.service_name||t.service||'';
+        const unit=t.price_unit||'per job';
+        const low=t.price_low||t.low||0;
+        const typ=t.price_typical||Math.round((low+(t.price_high||t.high||0))/2);
+        const high=t.price_high||t.high||0;
+        const note=t.notes?` title="${t.notes.replace(/"/g,'&quot;')}"`:''
+        return `<tr><td><input class="svc-name" value="${name}"${note}><span style="font-size:10px;color:#888;display:block">${unit}</span></td><td><input type="number" class="svc-low" value="${low}"></td><td><input type="number" class="svc-typ" value="${typ}"></td><td><input type="number" class="svc-high" value="${high}"></td><td><button class="rm-btn" onclick="this.closest('tr').remove()">&times;</button></td></tr>`;
+      }).join('');
+    }
+    function addPriceRow(){
+      const tr=document.createElement('tr');
+      tr.innerHTML='<td><input class="svc-name" placeholder="New service"><span style="font-size:10px;color:#888;display:block">per job</span></td><td><input type="number" class="svc-low" placeholder="0"></td><td><input type="number" class="svc-typ" placeholder="0"></td><td><input type="number" class="svc-high" placeholder="0"></td><td><button class="rm-btn" onclick="this.closest(\'tr\').remove()">&times;</button></td>';
+      document.getElementById('price-body').appendChild(tr);
+    }
+    function collectPricing(){
+      return [...document.querySelectorAll('#price-body tr')].map(r=>({
+        service:r.querySelector('.svc-name').value.trim(),
+        low:parseFloat(r.querySelector('.svc-low').value)||0,
+        typical:parseFloat(r.querySelector('.svc-typ')?.value)||0,
+        high:parseFloat(r.querySelector('.svc-high').value)||0
+      })).filter(p=>p.service);
+    }
+
+    /* ── Logo ───────────────────────────────────────────────────── */
+    function previewLogo(input){
+      if(input.files&&input.files[0]){
+        const reader=new FileReader();
+        reader.onload=e=>{const img=document.getElementById('logo-preview');img.src=e.target.result;img.style.display='block'};
+        reader.readAsDataURL(input.files[0]);
+      }
+    }
+    function skipLogo(){buildSummary();goToStep(6)}
+
+    /* ── Summary ────────────────────────────────────────────────── */
+    function buildSummary(){
+      const emps=collectEmployees();const pricing=collectPricing();
+      const rows=[
+        ['Business',v('s1-name')],['Trade',getSelectedRadio('s2-trades')],
+        ['Service Area',v('s2-area')||'Not specified'],['Team',emps.length+' member'+(emps.length!==1?'s':'')],
+        ['Pricing Items',pricing.length+' service'+(pricing.length!==1?'s':'')],
+        ['Logo',document.getElementById('logo-preview').src?'Uploaded':'Not added']
+      ];
+      document.getElementById('summary').innerHTML=rows.map(([l,v])=>`<div class="summary-row"><span class="summary-label">${l}</span><span class="summary-val">${v||'—'}</span></div>`).join('');
+    }
+
+    /* ── Step navigation + save ─────────────────────────────────── */
+    async function nextStep(from){
+      if(!validateStep(from))return;
+      const data=collectStepData(from);
+      const btn=document.querySelector('#step-'+from+' .btn-next');
+      btn.disabled=true;btn.textContent='Saving...';
+      try{
+        const res=await fetch(API_BASE+'/api/onboarding/'+TOKEN+'/save',{
+          method:'POST',headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({step:from,data:data})
+        });
+        const d=await res.json();
+        if(!d.success){alert('Save failed — '+d.error);btn.disabled=false;btn.textContent=btn.dataset.orig||'Next';return}
+        if(from===5)buildSummary();
+        goToStep(from+1);
+      }catch(e){alert('Connection error — try again')}
+      btn.disabled=false;btn.textContent=['','Next: Your Trade →','Next: Your Style →','Next: Your Team →','Next: Your Pricing →','Next: Your Logo →','Submit & Finish Setup →'][from]||'Next';
+    }
+
+    function collectStepData(step){
+      if(step===1)return{company_name:v('s1-name'),owner_name:v('s1-owner'),owner_mobile:toE164(v('s1-mobile')),company_phone:toE164(v('s1-phone')),company_address:v('s1-address'),company_city:v('s1-city'),company_state:v('s1-state'),company_zip:v('s1-zip'),years_in_business:v('s1-years')};
+      if(step===2){const specs=[...document.querySelectorAll('#s2-specs .check-pill.selected')].map(e=>e.textContent);return{trade_vertical:getSelectedRadio('s2-trades'),trade_specialties:specs,service_radius_miles:parseInt(v('s2-radius')),service_area_desc:v('s2-area')}}
+      if(step===3)return{tone_preference:getSelectedRadio('s3-tones'),customer_type:getSelectedRadio('s3-customers'),pricing_style:getSelectedRadio('s3-pricing'),tagline:v('s3-tagline'),how_they_found_us:v('s3-source')};
+      if(step===4)return{employees_json:collectEmployees()};
+      if(step===5)return{pricing_json:collectPricing()};
+      if(step===6)return{};
+      return{};
+    }
+
+    function validateStep(step){
+      clearErrors();
+      if(step===1){
+        let ok=true;
+        if(!v('s1-name')){showError('e-s1-name');ok=false}
+        if(!v('s1-owner')){showError('e-s1-owner');ok=false}
+        if(!v('s1-mobile')){showError('e-s1-mobile');ok=false}
+        if(!v('s1-address')){showError('e-s1-address');ok=false}
+        return ok;
+      }
+      if(step===2)return!!getSelectedRadio('s2-trades')||(alert('Please select your primary trade'),false);
+      if(step===3){
+        if(!getSelectedRadio('s3-tones')){alert('Please select a communication tone');return false}
+        if(!getSelectedRadio('s3-customers')){alert('Please select your customer type');return false}
+        if(!getSelectedRadio('s3-pricing')){alert('Please select a pricing style');return false}
+        return true;
+      }
+      return true;
+    }
+    function showError(id){const el=document.getElementById(id);if(el)el.style.display='block'}
+    function clearErrors(){document.querySelectorAll('.field-error').forEach(e=>e.style.display='none')}
+
+    async function submitWizard(){
+      const btn=document.querySelector('#step-6 .btn-next');
+      btn.disabled=true;btn.textContent='Finishing...';
+      // Save step 6 first
+      try{await fetch(API_BASE+'/api/onboarding/'+TOKEN+'/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({step:6,data:{}})});}catch(e){}
+      // Complete
+      try{
+        const res=await fetch(API_BASE+'/api/onboarding/'+TOKEN+'/complete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({})});
+        const d=await res.json();
+        if(d.success){
+          document.getElementById('success-name').textContent="You're all set, "+(v('s1-owner')||'')+'!';
+          document.querySelectorAll('.step').forEach(s=>s.classList.remove('active'));
+          document.getElementById('step-success').classList.add('active');
+          document.querySelector('.hdr').style.display='none';
+        }else{alert('Something went wrong. Please try again.')}
+      }catch(e){alert('Connection error — try again')}
+      btn.disabled=false;btn.textContent='Submit & Finish Setup →';
+    }
+
+    function saveLater(){
+      const step=currentStep;const data=collectStepData(step);
+      fetch(API_BASE+'/api/onboarding/'+TOKEN+'/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({step:step,data:data})}).catch(()=>{});
+      document.querySelectorAll('.step').forEach(s=>s.classList.remove('active'));
+      document.getElementById('step-saved').classList.add('active');
+      document.querySelector('.hdr .save-later').style.display='none';
+    }
+
+    /* ── Helpers ─────────────────────────────────────────────────── */
+    function v(id){return document.getElementById(id)?.value?.trim()||''}
+    function formatPhone(p){if(!p)return'';const d=p.replace(/\D/g,'').replace(/^1/,'');if(d.length===10)return'('+d.slice(0,3)+') '+d.slice(3,6)+'-'+d.slice(6);return p}
+    function toE164(p){if(!p)return'';const d=p.replace(/\D/g,'');if(d.length===10)return'+1'+d;if(d.length===11&&d[0]==='1')return'+'+d;return p}
+    // Auto-format phone inputs
+    document.querySelectorAll('input[type=tel]').forEach(el=>{
+      el.addEventListener('input',function(){const d=this.value.replace(/\D/g,'').replace(/^1/,'');if(d.length<=3)this.value=d.length?'('+d:d;else if(d.length<=6)this.value='('+d.slice(0,3)+') '+d.slice(3);else this.value='('+d.slice(0,3)+') '+d.slice(3,6)+'-'+d.slice(6,10)});
+    });
+  </script>
+</body>
+</html>

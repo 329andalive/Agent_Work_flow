@@ -158,6 +158,100 @@ def is_expired(link_record: dict) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# Square payment link helpers
+# Used when an invoice token needs a Square Payment Link attached.
+# ---------------------------------------------------------------------------
+
+def attach_payment_link(
+    token: str,
+    payment_link_url: str,
+    square_order_id: str = None,
+    square_payment_link_id: str = None,
+) -> bool:
+    """
+    Attach a Square Payment Link URL to an existing invoice_links record.
+
+    Args:
+        token:                    The 8-char token already in invoice_links
+        payment_link_url:         Square checkout URL (e.g. "https://square.link/u/xxx")
+        square_order_id:          Square order ID for webhook matching
+        square_payment_link_id:   Square payment link ID
+
+    Returns:
+        True on success, False on failure.
+    """
+    try:
+        supabase = get_supabase()
+        update = {"payment_link_url": payment_link_url}
+        if square_order_id:
+            update["square_order_id"] = square_order_id
+        if square_payment_link_id:
+            update["square_payment_link_id"] = square_payment_link_id
+
+        supabase.table("invoice_links").update(update).eq("token", token).execute()
+        print(f"[token_generator] INFO: Attached payment link to token={token}")
+        return True
+    except Exception as e:
+        print(f"[token_generator] ERROR: attach_payment_link failed — {e}")
+        return False
+
+
+def get_link_by_square_order(order_id: str) -> dict | None:
+    """
+    Reverse lookup: find an invoice_links record by Square order_id.
+    Used by the Square webhook handler to identify which invoice was paid.
+
+    Args:
+        order_id: The square_order_id stored when the payment link was created
+
+    Returns:
+        The invoice_links row as a dict, or None if not found.
+    """
+    try:
+        supabase = get_supabase()
+        result = (
+            supabase.table("invoice_links")
+            .select("*")
+            .eq("square_order_id", order_id)
+            .execute()
+        )
+        if result.data:
+            return result.data[0]
+        return None
+    except Exception as e:
+        print(f"[token_generator] ERROR: get_link_by_square_order failed — {e}")
+        return None
+
+
+def mark_invoice_paid(invoice_id: str, square_payment_id: str = None) -> bool:
+    """
+    Mark an invoice as paid in the invoices table.
+    Called by the Square webhook handler when payment is confirmed.
+
+    Args:
+        invoice_id:         UUID of the invoice
+        square_payment_id:  Square payment ID for audit trail (optional)
+
+    Returns:
+        True on success, False on failure.
+    """
+    try:
+        supabase = get_supabase()
+        now = datetime.now(timezone.utc).isoformat()
+
+        update = {"paid_at": now, "status": "paid"}
+        if square_payment_id:
+            update["square_payment_id"] = square_payment_id
+
+        supabase.table("invoices").update(update).eq("id", invoice_id).execute()
+        print(f"[token_generator] INFO: Invoice {invoice_id} marked paid (square_payment_id={square_payment_id})")
+        return True
+    except Exception as e:
+        print(f"[token_generator] ERROR: mark_invoice_paid failed — {e}")
+        return False
+
+
+# ---------------------------------------------------------------------------
 # Standalone test
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":

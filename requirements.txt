@@ -6,3 +6,4 @@ supabase
 anthropic
 pytz
 cryptography
+squareup

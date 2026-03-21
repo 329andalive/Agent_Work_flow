@@ -224,18 +224,25 @@
         {% endfor %}
       </div>
 
-      <a href="#" class="pay-btn" id="pay-now">PAY NOW</a>
+      {% if is_paid %}
+      <div style="display:flex;align-items:center;justify-content:center;gap:8px;padding:1rem;margin-top:1.5rem;background:#e6f4ec;color:#1a6a35;font-size:1.1rem;font-weight:700;border-radius:8px;border:2px solid #1a6a35;">
+        Paid — Thank you!
+      </div>
+      {% elif payment_link_url %}
+      <a href="{{ payment_link_url }}" class="pay-btn" target="_blank">PAY NOW — ${{ "%.2f"|format(total_amount) }}</a>
+      {% else %}
+      <div style="padding:0.75rem;margin-top:1.5rem;background:#fffbf0;border:1px solid #f0e6cc;border-radius:6px;font-size:0.85rem;color:#666;text-align:center;">
+        Online payment coming soon. Please use the payment methods listed above.
+      </div>
+      {% endif %}
     </div>
     <div class="footer">
+      {% if payment_link_url or is_paid %}
+      Secure payment powered by Square &middot; <a href="https://bolts11.com">Bolts11</a>
+      {% else %}
       Powered by <a href="https://bolts11.com">Bolts11</a>
+      {% endif %}
     </div>
   </div>
-  <script>
-    // Square payment link will be wired here in the next session
-    document.getElementById('pay-now').addEventListener('click', function(e) {
-      e.preventDefault();
-      alert('Online payment coming soon. Please use the payment methods listed above.');
-    });
-  </script>
 </body>
 </html>

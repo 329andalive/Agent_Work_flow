@@ -379,8 +379,23 @@ def run(client_phone: str, customer_phone: str, raw_input: str) -> str | None:
 
     # ------------------------------------------------------------------
     # Step 6: Call Claude to generate the invoice
+    # Inject style overrides from owner's past edits if available
     # ------------------------------------------------------------------
     system_prompt = build_system_prompt(client)
+
+    # Check for learned style preferences from past edits
+    try:
+        from execution.db_document import get_prompt_override
+        override = get_prompt_override(client_id)
+        if override and override.get("invoice_style_notes"):
+            style_guidance = override["invoice_style_notes"]
+            system_prompt = (
+                f"Style guidance from owner's past edits: {style_guidance}\n\n"
+                + system_prompt
+            )
+            print(f"[{timestamp()}] INFO invoice_agent: Injected invoice style override")
+    except Exception as e:
+        print(f"[{timestamp()}] WARN invoice_agent: Could not load prompt override — {e}")
     user_prompt   = build_user_prompt(
         client=client,
         customer_name=customer_name,
@@ -433,20 +448,61 @@ def run(client_phone: str, customer_phone: str, raw_input: str) -> str | None:
         update_invoice_status(invoice_id, "sent")
 
     # ------------------------------------------------------------------
-    # Step 8: Generate a signed token URL for the invoice.
-    # The HTML is rendered server-side via Flask /i/<token> route.
+    # Step 8: Generate structured line_items JSONB and store on invoice.
+    # Also build the edit URL for the owner to review before sending.
     # ------------------------------------------------------------------
-    from execution.token_generator import generate_token
+    # Build line_items from the parsed job data
+    line_items_data = []
+    if actual_hours > 0:
+        line_items_data.append({
+            "description": f"Labor — {raw_input[:60]}",
+            "qty": actual_hours,
+            "unit_price": hourly_rate,
+            "total": labor_total,
+        })
+    if materials_cost > 0:
+        line_items_data.append({
+            "description": f"Parts/Materials — {materials_desc or 'as used'}",
+            "qty": 1,
+            "unit_price": materials_cost,
+            "total": materials_cost,
+        })
+    # For flat rate with no labor breakdown, add single line
+    if not line_items_data:
+        line_items_data.append({
+            "description": raw_input[:80],
+            "qty": 1,
+            "unit_price": final_amount,
+            "total": final_amount,
+        })
 
+    # Save line_items to invoice record
+    try:
+        from execution.db_connection import get_client as get_supabase
+        sb = get_supabase()
+        sb.table("invoices").update({
+            "line_items": line_items_data,
+            "subtotal": final_amount,
+            "tax_rate": 0,
+            "tax_amount": 0,
+        }).eq("id", invoice_id).execute()
+        print(f"[{timestamp()}] INFO invoice_agent: Stored {len(line_items_data)} line items on invoice")
+    except Exception as e:
+        print(f"[{timestamp()}] WARN invoice_agent: line_items update failed — {e}")
+
+    # Build edit URL from edit_token on the invoice row
     base_url = os.environ.get("BOLTS11_BASE_URL", "https://bolts11.com")
-    token = generate_token(job_id=job_id, client_phone=client_phone, link_type="invoice")
-
-    if token:
-        invoice_url = f"{base_url}/i/{token}"
-        print(f"[{timestamp()}] INFO invoice_agent: Invoice link → {invoice_url}")
-    else:
-        invoice_url = None
-        print(f"[{timestamp()}] WARN invoice_agent: Token generation failed — sending raw text only")
+    edit_url = None
+    if invoice_id:
+        try:
+            sb = get_supabase()
+            inv_row = sb.table("invoices").select("edit_token").eq("id", invoice_id).execute()
+            if inv_row.data and inv_row.data[0].get("edit_token"):
+                edit_token = inv_row.data[0]["edit_token"]
+                edit_url = f"{base_url}/doc/edit/{edit_token}?type=invoice"
+                print(f"[{timestamp()}] INFO invoice_agent: Edit URL → {edit_url}")
+        except Exception as e:
+            print(f"[{timestamp()}] WARN invoice_agent: Could not fetch edit_token — {e}")
 
     # ------------------------------------------------------------------
     # Step 9: Run job cost agent → get private margin summary
@@ -467,10 +523,10 @@ def run(client_phone: str, customer_phone: str, raw_input: str) -> str | None:
     # The INVOICE URL is what the owner forwards to the customer.
     # The JOB COST SUMMARY is private — never goes to the customer.
     # ------------------------------------------------------------------
-    if invoice_url:
+    if edit_url:
         combined_sms = (
-            f"Invoice for {customer_name} — forward this link:\n"
-            f"{invoice_url}\n\n"
+            f"Invoice ready for {customer_name} — ${final_amount:.0f}\n"
+            f"Edit & send: {edit_url}\n\n"
             f"---\n"
             f"JOB COST (owner only)\n"
             f"{cost_summary}"
