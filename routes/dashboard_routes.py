@@ -19,7 +19,7 @@ from datetime import datetime, timezone, date, timedelta
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from flask import Blueprint, render_template, request, redirect, send_from_directory
+from flask import Blueprint, render_template, request, redirect, session, send_from_directory, current_app
 
 dashboard_bp = Blueprint("dashboard_bp", __name__)
 
@@ -39,29 +39,31 @@ def _resolve_client_id():
     """
     Resolve client_id for the current request.
 
-    Dev mode (FLASK_ENV=development): allow ?client_id=XXX query param,
-      then fall back to first active client.
-    Production: client_id MUST come from session['client_id'].
-      If missing, returns None -> caller redirects to /login.
-
-    # TODO: replace with real session auth in Phase 3
+    Dev mode (debug=True or FLASK_ENV=development):
+      Allow ?client_id=XXX query param, fall back to first active client.
+    Production:
+      client_id comes from session['client_id'] (set at /login).
+      Returns None if no session → caller redirects to /login.
     """
-    if os.environ.get("FLASK_ENV") == "development":
+    if current_app.debug or os.environ.get("FLASK_ENV") == "development":
         qp = request.args.get("client_id")
         if qp:
             return qp
+        # Check session first even in dev
+        cid = session.get("client_id")
+        if cid:
+            return cid
+        # Dev fallback: first active client
         try:
             sb = _get_supabase()
             result = sb.table("clients").select("id").eq("active", True).order("created_at").limit(1).execute()
             if result.data:
                 return result.data[0]["id"]
         except Exception as e:
-            print(f"[{_ts()}] ERROR dashboard_routes: _resolve_client_id dev fallback failed — {e}")
+            print(f"[{_ts()}] ERROR dashboard_routes: _resolve_client_id dev fallback — {e}")
         return None
 
     # Production: session only
-    # TODO: replace with real session auth in Phase 3
-    from flask import session
     return session.get("client_id")
 
 
@@ -100,7 +102,7 @@ def _base_context(active_page: str, client_id: str) -> dict:
 def control_board():
     client_id = _resolve_client_id()
     if not client_id:
-        return redirect("/dashboard/onboarding.html")
+        return redirect("/login")
 
     ctx = _base_context("control", client_id)
     client = ctx["_client"]
@@ -171,7 +173,7 @@ def control_board():
 def command_center():
     client_id = _resolve_client_id()
     if not client_id:
-        return redirect("/dashboard/onboarding.html")
+        return redirect("/login")
 
     ctx = _base_context("command", client_id)
     client = ctx["_client"]
@@ -214,7 +216,7 @@ def command_center():
 def office_billing():
     client_id = _resolve_client_id()
     if not client_id:
-        return redirect("/dashboard/onboarding.html")
+        return redirect("/login")
 
     ctx = _base_context("office", client_id)
     sb = _get_supabase()

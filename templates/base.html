@@ -104,6 +104,15 @@
       flex-shrink: 0;
     }
     .sidebar-spacer { flex: 1; }
+    .sidebar-logout {
+      display: block;
+      padding: 10px 18px;
+      font-size: 13px;
+      color: #64748b;
+      text-decoration: none;
+      border-top: 1px solid var(--sidebar-border);
+    }
+    .sidebar-logout:hover { color: #f1f5f9; }
     .sidebar-footer {
       padding: 12px 18px;
       font-family: 'DM Mono', monospace;
@@ -357,6 +366,7 @@
     </a>
 
     <div class="sidebar-spacer"></div>
+    <a href="/logout" class="sidebar-logout">Sign out</a>
     <div class="sidebar-footer">
       Bolts11 &middot; AI Back Office
     </div>

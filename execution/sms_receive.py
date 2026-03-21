@@ -33,6 +33,9 @@ _project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 app = Flask(__name__, template_folder=os.path.join(_project_root, "templates"))
 app.secret_key = os.environ.get("SECRET_KEY", "dev-secret-change-in-production")
 
+from datetime import timedelta as _timedelta
+app.permanent_session_lifetime = _timedelta(days=30)
+
 # Register blueprints
 from routes.document_routes import document_bp
 from routes.invoice_routes import invoice_bp
@@ -40,12 +43,14 @@ from routes.routes_debug import debug_bp
 from routes.command_routes import command_bp
 from routes.onboarding_routes import onboarding_bp
 from routes.dashboard_routes import dashboard_bp
+from routes.auth_routes import auth_bp
 app.register_blueprint(document_bp)
 app.register_blueprint(invoice_bp)
 app.register_blueprint(debug_bp)
 app.register_blueprint(command_bp)
 app.register_blueprint(onboarding_bp)
 app.register_blueprint(dashboard_bp)
+app.register_blueprint(auth_bp)
 
 
 def timestamp():
