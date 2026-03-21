@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+
+{% block title %}Control Board{% endblock %}
+{% block page_title %}Control Board{% endblock %}
+{% block topbar_meta %}{{ today }}{% endblock %}
+
+{% block extra_css %}
+  .badge-scheduled   { background: #e2e8f0; color: #475569; }
+  .badge-in_progress { background: #dcfce7; color: #166534; }
+  .badge-completed   { background: #dbeafe; color: #1e40af; }
+  .badge-cancelled   { background: #fee2e2; color: #991b1b; }
+  .badge-estimated   { background: #fef3c7; color: #92400e; }
+  .badge-new         { background: #f3f4f6; color: #6b7280; }
+{% endblock %}
+
+{% block content %}
+<!-- Stat cards -->
+<div class="metrics-row">
+  <div class="metric">
+    <div class="metric-label">Jobs Today</div>
+    <div class="metric-value c-blue">{{ jobs_today_count }}</div>
+    <div class="metric-sub">{{ jobs_complete }} complete · {{ jobs_active }} active</div>
+  </div>
+  <div class="metric">
+    <div class="metric-label">Outstanding Invoices</div>
+    <div class="metric-value c-amber">{{ invoice_count }}</div>
+    <div class="metric-sub">${{ "%.2f"|format(invoice_total) }}</div>
+  </div>
+  <div class="metric">
+    <div class="metric-label">SMS Today</div>
+    <div class="metric-value">{{ sms_today }}</div>
+    <div class="metric-sub">inbound + outbound</div>
+  </div>
+  <div class="metric">
+    <div class="metric-label">Team Members</div>
+    <div class="metric-value">{{ employees|length }}</div>
+    <div class="metric-sub">active employees</div>
+  </div>
+</div>
+
+<!-- Today's Jobs -->
+<div class="card" style="margin-bottom:16px">
+  <div class="card-header">
+    <span class="card-title">Today's Schedule</span>
+    <span class="card-count">{{ jobs_today_count }} jobs</span>
+  </div>
+  <div class="card-body-flush">
+    {% if jobs %}
+    <table class="data-table">
+      <thead><tr><th>ID</th><th>Type</th><th>Description</th><th>Status</th><th>Est $</th></tr></thead>
+      <tbody>
+        {% for j in jobs %}
+        <tr>
+          <td><span class="id-short">{{ j.id[:8] if j.id else '—' }}</span></td>
+          <td>{{ j.job_type or '—' }}</td>
+          <td>{{ (j.job_description or j.raw_input or '—')[:50] }}{{ '...' if (j.job_description or j.raw_input or '')|length > 50 else '' }}</td>
+          <td>
+            {% set st = j.status or 'new' %}
+            <span class="badge badge-{{ st }}">{{ st|replace('_',' ') }}</span>
+          </td>
+          <td class="id-short">${{ "%.0f"|format(j.estimated_amount|float) if j.estimated_amount else '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="empty-state">No jobs scheduled for today</div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Team Status -->
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">Team Status</span>
+    <span class="card-count">{{ employees|length }} active</span>
+  </div>
+  <div class="card-body-flush">
+    {% if employees %}
+    <table class="data-table">
+      <thead><tr><th>Name</th><th>Role</th><th>Status</th></tr></thead>
+      <tbody>
+        {% for e in employees %}
+        <tr>
+          <td>{{ e.name or '—' }}</td>
+          <td><span class="badge badge-gray">{{ e.role or '—' }}</span></td>
+          <td><span class="badge badge-green">active</span></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="empty-state">No team members configured</div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

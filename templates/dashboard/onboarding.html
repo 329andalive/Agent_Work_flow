@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+
+{% block title %}Client Onboarding{% endblock %}
+{% block page_title %}Client Onboarding{% endblock %}
+{% block topbar_meta %}{{ current_date }}{% endblock %}
+
+{% block extra_css %}
+  .ob-form { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+  .ob-form .fg { flex: 1; min-width: 180px; }
+  .ob-form label { display: block; font-size: 12px; color: var(--text-secondary); margin-bottom: 4px; font-weight: 500; }
+  .ob-form input, .ob-form select {
+    width: 100%; font-size: 13px; padding: 8px 10px; border: 1px solid var(--border);
+    border-radius: 6px; outline: none; font-family: 'Barlow', sans-serif;
+  }
+  .ob-form input:focus, .ob-form select:focus { border-color: var(--blue); }
+  .ob-btn {
+    font-family: 'DM Mono', monospace; font-size: 12px; font-weight: 500;
+    padding: 10px 20px; border-radius: 6px; border: none; cursor: pointer;
+    background: var(--blue); color: #fff; transition: opacity 0.15s;
+  }
+  .ob-btn:hover { opacity: 0.9; }
+  .ob-success { background: #dcfce7; border: 1px solid #16a34a; border-radius: 8px; padding: 12px 16px; margin-top: 12px; display: none; font-size: 13px; }
+  .ob-success a { color: var(--blue); word-break: break-all; }
+  .steps-bar { display: flex; gap: 3px; }
+  .step-sq { width: 14px; height: 14px; border-radius: 3px; background: #e5e7eb; }
+  .step-sq.done { background: var(--green); }
+  .step-sq.cur { background: var(--blue); animation: pulse 1.5s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1}50%{opacity:.5} }
+{% endblock %}
+
+{% block content %}
+<!-- Create new client -->
+<div class="card" style="margin-bottom: 16px;">
+  <div class="card-header"><span class="card-title">Create New Client</span></div>
+  <div class="card-body">
+    <div class="ob-form">
+      <div class="fg"><label>Business Name *</label><input id="c-name" placeholder="Business Name"></div>
+      <div class="fg"><label>Owner Name *</label><input id="c-owner" placeholder="Owner Name"></div>
+      <div class="fg"><label>Owner Mobile *</label><input id="c-mobile" placeholder="+15551234567"></div>
+    </div>
+    <div class="ob-form">
+      <div class="fg"><label>Trade Vertical</label>
+        <select id="c-vertical"><option value="">Select...</option><option>Septic & Sewer</option><option>Plumbing</option><option>HVAC</option><option>Electrical</option><option>Excavation</option><option>Drain Cleaning</option><option>General Contracting</option><option>Landscaping</option><option>Property Maintenance</option></select>
+      </div>
+      <div class="fg"><label>Telnyx Phone</label><input id="c-telnyx" placeholder="+1XXXXXXXXXX"></div>
+    </div>
+    <button class="ob-btn" id="create-btn" onclick="createClient()">Create Client &amp; Send Setup Link &rarr;</button>
+    <div class="ob-success" id="ob-success">
+      Setup link created: <a id="ob-link" href="#" target="_blank"></a>
+      <button style="margin-left:8px;font-size:11px;padding:3px 8px;border:1px solid var(--border);border-radius:4px;background:none;cursor:pointer" onclick="navigator.clipboard.writeText(document.getElementById('ob-link').href)">Copy</button>
+    </div>
+  </div>
+</div>
+
+<!-- Pipeline -->
+<div class="card">
+  <div class="card-header"><span class="card-title">Onboarding Pipeline</span><span class="card-count" id="pipeline-count"></span></div>
+  <div class="card-body-flush">
+    <table class="data-table">
+      <thead><tr><th>Business</th><th>Owner</th><th>Trade</th><th>Progress</th><th>Status</th><th>Actions</th></tr></thead>
+      <tbody id="pipeline-body"><tr><td colspan="6" class="empty-state">Loading...</td></tr></tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  const API = window.location.origin;
+  function v(id){return document.getElementById(id)?.value?.trim()||''}
+  function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+
+  async function createClient(){
+    const btn=document.getElementById('create-btn');btn.disabled=true;btn.textContent='Creating...';
+    try{
+      const r=await fetch(API+'/api/onboarding/create',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({client_name:v('c-name'),owner_name:v('c-owner'),owner_mobile:v('c-mobile'),trade_vertical:v('c-vertical'),telnyx_phone:v('c-telnyx')})});
+      const d=await r.json();
+      if(d.success){
+        const el=document.getElementById('ob-link');el.href=d.onboarding_url;el.textContent=d.onboarding_url;
+        document.getElementById('ob-success').style.display='block';loadPipeline();
+      }
+    }catch(e){}
+    btn.disabled=false;btn.textContent='Create Client & Send Setup Link →';
+  }
+
+  async function loadPipeline(){
+    try{
+      const r=await fetch(API+'/api/onboarding/list');const d=await r.json();
+      const sessions=d.sessions||[];
+      const tb=document.getElementById('pipeline-body');
+      if(!sessions.length){tb.innerHTML='<tr><td colspan="6" class="empty-state">No clients yet</td></tr>';return}
+      document.getElementById('pipeline-count').textContent=sessions.length+' clients';
+      const names=['Co','Trade','Style','Team','Price','Logo'];
+      tb.innerHTML=sessions.map(s=>{
+        const steps=[];const reached=s.step_reached||0;
+        for(let n=1;n<=6;n++){let c=n<reached?'done':n===reached?'cur':'';steps.push('<div class="step-sq '+c+'" title="'+names[n-1]+'"></div>')}
+        const badge=s.status==='pending'?'<span class="badge badge-amber">waiting</span>':s.status==='in_progress'?'<span class="badge badge-blue">in progress</span>':s.status==='completed'?'<span class="badge badge-green">review</span>':'<span class="badge badge-green">active</span>';
+        return '<tr><td><strong>'+esc(s.company_name||'—')+'</strong></td><td>'+esc(s.owner_name||'—')+'</td><td class="id-short">'+esc(s.trade_vertical||'—')+'</td><td><div class="steps-bar">'+steps.join('')+'</div></td><td>'+badge+'</td><td class="id-short"><a href="'+API+'/onboard/'+s.token+'" target="_blank">link</a></td></tr>'
+      }).join('');
+    }catch(e){console.error(e)}
+  }
+  loadPipeline();setInterval(loadPipeline,60000);
+</script>
+{% endblock %}

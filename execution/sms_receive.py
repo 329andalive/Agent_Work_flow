@@ -23,7 +23,7 @@ import threading
 # Allow running as: python execution/sms_receive.py from project root
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from flask import Flask, request, jsonify, send_from_directory, render_template
+from flask import Flask, request, jsonify, render_template
 from datetime import datetime
 from execution.sms_router import route_message
 from execution.db_webhook_log import is_duplicate, save_webhook, mark_processed, mark_error
@@ -31,6 +31,7 @@ from execution.db_webhook_log import is_duplicate, save_webhook, mark_processed,
 # Point Flask templates at the project-level templates/ dir
 _project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 app = Flask(__name__, template_folder=os.path.join(_project_root, "templates"))
+app.secret_key = os.environ.get("SECRET_KEY", "dev-secret-change-in-production")
 
 # Register blueprints
 from routes.document_routes import document_bp
@@ -38,11 +39,13 @@ from routes.invoice_routes import invoice_bp
 from routes.routes_debug import debug_bp
 from routes.command_routes import command_bp
 from routes.onboarding_routes import onboarding_bp
+from routes.dashboard_routes import dashboard_bp
 app.register_blueprint(document_bp)
 app.register_blueprint(invoice_bp)
 app.register_blueprint(debug_bp)
 app.register_blueprint(command_bp)
 app.register_blueprint(onboarding_bp)
+app.register_blueprint(dashboard_bp)
 
 
 def timestamp():
@@ -400,42 +403,8 @@ def telnyx_failover():
     return jsonify({"status": "ok"}), 200
 
 
-@app.route("/dashboard/")
-@app.route("/dashboard/index.html")
-def dashboard_board():
-    """Serve the dispatch board dashboard."""
-    dashboard_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "dashboard")
-    return send_from_directory(dashboard_dir, "index.html")
-
-
-@app.route("/dashboard/office.html")
-def dashboard_office():
-    """Serve the office dashboard."""
-    dashboard_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "dashboard")
-    return send_from_directory(dashboard_dir, "office.html")
-
-
-@app.route("/dashboard/command.html")
-@app.route("/command")
-def dashboard_command():
-    """Serve the Command Center dashboard."""
-    dashboard_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "dashboard")
-    return send_from_directory(dashboard_dir, "command.html")
-
-
-@app.route("/dashboard/onboarding.html")
-def dashboard_onboarding():
-    """Serve the client onboarding admin dashboard."""
-    dashboard_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "dashboard")
-    return send_from_directory(dashboard_dir, "onboarding.html")
-
-
-@app.route("/dashboard/book.html")
-@app.route("/book")
-def booking_form():
-    """Serve the customer-facing TCR-compliant booking / opt-in form."""
-    dashboard_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "dashboard")
-    return send_from_directory(dashboard_dir, "book.html")
+## Dashboard routes moved to routes/dashboard_routes.py (dashboard_bp blueprint)
+## Public routes (book.html) also handled there.
 
 
 @app.route("/book/submit", methods=["POST"])
