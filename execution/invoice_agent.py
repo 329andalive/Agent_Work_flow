@@ -367,11 +367,13 @@ def run(client_phone: str, customer_phone: str, raw_input: str) -> str | None:
         from execution.db_jobs import create_job
         if not customer_id:
             customer_id = create_customer(client_id, "Customer", customer_phone)
+        clean_job_type = "repair"
         job_id = create_job(
             client_id=client_id,
             customer_id=customer_id,
-            job_type="repair",
+            job_type=clean_job_type,
             raw_input=raw_input,
+            job_description=f"{client.get('trade_vertical', 'Service').title()} — {clean_job_type}",
         )
         estimated_amount = 0.0
         contract_type    = "time_and_materials"
@@ -389,11 +391,40 @@ def run(client_phone: str, customer_phone: str, raw_input: str) -> str | None:
     labor_total   = round(actual_hours * hourly_rate, 2)
     actual_amount = round(labor_total + materials_cost, 2)
 
+    # Generate clean job notes — never store raw field text
+    try:
+        clean_notes_prompt = (
+            f"Write a single professional one-line job completion "
+            f"note for a trade business record based on this field "
+            f"report:\n\"{raw_input}\"\n\n"
+            f"Rules:\n"
+            f"- One sentence only, under 100 characters\n"
+            f"- Professional trade language\n"
+            f"- Describe what was done, not who said what\n"
+            f"- No internal instructions, phone numbers, or names "
+            f"of the technician\n"
+            f"- Good example: "
+            f"'Replaced toilet flapper valve and float switch. "
+            f"2.5 hrs, $75 parts.'\n"
+            f"- Output the one line only. No commentary."
+        )
+        clean_notes = call_claude(
+            "You write professional one-line job notes for trade "
+            "business records. Output only the note, nothing else.",
+            clean_notes_prompt,
+            model="haiku"
+        )
+        clean_notes = clean_notes.strip().strip('"')
+        print(f"[{timestamp()}] INFO invoice_agent: Clean notes → {clean_notes}")
+    except Exception as e:
+        print(f"[{timestamp()}] WARN invoice_agent: clean notes generation failed — {e}")
+        clean_notes = f"{client.get('trade_vertical', 'Service').title()} completed."
+
     update_job_completion(
         job_id=job_id,
         actual_hours=actual_hours,
         actual_amount=actual_amount,
-        notes=raw_input,
+        notes=clean_notes,
     )
 
     # ------------------------------------------------------------------
@@ -509,11 +540,12 @@ def run(client_phone: str, customer_phone: str, raw_input: str) -> str | None:
     # ------------------------------------------------------------------
     # Build line_items from the parsed job data
     # Clean job description — never use raw field text in line items
-    clean_job_desc = (
-        job.get("job_type", "").replace("_", " ").title()
-        if job and job.get("job_type")
-        else client.get("trade_vertical", "Service").title()
-    )
+    raw_job_type = job.get("job_type", "") if job else ""
+    if raw_job_type and len(raw_job_type) <= 30:
+        clean_job_desc = raw_job_type.replace("_", " ").title()
+    else:
+        # job_type contains raw text — use trade vertical instead
+        clean_job_desc = client.get("trade_vertical", "Service").title()
 
     if not line_items_data:
         # Haiku extraction didn't run or failed — build from parsed data
