@@ -89,8 +89,12 @@ def handle_command():
                 "SEND HIM A BILL", "BILL FOR"]):
             customer_phone = _resolve_customer_phone(text, client_id)
             from execution.invoice_agent import run as invoice_run
-            output = invoice_run(client_phone=client_phone, customer_phone=customer_phone, raw_input=text)
-            result = {"agent": "invoice_agent", "status": "ok", "message": output or "Invoice generated."}
+            output = invoice_run(client_phone=client_phone, raw_input=text, customer_phone=customer_phone)
+            if output:
+                display = '\n'.join(output.split('\n')[:2])
+                result = {"agent": "invoice_agent", "status": "ok", "message": display or "Invoice generated and sent."}
+            else:
+                result = {"agent": "invoice_agent", "status": "error", "message": "Invoice failed — check that a dollar amount was included."}
 
         # ── ESTIMATE / PROPOSAL ─────────────
         elif any(kw in text_upper for kw in
@@ -123,8 +127,12 @@ def handle_command():
                   "ALL DONE", "JOB DONE"]):
             customer_phone = _resolve_customer_phone(text, client_id)
             from execution.invoice_agent import run as invoice_run
-            output = invoice_run(client_phone=client_phone, customer_phone=customer_phone, raw_input=text)
-            result = {"agent": "invoice_agent", "status": "ok", "message": output or "Job completed and invoice generated."}
+            output = invoice_run(client_phone=client_phone, raw_input=text, customer_phone=customer_phone)
+            if output:
+                display = '\n'.join(output.split('\n')[:2])
+                result = {"agent": "invoice_agent", "status": "ok", "message": display or "Job completed and invoice sent."}
+            else:
+                result = {"agent": "invoice_agent", "status": "error", "message": "Invoice failed — check that a dollar amount was included."}
 
         # ── EVERYTHING ELSE → Claude classifies and routes
         else:
@@ -249,7 +257,11 @@ def _interpret_and_route(text, client, client_phone, owner_mobile, client_id):
     if intent == "INVOICE":
         from execution.invoice_agent import run as invoice_run
         output = invoice_run(client_phone=client_phone, raw_input=text, customer_phone=customer_phone)
-        return {"agent": "invoice_agent", "status": "ok", "message": output or "Invoice generated."}
+        if output:
+            display = '\n'.join(output.split('\n')[:2])
+            return {"agent": "invoice_agent", "status": "ok", "message": display or "Invoice generated."}
+        else:
+            return {"agent": "invoice_agent", "status": "error", "message": "Invoice failed — check that a dollar amount was included."}
 
     elif intent == "PROPOSAL":
         from execution.proposal_agent import run as proposal_run

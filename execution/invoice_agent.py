@@ -57,7 +57,10 @@ FALLBACK_MESSAGE = (
 )
 
 # Minimum hours before we flag for clarification
-HOURS_MISSING_REPLY = "Got it. How many hours did that take?"
+HOURS_MISSING_REPLY = (
+    "Got it — how many hours did that take? "
+    "Or just reply with the total like $275."
+)
 
 
 # ---------------------------------------------------------------------------
@@ -333,7 +336,7 @@ def run(client_phone: str, raw_input: str, customer_phone: str | None = None) ->
     # ------------------------------------------------------------------
     client = get_client_by_phone(client_phone)
     if not client:
-        print(f"[{timestamp()}] ERROR invoice_agent: No client found for {client_phone}")
+        print(f"[{timestamp()}] CRITICAL invoice_agent: No client for {client_phone} — invoice lost: {raw_input[:80]}")
         return None
 
     client_id    = client["id"]
@@ -531,7 +534,11 @@ def run(client_phone: str, raw_input: str, customer_phone: str | None = None) ->
 
     if not invoice_text:
         print(f"[{timestamp()}] ERROR invoice_agent: Claude returned no text")
-        send_sms(to_number=owner_mobile, message_body=FALLBACK_MESSAGE)
+        msg = (
+            f"Something went wrong generating the invoice for {customer_name}. "
+            f"Try again or call Jeremy at 207-419-0986."
+        )
+        send_sms(to_number=owner_mobile, message_body=msg, from_number=client_phone)
         return None
 
     print(f"[{timestamp()}] INFO invoice_agent: Invoice generated ({len(invoice_text)} chars)")
@@ -722,6 +729,18 @@ def run(client_phone: str, raw_input: str, customer_phone: str | None = None) ->
         print(f"[{timestamp()}] ERROR invoice_agent: SMS send failed — {sms_result['error']}")
     else:
         print(f"[{timestamp()}] INFO invoice_agent: SMS sent (telnyx_id={sms_result['message_id']})")
+
+    # Confirm back to the sender if they're not the owner
+    # (owner already gets the full invoice SMS above)
+    if (customer_phone and
+            customer_phone != owner_mobile and
+            customer_phone != client_phone):
+        tech_confirm = (
+            f"Invoice sent — {customer_name} ${final_amount:.0f}. "
+            f"Job marked complete."
+        )
+        send_sms(to_number=customer_phone, message_body=tech_confirm, from_number=client_phone)
+        print(f"[{timestamp()}] INFO invoice_agent: Tech confirmation sent to {customer_phone}")
 
     # ------------------------------------------------------------------
     # Step 11: Log the outbound message
