@@ -88,7 +88,7 @@ def parse_hours(text: str) -> float | None:
 def parse_flat_rate(text: str) -> float | None:
     """
     Detect when the owner specifies a flat total instead of hours.
-    Patterns: "bill for $275", "charge $275", "invoice for $275", "flat $275"
+    Catches: "bill for $275", "service $275", "$275" at end, "for $275"
     Returns the dollar amount as a float, or None if not found.
     """
     patterns = [
@@ -98,6 +98,14 @@ def parse_flat_rate(text: str) -> float | None:
         r'invoice\s+(?:her|him|them|for)\s+\$(\d+(?:\.\d+)?)',
         r'flat\s+(?:rate\s+)?\$(\d+(?:\.\d+)?)',
         r'total\s+(?:is\s+)?\$(\d+(?:\.\d+)?)',
+        # Natural language: "service $275", "pump $350", "tank $275"
+        r'(?:service|job|work|pump|tank|repair|install|replace|baffle|filter|camera|clean|inspect|haul|dig)\s+\$(\d+(?:\.\d+)?)',
+        # "for $275" anywhere
+        r'for\s+\$(\d+(?:\.\d+)?)',
+        # "$275 flat", "$275 total", "$275 even"
+        r'\$(\d+(?:\.\d+)?)\s+(?:flat|total|even|dollars?)',
+        # "$275" at end of string
+        r'\$(\d+(?:\.\d+)?)\s*$',
     ]
     for pattern in patterns:
         match = re.search(pattern, text, re.IGNORECASE)
@@ -352,6 +360,13 @@ def run(client_phone: str, raw_input: str, customer_phone: str | None = None) ->
     actual_hours    = parse_hours(raw_input)
     flat_rate       = parse_flat_rate(raw_input)
     materials_desc, materials_cost = parse_materials(raw_input)
+
+    # Last resort — any dollar amount in the text is the flat rate
+    if actual_hours is None and flat_rate is None:
+        any_amount = re.search(r'\$(\d+(?:\.\d+)?)', raw_input)
+        if any_amount:
+            flat_rate = float(any_amount.group(1))
+            print(f"[{timestamp()}] INFO invoice_agent: Fallback amount detection — ${flat_rate}")
 
     # If no hours but a flat rate was specified, use it directly — no clarification needed
     if actual_hours is None and flat_rate is not None:
