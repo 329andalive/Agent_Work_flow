@@ -236,7 +236,24 @@ def build_user_prompt(
         f"Date: {date.today().strftime('%B %d, %Y')}\n"
         f"Customer: {customer_name}\n"
         f"Address: {customer_address or 'on file'}\n"
-        f"Work completed: {raw_input}\n\n"
+        f"FIELD REPORT (raw text from technician — do NOT copy "
+        f"this verbatim onto the invoice):\n"
+        f"\"{raw_input}\"\n\n"
+        f"Your job: read that field report and translate it into "
+        f"professional customer-facing invoice language.\n\n"
+        f"Rules for the service description:\n"
+        f"- Describe WHAT WAS DONE in plain trade language a "
+        f"homeowner understands\n"
+        f"- Never include internal notes, phone numbers, or "
+        f"phrases like 'send her a bill'\n"
+        f"- Never copy the field report wording directly\n"
+        f"- Use the trade vertical to write the correct service "
+        f"description\n"
+        f"- Bad example: 'I pumped carol duggens 1000 gallon tank "
+        f"at 75 long street send her a bill for $275'\n"
+        f"- Good example: '1,000 Gallon Septic Tank Pumping — "
+        f"Tank pumped and inspected. Inlet and outlet baffles "
+        f"checked.'\n\n"
         f"Job details:\n"
         f"Hours worked: {actual_hours}\n"
         f"Hourly rate: ${hourly_rate:.2f}/hr\n"
@@ -249,12 +266,14 @@ def build_user_prompt(
         f"Generate a professional invoice that includes:\n"
         f"Invoice number {inv_number} and today's date\n"
         f"Customer name and address\n"
-        f"Itemized list of work performed in plain language\n"
-        f"Labor line: {actual_hours} hrs x ${hourly_rate:.2f}/hr\n"
+        f"Professional service description (NOT the raw field "
+        f"report text)\n"
+        f"Labor line if applicable: {actual_hours} hrs x "
+        f"${hourly_rate:.2f}/hr\n"
         f"Parts line if applicable\n"
         f"Total due\n"
         f"Payment terms and accepted methods\n"
-        f"A brief thank-you in the owner's voice\n"
+        f"A brief thank-you note in the owner's voice\n"
         f"Business name and phone at the bottom\n\n"
         f"Output the invoice text only. No commentary."
     )
@@ -419,6 +438,43 @@ def run(client_phone: str, customer_phone: str, raw_input: str) -> str | None:
 
     print(f"[{timestamp()}] INFO invoice_agent: Invoice generated ({len(invoice_text)} chars)")
 
+    # Use Haiku to extract clean structured line items from the
+    # generated invoice text — avoids raw field text in line items
+    line_items_data = []  # will be populated by Haiku or fallback
+
+    try:
+        import json as _json
+        line_item_prompt = (
+            f"Read this invoice and extract the line items as JSON.\n\n"
+            f"Invoice:\n{invoice_text}\n\n"
+            f"Return ONLY a JSON array, no other text. Format:\n"
+            f'[{{"description": "Service description", '
+            f'"qty": 1, "unit_price": 275.00, "total": 275.00}}]\n\n'
+            f"Rules:\n"
+            f"- description must be professional trade language\n"
+            f"- Never include raw field notes in description\n"
+            f"- Separate labor and materials as separate line items\n"
+            f"- qty for labor = hours worked, unit_price = hourly rate\n"
+            f"- qty for flat rate = 1"
+        )
+        raw_line_items = call_claude(
+            "You extract structured data from invoices. "
+            "Return only valid JSON arrays. No markdown, no commentary.",
+            line_item_prompt,
+            model="haiku"
+        )
+        raw_line_items = re.sub(r'```json\s*|\s*```', '',
+                                 raw_line_items).strip()
+        parsed_items = _json.loads(raw_line_items)
+        if isinstance(parsed_items, list) and len(parsed_items) > 0:
+            line_items_data = parsed_items
+            print(f"[{timestamp()}] INFO invoice_agent: "
+                  f"Haiku extracted {len(line_items_data)} clean "
+                  f"line items from invoice text")
+    except Exception as e:
+        print(f"[{timestamp()}] WARN invoice_agent: "
+              f"line item extraction failed, using fallback — {e}")
+
     # ------------------------------------------------------------------
     # Step 7: Save invoice to Supabase
     # ------------------------------------------------------------------
@@ -452,29 +508,37 @@ def run(client_phone: str, customer_phone: str, raw_input: str) -> str | None:
     # Also build the edit URL for the owner to review before sending.
     # ------------------------------------------------------------------
     # Build line_items from the parsed job data
-    line_items_data = []
-    if actual_hours > 0:
-        line_items_data.append({
-            "description": f"Labor — {raw_input[:60]}",
-            "qty": actual_hours,
-            "unit_price": hourly_rate,
-            "total": labor_total,
-        })
-    if materials_cost > 0:
-        line_items_data.append({
-            "description": f"Parts/Materials — {materials_desc or 'as used'}",
-            "qty": 1,
-            "unit_price": materials_cost,
-            "total": materials_cost,
-        })
-    # For flat rate with no labor breakdown, add single line
+    # Clean job description — never use raw field text in line items
+    clean_job_desc = (
+        job.get("job_type", "").replace("_", " ").title()
+        if job and job.get("job_type")
+        else client.get("trade_vertical", "Service").title()
+    )
+
     if not line_items_data:
-        line_items_data.append({
-            "description": raw_input[:80],
-            "qty": 1,
-            "unit_price": final_amount,
-            "total": final_amount,
-        })
+        # Haiku extraction didn't run or failed — build from parsed data
+        if actual_hours > 0:
+            line_items_data.append({
+                "description": f"Labor — {clean_job_desc}",
+                "qty": actual_hours,
+                "unit_price": hourly_rate,
+                "total": labor_total,
+            })
+        if materials_cost > 0:
+            line_items_data.append({
+                "description": f"Parts/Materials — {materials_desc or 'as used'}",
+                "qty": 1,
+                "unit_price": materials_cost,
+                "total": materials_cost,
+            })
+        # For flat rate with no labor breakdown, add single line
+        if not line_items_data:
+            line_items_data.append({
+                "description": clean_job_desc or "Services Rendered",
+                "qty": 1,
+                "unit_price": final_amount,
+                "total": final_amount,
+            })
 
     # Save line_items to invoice record
     try:
