@@ -7,43 +7,25 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="bolts11-tokens.css" />
   <style>
-    /* ── Variables ──────────────────────────────────────────────────── */
+    /* ── Variables (bridged to bolts11-tokens.css) ────────────────── */
     :root {
-      --bg-page:        #F1EFE8;
-      --bg-card:        #FFFFFF;
-      --bg-secondary:   #F1EFE8;
-      --border:         rgba(0,0,0,0.12);
-      --text-primary:   #1a1a18;
-      --text-secondary: #5F5E5A;
-      --text-tertiary:  #888780;
-
-      --green:          #639922;
-      --green-bg:       #EAF3DE;
-      --amber:          #BA7517;
-      --amber-bg:       #FAEEDA;
-      --red:            #A32D2D;
-      --red-bg:         #FCEBEB;
+      --bg-page:        var(--b11-bg-page);
+      --bg-card:        var(--b11-bg-card);
+      --bg-secondary:   var(--b11-bg-secondary);
+      --border:         var(--b11-border);
+      --text-primary:   var(--b11-text-primary);
+      --text-secondary: var(--b11-text-secondary);
+      --text-tertiary:  var(--b11-text-tertiary);
+      --green:          var(--b11-green);
+      --green-bg:       var(--b11-green-surface);
+      --amber:          var(--b11-amber-status);
+      --amber-bg:       var(--b11-amber-surface);
+      --red:            var(--b11-red);
+      --red-bg:         var(--b11-red-surface);
     }
-
-    @media (prefers-color-scheme: dark) {
-      :root {
-        --bg-page:        #1a1a18;
-        --bg-card:        #242422;
-        --bg-secondary:   #2C2C2A;
-        --border:         rgba(255,255,255,0.10);
-        --text-primary:   #F1EFE8;
-        --text-secondary: #B4B2A9;
-        --text-tertiary:  #888780;
-
-        --green:          #97C459;
-        --green-bg:       #173404;
-        --amber:          #EF9F27;
-        --amber-bg:       #412402;
-        --red:            #E24B4A;
-        --red-bg:         #501313;
-      }
-    }
+    /* Dark mode is now handled by bolts11-tokens.css */
 
     /* ── Reset ──────────────────────────────────────────────────────── */
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -59,72 +41,7 @@
     }
 
     /* ── Header ─────────────────────────────────────────────────────── */
-    #header {
-      height: 48px;
-      flex-shrink: 0;
-      background: var(--bg-card);
-      border-bottom: 0.5px solid var(--border);
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 0 20px;
-    }
-
-    .header-left {
-      display: flex;
-      align-items: center;
-      gap: 16px;
-    }
-
-    .brand {
-      font-family: 'Barlow Condensed', sans-serif;
-      font-size: 20px;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.03em;
-      color: var(--text-primary);
-      white-space: nowrap;
-    }
-
-    .nav {
-      display: flex;
-      gap: 6px;
-    }
-
-    .nav-btn {
-      font-family: 'DM Mono', monospace;
-      font-size: 11px;
-      font-weight: 400;
-      letter-spacing: 0.05em;
-      padding: 4px 10px;
-      border-radius: 4px;
-      border: 0.5px solid var(--border);
-      background: transparent;
-      color: var(--text-secondary);
-      cursor: pointer;
-      text-decoration: none;
-      display: inline-flex;
-      align-items: center;
-      transition: background 0.12s, color 0.12s;
-    }
-
-    .nav-btn:hover { background: var(--bg-secondary); }
-
-    .nav-btn.active {
-      background: var(--text-primary);
-      color: var(--bg-card);
-      border-color: var(--text-primary);
-    }
-
-    .header-right {
-      text-align: right;
-    }
-
-    #last-updated {
-      font-family: 'DM Mono', monospace;
-      font-size: 10px;
-      color: var(--text-tertiary);
-    }
+    #header { display: contents; }
 
     /* ── Body scroll ────────────────────────────────────────────────── */
     #body {
@@ -439,16 +356,21 @@
 <body>
 
   <!-- ── Header ───────────────────────────────────────────────────── -->
-  <header id="header">
-    <div class="header-left">
-      <div class="brand">Holt Sewer &amp; Drain</div>
-      <nav class="nav">
-        <a class="nav-btn" href="index.html">Board</a>
-        <span class="nav-btn active">Office</span>
+  <header class="b11-header">
+    <div class="b11-header__left">
+      <a class="b11-wordmark" href="/" aria-label="Bolts11 home">
+        <span class="b11-wordmark__bolt">⚡</span>
+        <span class="b11-wordmark__name">Bolts11</span>
+      </a>
+      <div class="b11-wordmark__divider"></div>
+      <span class="b11-header__page-title">The Office</span>
+      <nav class="b11-nav">
+        <a class="b11-nav__btn" href="index.html">Board</a>
+        <span class="b11-nav__btn active">Office</span>
       </nav>
     </div>
-    <div class="header-right">
-      <div id="last-updated"></div>
+    <div class="b11-header__right">
+      <div class="b11-header__updated" id="last-updated"></div>
     </div>
   </header>
 

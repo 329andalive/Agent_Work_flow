@@ -1,0 +1,116 @@
+/* ── Bolts11 Design Tokens ─────────────────────────────────────────
+   Single source of truth for brand colors, surface tokens,
+   and shared header chrome.  Loaded by every dashboard page.
+   ──────────────────────────────────────────────────────────────── */
+
+/* ── Brand color tokens (static, never change with color scheme) ── */
+:root {
+  --b11-navy:          #1a2e4a;
+  --b11-navy-dark:     #111e31;
+  --b11-navy-light:    #2a4168;
+  --b11-amber:         #f59e0b;
+  --b11-amber-dark:    #d97706;
+  --b11-amber-dim:     #BA7517;
+  --b11-green:         #639922;
+  --b11-green-surface: #EAF3DE;
+  --b11-amber-status:  #BA7517;
+  --b11-amber-surface: #FAEEDA;
+  --b11-red:           #E24B4A;
+  --b11-red-dark:      #A32D2D;
+  --b11-red-surface:   #FCEBEB;
+  --b11-font-heading:  'Barlow Condensed', sans-serif;
+  --b11-font-body:     'Barlow', sans-serif;
+  --b11-font-mono:     'DM Mono', monospace;
+  --b11-header-bg:     #1a2e4a;
+  --b11-header-height: 48px;
+  --b11-header-border: rgba(255,255,255,0.08);
+  --b11-radius-sm:     4px;
+  --b11-radius:        6px;
+  --b11-transition:    0.12s ease;
+}
+
+/* ── Surface tokens (light default, dark override) ──────────────── */
+:root {
+  --b11-bg-page:       #F1EFE8;
+  --b11-bg-card:       #FFFFFF;
+  --b11-bg-secondary:  #F1EFE8;
+  --b11-border:        rgba(0,0,0,0.12);
+  --b11-text-primary:  #1a1a18;
+  --b11-text-secondary:#5F5E5A;
+  --b11-text-tertiary: #888780;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --b11-bg-page:       #1a1a18;
+    --b11-bg-card:       #242422;
+    --b11-bg-secondary:  #2C2C2A;
+    --b11-border:        rgba(255,255,255,0.10);
+    --b11-text-primary:  #F1EFE8;
+    --b11-text-secondary:#B4B2A9;
+    --b11-text-tertiary: #888780;
+    --b11-green:         #97C459;
+    --b11-green-surface: #173404;
+    --b11-amber-status:  #EF9F27;
+    --b11-amber-surface: #412402;
+    --b11-red-surface:   #501313;
+  }
+}
+
+/* ── Shared header chrome ───────────────────────────────────────── */
+.b11-header {
+  height: var(--b11-header-height);
+  background: var(--b11-header-bg);
+  border-bottom: 0.5px solid var(--b11-header-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 20px;
+  flex-shrink: 0;
+}
+.b11-header__left { display: flex; align-items: center; gap: 14px; }
+.b11-wordmark { display: flex; align-items: baseline; gap: 0; text-decoration: none; }
+.b11-wordmark__bolt {
+  font-family: var(--b11-font-heading); font-size: 18px; font-weight: 700;
+  color: var(--b11-amber); letter-spacing: -0.01em; line-height: 1;
+}
+.b11-wordmark__name {
+  font-family: var(--b11-font-heading); font-size: 18px; font-weight: 700;
+  color: #fff; letter-spacing: 0.02em; text-transform: uppercase; line-height: 1;
+}
+.b11-wordmark__divider {
+  width: 1px; height: 14px; background: rgba(255,255,255,0.20);
+  margin: 0 12px; flex-shrink: 0;
+}
+.b11-header__page-title {
+  font-family: var(--b11-font-heading); font-size: 13px; font-weight: 600;
+  color: rgba(255,255,255,0.60); text-transform: uppercase; letter-spacing: 0.07em;
+  white-space: nowrap;
+}
+.b11-header__client {
+  font-family: var(--b11-font-mono); font-size: 10px;
+  color: rgba(255,255,255,0.40); letter-spacing: 0.04em; white-space: nowrap;
+}
+.b11-nav { display: flex; gap: 4px; }
+.b11-nav__btn {
+  font-family: var(--b11-font-mono); font-size: 11px; font-weight: 400;
+  letter-spacing: 0.05em; padding: 4px 10px; border-radius: var(--b11-radius-sm);
+  border: 0.5px solid rgba(255,255,255,0.15); background: transparent;
+  color: rgba(255,255,255,0.55); cursor: pointer; text-decoration: none;
+  display: inline-flex; align-items: center;
+  transition: background var(--b11-transition), color var(--b11-transition);
+}
+.b11-nav__btn:hover {
+  background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.90);
+  text-decoration: none;
+}
+.b11-nav__btn.active {
+  background: var(--b11-amber); color: var(--b11-navy-dark);
+  border-color: var(--b11-amber); font-weight: 500;
+}
+.b11-header__right { display: flex; flex-direction: column; align-items: flex-end; gap: 1px; }
+.b11-header__clock { font-family: var(--b11-font-mono); font-size: 11px; color: rgba(255,255,255,0.70); }
+.b11-header__updated { font-family: var(--b11-font-mono); font-size: 10px; color: rgba(255,255,255,0.35); }
+@media (max-width: 600px) {
+  .b11-header { padding: 0 12px; }
+  .b11-wordmark__divider, .b11-header__page-title { display: none; }
+}
