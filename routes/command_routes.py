@@ -87,7 +87,7 @@ def handle_command():
         if any(kw in text_upper for kw in
                ["INVOICE", "BILL ", "SEND HER A BILL",
                 "SEND HIM A BILL", "BILL FOR"]):
-            customer_phone = _extract_phone(text) or owner_mobile
+            customer_phone = _resolve_customer_phone(text, client_id, owner_mobile)
             from execution.invoice_agent import run as invoice_run
             output = invoice_run(client_phone=client_phone, customer_phone=customer_phone, raw_input=text)
             result = {"agent": "invoice_agent", "status": "ok", "message": output or "Invoice generated."}
@@ -95,7 +95,7 @@ def handle_command():
         # ── ESTIMATE / PROPOSAL ─────────────
         elif any(kw in text_upper for kw in
                  ["ESTIMATE", "PROPOSAL", "QUOTE", "BID"]):
-            customer_phone = _extract_phone(text) or owner_mobile
+            customer_phone = _resolve_customer_phone(text, client_id, owner_mobile)
             from execution.proposal_agent import run as proposal_run
             output = proposal_run(client_phone=client_phone, customer_phone=customer_phone, raw_input=text)
             result = {"agent": "proposal_agent", "status": "ok", "message": output or "Proposal generated."}
@@ -121,7 +121,7 @@ def handle_command():
         elif any(kw in text_upper for kw in
                  ["DONE", "COMPLETE", "FINISHED", "WRAPPED UP",
                   "ALL DONE", "JOB DONE"]):
-            customer_phone = _extract_phone(text) or owner_mobile
+            customer_phone = _resolve_customer_phone(text, client_id, owner_mobile)
             from execution.invoice_agent import run as invoice_run
             output = invoice_run(client_phone=client_phone, customer_phone=customer_phone, raw_input=text)
             result = {"agent": "invoice_agent", "status": "ok", "message": output or "Job completed and invoice generated."}
@@ -158,6 +158,64 @@ def _extract_phone(text: str) -> str | None:
     return match.group(1) if match else None
 
 
+def _extract_customer_name(text: str) -> str | None:
+    """
+    Extract customer name from command text.
+    Handles: "Invoice Mike Johnson for...", "Bill Sarah Nelson...",
+             "Estimate for John Murphy...", "Done at Mike's place..."
+    """
+    patterns = [
+        r'(?:invoice|bill|estimate|proposal|quote)\s+(?:for\s+)?([A-Z][a-z]+\s+[A-Z][a-z]+)',
+        r'(?:invoice|bill|estimate|proposal|quote)\s+(?:for\s+)?([A-Z][a-z]+)',
+        r'(?:done|complete|finished)\s+(?:at\s+|for\s+)?([A-Z][a-z]+\s+[A-Z][a-z]+)',
+        r'(?:done|complete|finished)\s+(?:at\s+|for\s+)?([A-Z][a-z]+)',
+        r'(?:schedule|book)\s+(?:for\s+)?([A-Z][a-z]+\s+[A-Z][a-z]+)',
+        r'(?:schedule|book)\s+(?:for\s+)?([A-Z][a-z]+)',
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, text, re.IGNORECASE)
+        if match:
+            name = match.group(1).strip()
+            # Filter out common non-name words
+            if name.lower() not in ("for", "the", "at", "her", "him", "them", "this"):
+                return name
+    return None
+
+
+def _resolve_customer_phone(text: str, client_id: str, owner_mobile: str) -> str:
+    """
+    Try to find a customer phone number from the command text.
+    1. Check for an explicit phone number in the text
+    2. Try to find a customer by name in the database
+    3. Fall back to owner_mobile
+    """
+    # Try explicit phone first
+    phone = _extract_phone(text)
+    if phone:
+        return phone
+
+    # Try name lookup
+    name = _extract_customer_name(text)
+    if name:
+        try:
+            sb = _get_supabase()
+            results = sb.table("customers").select(
+                "id, customer_phone, customer_name"
+            ).eq("client_id", client_id).ilike(
+                "customer_name", f"%{name}%"
+            ).limit(1).execute()
+            if results.data:
+                found = results.data[0]
+                print(f"[{timestamp()}] INFO command: Found customer by name: {found['customer_name']} → {found['customer_phone']}")
+                return found["customer_phone"]
+            else:
+                print(f"[{timestamp()}] INFO command: Customer '{name}' not found in DB — using owner_mobile")
+        except Exception as e:
+            print(f"[{timestamp()}] WARN command: Name lookup failed — {e}")
+
+    return owner_mobile
+
+
 def _interpret_and_route(text, client, client_phone, owner_mobile, client_id):
     """
     For ambiguous commands: use Claude Haiku to identify intent
@@ -186,7 +244,7 @@ def _interpret_and_route(text, client, client_phone, owner_mobile, client_id):
     intent = (raw_intent or "UNKNOWN").strip().upper()
     print(f"[{timestamp()}] INFO command: Haiku classified intent={intent}")
 
-    customer_phone = _extract_phone(text) or owner_mobile
+    customer_phone = _resolve_customer_phone(text, client_id, owner_mobile)
 
     if intent == "INVOICE":
         from execution.invoice_agent import run as invoice_run

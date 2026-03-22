@@ -232,27 +232,18 @@ def command_center():
     client_phone = client.get("phone", "")
     sb = _get_supabase()
 
-    # Agent activity
+    # Agent activity — last 5 only for sidebar
     activity = []
     try:
         result = sb.table("agent_activity").select(
             "id, agent_name, action_taken, input_summary, output_summary, sms_sent, created_at"
-        ).eq("client_phone", client_phone).order("created_at", desc=True).limit(50).execute()
+        ).eq("client_phone", client_phone).order("created_at", desc=True).limit(5).execute()
         activity = result.data or []
     except Exception as e:
         print(f"[{_ts()}] ERROR dashboard_routes: command activity — {e}")
 
-    # Pending clarifications
-    pending = []
-    try:
-        result = sb.table("pending_clarifications").select("*").eq("client_id", client_id).execute()
-        pending = result.data or []
-    except Exception:
-        pass  # table may be empty or have different filters
-
     ctx.update({
         "activity": activity,
-        "pending": pending,
         "sms_active": bool(os.environ.get("SMS_10DLC_ACTIVE", "")),
         "client_phone": client_phone,
         "owner_mobile": client.get("owner_mobile", ""),
