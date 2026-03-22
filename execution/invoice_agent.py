@@ -167,6 +167,29 @@ def extract_payment_methods(personality: str) -> str:
     return match.group(1).strip() if match else "check, cash, or Venmo"
 
 
+def _extract_name_from_text(text: str) -> str | None:
+    """
+    Extract a customer name from raw input text.
+    Handles: 'Invoice Mike Johnson for...',  'bill Sarah Nelson...',
+             'done at the Johnson place', 'pump for Carol'
+    """
+    patterns = [
+        r'(?:invoice|bill|estimate|proposal)\s+(?:for\s+)?([A-Z][a-z]+\s+[A-Z][a-z]+)',
+        r'(?:invoice|bill|estimate|proposal)\s+(?:for\s+)?([A-Z][a-z]+)',
+        r'(?:at|for)\s+(?:the\s+)?([A-Z][a-z]+\s+[A-Z][a-z]+)',
+        r'(?:at|for)\s+(?:the\s+)?([A-Z][a-z]+)',
+    ]
+    skip = {'the', 'a', 'an', 'his', 'her', 'their', 'this', 'that',
+            'customer', 'client', 'place', 'house', 'site', 'job'}
+    for pattern in patterns:
+        match = re.search(pattern, text, re.IGNORECASE)
+        if match:
+            name = match.group(1).strip()
+            if name.lower() not in skip and len(name) > 1:
+                return name
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Claude prompt builders
 # ---------------------------------------------------------------------------
@@ -283,14 +306,14 @@ def build_user_prompt(
 # Main agent function
 # ---------------------------------------------------------------------------
 
-def run(client_phone: str, customer_phone: str, raw_input: str) -> str | None:
+def run(client_phone: str, raw_input: str, customer_phone: str | None = None) -> str | None:
     """
     Main entry point for the invoice agent.
 
     Args:
         client_phone:   The Telnyx number (identifies the business owner)
-        customer_phone: The customer's phone number (used to find their job)
         raw_input:      The owner's completion text
+        customer_phone: The customer's phone (optional — may be None from Command Center)
 
     Returns:
         The combined SMS text sent to the owner, or None on failure.
@@ -344,12 +367,41 @@ def run(client_phone: str, customer_phone: str, raw_input: str) -> str | None:
     print(f"[{timestamp()}] INFO invoice_agent: Parsed → {actual_hours}hrs flat_rate=${flat_rate} | materials='{materials_desc}' ${materials_cost}")
 
     # ------------------------------------------------------------------
-    # Step 4: Find the customer and their most recent open job
+    # Step 4: Find the customer — by phone, then by name, then give up
     # ------------------------------------------------------------------
-    customer    = get_customer_by_phone(client_id, customer_phone)
-    customer_id = customer["id"] if customer else None
-    customer_name    = customer["customer_name"] if customer else "Customer"
-    customer_address = customer.get("customer_address", "") if customer else ""
+    customer = None
+    customer_id = None
+    customer_name = "Unknown"
+    customer_address = ""
+
+    # Try phone lookup first (SMS flow provides a real phone)
+    if customer_phone:
+        customer = get_customer_by_phone(client_id, customer_phone)
+
+    # No phone or phone not found — try name extraction from raw_input
+    if not customer:
+        extracted_name = _extract_name_from_text(raw_input)
+        if extracted_name:
+            try:
+                from execution.db_connection import get_client as _get_sb
+                _sb = _get_sb()
+                name_results = _sb.table("customers").select("*").eq("client_id", client_id).ilike("customer_name", f"%{extracted_name}%").limit(1).execute()
+                if name_results.data:
+                    customer = name_results.data[0]
+                    print(f"[{timestamp()}] INFO invoice_agent: Found customer by name: {customer['customer_name']}")
+            except Exception as e:
+                print(f"[{timestamp()}] WARN invoice_agent: name lookup failed — {e}")
+
+    if customer:
+        customer_id = customer["id"]
+        customer_name = customer["customer_name"]
+        customer_address = customer.get("customer_address", "")
+    else:
+        # Customer genuinely not in system — do NOT create junk record
+        extracted_name = _extract_name_from_text(raw_input)
+        customer_name = extracted_name or "Customer"
+        customer_id = None
+        print(f"[{timestamp()}] WARN invoice_agent: Customer not found — invoicing as '{customer_name}' with no customer record")
 
     # Find the most recent job for this customer that needs invoicing
     job = None
@@ -519,6 +571,16 @@ def run(client_phone: str, customer_phone: str, raw_input: str) -> str | None:
         invoice_text=invoice_text,
         amount_due=final_amount,
     )
+
+    # If no customer_id, store the customer name in invoice_text header
+    if not customer_id and customer_name and customer_name != "Customer" and customer_name != "Unknown":
+        try:
+            from execution.db_connection import get_client as get_supabase
+            get_supabase().table("invoices").update({
+                "invoice_text": f"Customer: {customer_name}\n\n{invoice_text}"
+            }).eq("id", invoice_id).execute()
+        except Exception:
+            pass
 
     # Update job with the final invoiced amount and status
     try:

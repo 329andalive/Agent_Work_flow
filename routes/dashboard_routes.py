@@ -270,7 +270,7 @@ def office_billing():
     invoices = []
     try:
         result = sb.table("invoices").select(
-            "id, amount_due, status, due_date, sent_at, paid_at, created_at, job_id"
+            "id, amount_due, status, due_date, sent_at, paid_at, created_at, job_id, customer_id, invoice_text"
         ).eq("client_id", client_id).gte("created_at", ninety_days_ago).order("created_at", desc=True).execute()
         invoices = result.data or []
     except Exception as e:
@@ -280,7 +280,7 @@ def office_billing():
     proposals = []
     try:
         result = sb.table("proposals").select(
-            "id, amount_estimate, status, sent_at, created_at, response_type, lost_reason"
+            "id, amount_estimate, status, sent_at, created_at, response_type, lost_reason, customer_id"
         ).eq("client_id", client_id).gte("created_at", ninety_days_ago).order("created_at", desc=True).execute()
         proposals = result.data or []
     except Exception as e:

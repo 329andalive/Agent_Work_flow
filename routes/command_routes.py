@@ -87,7 +87,7 @@ def handle_command():
         if any(kw in text_upper for kw in
                ["INVOICE", "BILL ", "SEND HER A BILL",
                 "SEND HIM A BILL", "BILL FOR"]):
-            customer_phone = _resolve_customer_phone(text, client_id, owner_mobile)
+            customer_phone = _resolve_customer_phone(text, client_id)
             from execution.invoice_agent import run as invoice_run
             output = invoice_run(client_phone=client_phone, customer_phone=customer_phone, raw_input=text)
             result = {"agent": "invoice_agent", "status": "ok", "message": output or "Invoice generated."}
@@ -95,7 +95,7 @@ def handle_command():
         # ── ESTIMATE / PROPOSAL ─────────────
         elif any(kw in text_upper for kw in
                  ["ESTIMATE", "PROPOSAL", "QUOTE", "BID"]):
-            customer_phone = _resolve_customer_phone(text, client_id, owner_mobile)
+            customer_phone = _resolve_customer_phone(text, client_id)
             from execution.proposal_agent import run as proposal_run
             output = proposal_run(client_phone=client_phone, customer_phone=customer_phone, raw_input=text)
             result = {"agent": "proposal_agent", "status": "ok", "message": output or "Proposal generated."}
@@ -121,7 +121,7 @@ def handle_command():
         elif any(kw in text_upper for kw in
                  ["DONE", "COMPLETE", "FINISHED", "WRAPPED UP",
                   "ALL DONE", "JOB DONE"]):
-            customer_phone = _resolve_customer_phone(text, client_id, owner_mobile)
+            customer_phone = _resolve_customer_phone(text, client_id)
             from execution.invoice_agent import run as invoice_run
             output = invoice_run(client_phone=client_phone, customer_phone=customer_phone, raw_input=text)
             result = {"agent": "invoice_agent", "status": "ok", "message": output or "Job completed and invoice generated."}
@@ -182,12 +182,12 @@ def _extract_customer_name(text: str) -> str | None:
     return None
 
 
-def _resolve_customer_phone(text: str, client_id: str, owner_mobile: str) -> str:
+def _resolve_customer_phone(text: str, client_id: str) -> str | None:
     """
     Try to find a customer phone number from the command text.
     1. Check for an explicit phone number in the text
     2. Try to find a customer by name in the database
-    3. Fall back to owner_mobile
+    3. Return None — never fall back to owner_mobile
     """
     # Try explicit phone first
     phone = _extract_phone(text)
@@ -209,11 +209,11 @@ def _resolve_customer_phone(text: str, client_id: str, owner_mobile: str) -> str
                 print(f"[{timestamp()}] INFO command: Found customer by name: {found['customer_name']} → {found['customer_phone']}")
                 return found["customer_phone"]
             else:
-                print(f"[{timestamp()}] INFO command: Customer '{name}' not found in DB — using owner_mobile")
+                print(f"[{timestamp()}] INFO command: Customer '{name}' not found in DB — will pass None to agent")
         except Exception as e:
             print(f"[{timestamp()}] WARN command: Name lookup failed — {e}")
 
-    return owner_mobile
+    return None
 
 
 def _interpret_and_route(text, client, client_phone, owner_mobile, client_id):
@@ -244,11 +244,11 @@ def _interpret_and_route(text, client, client_phone, owner_mobile, client_id):
     intent = (raw_intent or "UNKNOWN").strip().upper()
     print(f"[{timestamp()}] INFO command: Haiku classified intent={intent}")
 
-    customer_phone = _resolve_customer_phone(text, client_id, owner_mobile)
+    customer_phone = _resolve_customer_phone(text, client_id)
 
     if intent == "INVOICE":
         from execution.invoice_agent import run as invoice_run
-        output = invoice_run(client_phone, customer_phone, text)
+        output = invoice_run(client_phone=client_phone, raw_input=text, customer_phone=customer_phone)
         return {"agent": "invoice_agent", "status": "ok", "message": output or "Invoice generated."}
 
     elif intent == "PROPOSAL":

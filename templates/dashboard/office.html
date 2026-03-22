@@ -47,7 +47,8 @@
         <tbody>
           {% for inv in invoices[:25] %}
           <tr class="clickable" onclick="window.location='/dashboard/invoice/{{ inv.id }}'">
-            <td>{{ cust_map.get(inv.customer_id, {}).get('customer_name', 'Unknown') if inv.customer_id else '—' }}</td>
+            {% set cust = cust_map.get(inv.customer_id, {}) if inv.customer_id else {} %}
+            <td>{% if cust.get('customer_name') %}{{ cust.customer_name }}{% elif inv.invoice_text and 'Customer:' in inv.invoice_text %}{{ inv.invoice_text.split('\n')[0]|replace('Customer: ','') }}{% else %}Unknown{% endif %}</td>
             <td>${{ "%.2f"|format(inv.amount_due|float) if inv.amount_due else '—' }}</td>
             <td>
               {% if inv.status == 'paid' %}
