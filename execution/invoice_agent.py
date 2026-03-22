@@ -687,7 +687,7 @@ def run(client_phone: str, customer_phone: str, raw_input: str) -> str | None:
             agent_name="invoice_agent",
             action_taken="invoice_generated",
             input_summary=raw_input[:120],
-            output_summary=f"invoice_id={invoice_id} job_id={job_id} amount=${final_amount}",
+            output_summary=f"Invoice for {customer_name} — ${final_amount:.2f}",
             sms_sent=sms_result.get("success", False),
         )
     except Exception:

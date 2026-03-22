@@ -410,7 +410,7 @@ def handle_clock(
         try:
             log_activity(client_phone=client_phone, agent_name="clock_agent",
                 action_taken="clock_in", input_summary=raw_input[:120],
-                output_summary=f"entry_id={entry_id} job={job_label or 'none'}", sms_sent=True)
+                output_summary=f"Clocked in{' — ' + job_label if job_label else ''}", sms_sent=True)
         except Exception:
             pass
         return "clock_in"
@@ -524,7 +524,7 @@ def handle_clock(
     try:
         log_activity(client_phone=client_phone, agent_name="clock_agent",
             action_taken="clock_out", input_summary=raw_input[:120],
-            output_summary=f"entry_id={open_entry['id']} duration={duration_minutes}min", sms_sent=True)
+            output_summary=f"Clocked out — {duration_minutes} minutes", sms_sent=True)
     except Exception:
         pass
     return "clock_out"

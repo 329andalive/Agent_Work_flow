@@ -325,7 +325,7 @@ def _route_to_agents(client: dict, employee: dict, context: dict, full_input: st
             agent_name="clarification_agent",
             action_taken=f"routed_{intent}",
             input_summary=full_input[:120],
-            output_summary=f"intent={intent} customer={context.get('customer_name')}",
+            output_summary=f"Routed {context.get('customer_name') or 'request'} to {intent}",
             sms_sent=True,
         )
 
@@ -398,7 +398,7 @@ def on_site_approval_flow(
                 agent_name="clarification_agent",
                 action_taken="sms_blocked_no_optin",
                 input_summary=f"on_site_approval job={job_id}",
-                output_summary=f"customer={customer.get('id')} not opted in",
+                output_summary=f"{customer_name} not opted in — approval blocked",
                 sms_sent=False,
             )
         except Exception:
@@ -447,7 +447,7 @@ def on_site_approval_flow(
         agent_name="clarification_agent",
         action_taken="on_site_approval_sent",
         input_summary=f"job={job_id} scope={scope[:80]}",
-        output_summary=f"customer={customer_name} amount=${estimate_amount}",
+        output_summary=f"On-site approval sent to {customer_name} — ${estimate_amount:.2f}",
         sms_sent=True,
     )
 

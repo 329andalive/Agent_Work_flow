@@ -461,7 +461,7 @@ def handle_scheduling(
             agent_name="scheduling_agent",
             action_taken="job_scheduled",
             input_summary=raw_input[:120],
-            output_summary=f"job_id={job_id} schedule_id={schedule_id} date={sched_date}",
+            output_summary=f"Job scheduled for {sched_date}",
             sms_sent=sms_result.get("success", False),
         )
     except Exception:

@@ -618,7 +618,7 @@ def handle_noshow_response(
         try:
             log_activity(client_phone=client_phone, agent_name="noshow_agent",
                 action_taken="noshow_on_it", input_summary=raw_input[:120],
-                output_summary=f"alert_id={alert_id} customer_notified={bool(cust_phone)}", sms_sent=True)
+                output_summary=f"No-show handled — {'customer notified' if cust_phone else 'no customer phone'}", sms_sent=True)
         except Exception:
             pass
         return "on_it"
@@ -669,7 +669,7 @@ def handle_noshow_response(
     try:
         log_activity(client_phone=client_phone, agent_name="noshow_agent",
             action_taken="noshow_reassign", input_summary=raw_input[:120],
-            output_summary=f"alert_id={alert_id} customer_notified={bool(cust_phone)}", sms_sent=True)
+            output_summary=f"No-show reassigned — {'customer notified' if cust_phone else 'no customer phone'}", sms_sent=True)
     except Exception:
         pass
     return "reassign"

@@ -360,7 +360,7 @@ def send_document():
                 agent_name="document_routes",
                 action_taken=f"{doc_type}_sent_to_customer",
                 input_summary=f"doc_id={doc_id}",
-                output_summary=f"customer={customer_name} total=${total:.2f}",
+                output_summary=f"Sent to {customer_name} — ${total:.2f}",
                 sms_sent=True,
             )
         except Exception:

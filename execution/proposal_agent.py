@@ -423,7 +423,7 @@ def run(client_phone: str, customer_phone: str, raw_input: str) -> str | None:
             agent_name="proposal_agent",
             action_taken="proposal_generated",
             input_summary=raw_input[:120],
-            output_summary=f"proposal_id={proposal_id} job_id={job_id} amount=${amount}",
+            output_summary=f"Proposal for {customer_name} — ${amount:.0f}",
             sms_sent=sms_result.get("success", False),
         )
     except Exception:

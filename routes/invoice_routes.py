@@ -170,7 +170,7 @@ def square_webhook():
                 agent_name="square_webhook",
                 action_taken="payment_received",
                 input_summary=f"order={order_id} payment={square_payment_id}",
-                output_summary=f"invoice={invoice_id} amount=${amount_dollars:.2f} customer={customer_name}",
+                output_summary=f"Payment received from {customer_name} — ${amount_dollars:.2f}",
                 sms_sent=True,
             )
         except Exception:

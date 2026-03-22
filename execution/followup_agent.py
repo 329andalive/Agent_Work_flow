@@ -522,7 +522,7 @@ def handle_proposal_response(
         try:
             log_activity(client_phone=client_phone, agent_name="followup_agent",
                 action_taken="proposal_accepted", input_summary=f"customer={customer_name}",
-                output_summary=f"proposal_id={proposal_id} amount=${amount}", sms_sent=True)
+                output_summary=f"{customer_name} accepted — ${amount:.0f}", sms_sent=True)
         except Exception:
             pass
 
@@ -566,7 +566,7 @@ def handle_proposal_response(
         try:
             log_activity(client_phone=client_phone, agent_name="followup_agent",
                 action_taken="proposal_declined", input_summary=f"customer={customer_name}",
-                output_summary=f"proposal_id={proposal_id} amount=${amount}", sms_sent=True)
+                output_summary=f"{customer_name} declined — ${amount:.0f}", sms_sent=True)
         except Exception:
             pass
 
@@ -669,7 +669,7 @@ def handle_lost_report(
     try:
         log_activity(client_phone=client_phone, agent_name="followup_agent",
             action_taken="lost_report_handled", input_summary=f"owner={owner_phone}",
-            output_summary=f"proposal_id={proposal_id} customer={customer_name}", sms_sent=True)
+            output_summary=f"Lost job reported — {customer_name}", sms_sent=True)
     except Exception:
         pass
 
@@ -749,6 +749,6 @@ def handle_loss_reason(
     try:
         log_activity(client_phone=client_phone, agent_name="followup_agent",
             action_taken="loss_reason_recorded", input_summary=raw_input[:120],
-            output_summary=f"reason={reason_code} proposal_id={proposal_id}", sms_sent=True)
+            output_summary=f"Loss reason: {reason_code}", sms_sent=True)
     except Exception:
         pass

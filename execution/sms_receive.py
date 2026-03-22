@@ -546,13 +546,12 @@ def _resolve_token(token: str):
 
     try:
         from execution.db_agent_activity import log_activity
-        user_agent = request.headers.get("User-Agent", "unknown")[:200]
         log_activity(
             client_phone=link.get("client_phone", ""),
             agent_name="link_viewer",
             action_taken=f"{link['type']}_viewed",
             input_summary=f"token={token}",
-            output_summary=f"user_agent={user_agent}",
+            output_summary=f"Document viewed",
             sms_sent=False,
         )
     except Exception:
