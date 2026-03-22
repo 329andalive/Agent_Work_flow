@@ -71,8 +71,8 @@
           <div class="feed-row">
             <span class="badge badge-blue" style="font-size:9px">{{ (a.agent_name or '')|replace('_agent','')|replace('_',' ') }}</span>
             <span class="feed-action" title="{{ a.output_summary or '' }}">{{ a.action_taken or '' }}</span>
-            <td>{% if a.sms_sent %}<span style="color:var(--green)">&#10003;</span>{% else %}–{% endif %}</td>
-            <span class="feed-time">{{ a.created_at[11:16] if a.created_at and a.created_at|length > 16 else '' }}</span>
+            <span>{% if a.sms_sent %}<span style="color:var(--green)">&#10003;</span>{% else %}–{% endif %}</span>
+            <span class="feed-time">{{ fmt_activity_time(a.created_at) }}</span>
           </div>
           {% endfor %}
         {% else %}

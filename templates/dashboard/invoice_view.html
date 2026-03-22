@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+
+{% block title %}Invoice{% endblock %}
+{% block page_title %}Invoice{% endblock %}
+{% block topbar_meta %}{{ fmt_date(invoice.created_at) }}{% endblock %}
+
+{% block extra_css %}
+  .doc { max-width: 680px; margin: 0 auto; }
+  .doc-back { font-size: 13px; color: var(--text-secondary); text-decoration: none; margin-bottom: 12px; display: inline-block; }
+  .doc-back:hover { color: var(--blue); }
+  .doc-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+  .doc-header { padding: 20px 24px; border-bottom: 1px solid var(--border); }
+  .doc-type { font-family: 'DM Mono', monospace; font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-tertiary); }
+  .doc-id { font-family: 'DM Mono', monospace; font-size: 11px; color: var(--text-tertiary); float: right; }
+  .doc-biz { font-family: 'Barlow Condensed', sans-serif; font-size: 20px; font-weight: 700; margin-top: 4px; }
+  .doc-date { font-size: 13px; color: var(--text-secondary); margin-top: 2px; }
+  .doc-section { padding: 16px 24px; border-bottom: 1px solid var(--border); }
+  .doc-section:last-child { border-bottom: none; }
+  .doc-section-title { font-family: 'DM Mono', monospace; font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-tertiary); margin-bottom: 8px; }
+  .doc-field { font-size: 14px; margin-bottom: 4px; }
+  .doc-line-item { display: flex; justify-content: space-between; padding: 6px 0; font-size: 14px; border-bottom: 1px solid #f3f4f6; }
+  .doc-line-item:last-child { border-bottom: none; }
+  .doc-line-desc { color: var(--text-primary); }
+  .doc-line-amount { font-weight: 600; font-family: 'DM Mono', monospace; }
+  .doc-totals { padding: 12px 0; }
+  .doc-total-row { display: flex; justify-content: space-between; padding: 4px 0; font-size: 14px; color: var(--text-secondary); }
+  .doc-total-row.grand { padding-top: 8px; margin-top: 4px; border-top: 2px solid var(--text-primary); font-size: 16px; font-weight: 700; color: var(--text-primary); }
+  .doc-status-bar { padding: 16px 24px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+  .doc-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .doc-btn { font-family: 'DM Mono', monospace; font-size: 12px; font-weight: 500; padding: 8px 16px; border-radius: 6px; border: none; cursor: pointer; transition: opacity 0.15s; }
+  .doc-btn:hover { opacity: 0.85; }
+  .doc-btn-primary { background: var(--blue); color: #fff; }
+  .doc-btn-green { background: #16a34a; color: #fff; }
+  .doc-btn-outline { background: transparent; border: 1px solid var(--border); color: var(--text-secondary); }
+  .flash-msg { padding: 10px 16px; border-radius: 6px; font-size: 13px; margin-bottom: 12px; }
+  .flash-success { background: #dcfce7; color: #166534; }
+  .flash-info { background: #dbeafe; color: #1e40af; }
+  .flash-error { background: #fee2e2; color: #991b1b; }
+  .paid-banner { background: #dcfce7; border: 2px solid #16a34a; border-radius: 8px; padding: 14px 20px; text-align: center; font-size: 15px; font-weight: 700; color: #166534; margin-top: 8px; }
+{% endblock %}
+
+{% block content %}
+<div class="doc">
+  <a href="/dashboard/office.html" class="doc-back">&larr; Back to Office</a>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% for cat, msg in messages %}
+    <div class="flash-msg flash-{{ cat }}">{{ msg }}</div>
+    {% endfor %}
+  {% endwith %}
+
+  <div class="doc-card">
+    <div class="doc-header">
+      <span class="doc-type">Invoice</span>
+      <span class="doc-id">#{{ invoice.id[:8]|upper if invoice.id else '—' }}</span>
+      <div class="doc-biz">{{ business_name }}</div>
+      <div class="doc-date">Created {{ fmt_date(invoice.created_at) }}</div>
+    </div>
+
+    <div class="doc-section">
+      <div class="doc-section-title">Customer</div>
+      <div class="doc-field">{{ customer.customer_name or 'Unknown' }}</div>
+      <div class="doc-field">{{ fmt_phone(customer.customer_phone) }}</div>
+      {% if customer.customer_address %}
+      <div class="doc-field">{{ customer.customer_address }}</div>
+      {% endif %}
+    </div>
+
+    <div class="doc-section">
+      <div class="doc-section-title">Job</div>
+      <div class="doc-field">{{ job.job_type or 'Service' }}{% if job.job_description %} — {{ job.job_description }}{% endif %}</div>
+      {% if job.job_notes %}
+      <div class="doc-field" style="color:var(--text-secondary);font-size:13px">Notes: {{ job.job_notes }}</div>
+      {% endif %}
+    </div>
+
+    <div class="doc-section">
+      <div class="doc-section-title">Line Items</div>
+      {% for li in line_items %}
+      <div class="doc-line-item">
+        <span class="doc-line-desc">{{ li.description or li.get('name','Item') }}</span>
+        <span class="doc-line-amount">${{ "%.2f"|format(li.total|float if li.total is defined else li.amount|float if li.amount is defined else 0) }}</span>
+      </div>
+      {% endfor %}
+
+      <div class="doc-totals">
+        <div class="doc-total-row"><span>Subtotal</span><span>${{ "%.2f"|format(subtotal) }}</span></div>
+        {% if tax_amount > 0 %}
+        <div class="doc-total-row"><span>Tax ({{ "%.0f"|format(tax_rate * 100) }}%)</span><span>${{ "%.2f"|format(tax_amount) }}</span></div>
+        {% endif %}
+        <div class="doc-total-row grand"><span>Total Due</span><span>${{ "%.2f"|format(total) }}</span></div>
+      </div>
+    </div>
+
+    {% if invoice.due_date %}
+    <div class="doc-section" style="padding:12px 24px">
+      <span style="font-size:13px;color:var(--text-secondary)">Due: {{ fmt_date(invoice.due_date) }}</span>
+      {% if invoice.sent_at %}
+      <span style="font-size:13px;color:var(--text-tertiary);margin-left:16px">Sent: {{ fmt_date(invoice.sent_at) }}</span>
+      {% endif %}
+    </div>
+    {% endif %}
+
+    <div class="doc-status-bar">
+      <div>
+        {% if invoice.paid_at %}
+          <span class="badge badge-green">Paid</span>
+          <span style="font-size:12px;color:var(--text-tertiary);margin-left:8px">{{ fmt_date(invoice.paid_at) }}</span>
+        {% elif invoice.status == 'overdue' %}
+          <span class="badge badge-red">Overdue</span>
+        {% elif invoice.status == 'sent' %}
+          <span class="badge badge-blue">Sent</span>
+        {% else %}
+          <span class="badge badge-gray">{{ invoice.status or 'Draft' }}</span>
+        {% endif %}
+      </div>
+      <div class="doc-actions">
+        {% if not invoice.paid_at %}
+        <form method="POST" action="/dashboard/invoice/{{ invoice.id }}/action" style="display:inline">
+          <input type="hidden" name="action" value="send">
+          <button type="submit" class="doc-btn doc-btn-primary">Send to Customer</button>
+        </form>
+        <form method="POST" action="/dashboard/invoice/{{ invoice.id }}/action" style="display:inline">
+          <input type="hidden" name="action" value="paid">
+          <button type="submit" class="doc-btn doc-btn-green">Mark Paid</button>
+        </form>
+        {% endif %}
+      </div>
+    </div>
+
+    {% if invoice.paid_at %}
+    <div style="padding:0 24px 20px">
+      <div class="paid-banner">Paid — Thank you!</div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

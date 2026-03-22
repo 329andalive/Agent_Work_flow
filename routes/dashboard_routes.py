@@ -14,12 +14,14 @@ Routes:
 """
 
 import os
+import re
 import sys
+import json
 from datetime import datetime, timezone, date, timedelta
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from flask import Blueprint, render_template, request, redirect, session, send_from_directory, current_app
+from flask import Blueprint, render_template, request, redirect, session, send_from_directory, current_app, flash, abort
 
 dashboard_bp = Blueprint("dashboard_bp", __name__)
 
@@ -77,6 +79,56 @@ def _load_client(client_id: str) -> dict:
     except Exception as e:
         print(f"[{_ts()}] ERROR dashboard_routes: _load_client failed — {e}")
     return {"id": client_id, "business_name": "Bolts11", "owner_name": "", "phone": "", "owner_mobile": ""}
+
+
+def fmt_date(d):
+    """Format ISO date as 'March 21, 2026'."""
+    if not d:
+        return "—"
+    try:
+        return datetime.fromisoformat(d.replace("Z", "+00:00")).strftime("%B %-d, %Y")
+    except Exception:
+        return d[:10] if len(d) >= 10 else d
+
+
+def fmt_phone(p):
+    """Format E.164 phone as (207) 555-1234."""
+    if not p:
+        return "—"
+    digits = re.sub(r'\D', '', p)
+    if len(digits) == 11:
+        digits = digits[1:]
+    if len(digits) == 10:
+        return f"({digits[:3]}) {digits[3:6]}-{digits[6:]}"
+    return p
+
+
+def fmt_activity_time(ts):
+    """Format timestamp as 'Today 2:32 PM' or 'Mar 19 at 10:45 AM'."""
+    if not ts:
+        return "—"
+    try:
+        dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+        now = datetime.now(timezone.utc)
+        delta = now - dt
+        if delta.days == 0:
+            return "Today " + dt.strftime("%-I:%M %p")
+        elif delta.days == 1:
+            return "Yesterday " + dt.strftime("%-I:%M %p")
+        else:
+            return dt.strftime("%b %-d at %-I:%M %p")
+    except Exception:
+        return ts[:16] if len(ts) >= 16 else ts
+
+
+def fmt_short_date(d):
+    """Format ISO date as 'Mar 21'."""
+    if not d:
+        return "—"
+    try:
+        return datetime.fromisoformat(d.replace("Z", "+00:00")).strftime("%b %-d")
+    except Exception:
+        return d[:10] if len(d) >= 10 else d
 
 
 def _base_context(active_page: str, client_id: str) -> dict:
@@ -204,6 +256,7 @@ def command_center():
         "sms_active": bool(os.environ.get("SMS_10DLC_ACTIVE", "")),
         "client_phone": client_phone,
         "owner_mobile": client.get("owner_mobile", ""),
+        "fmt_activity_time": fmt_activity_time,
     })
     return render_template("dashboard/command.html", **ctx)
 
@@ -242,6 +295,19 @@ def office_billing():
     except Exception as e:
         print(f"[{_ts()}] ERROR dashboard_routes: office proposals — {e}")
 
+    # Build customer name map
+    customer_ids = list(set(
+        [i["customer_id"] for i in invoices if i.get("customer_id")] +
+        [p["customer_id"] for p in proposals if p.get("customer_id")]
+    ))
+    cust_map = {}
+    if customer_ids:
+        try:
+            custs = sb.table("customers").select("id, customer_name, customer_phone").in_("id", customer_ids).execute().data or []
+            cust_map = {c["id"]: c for c in custs}
+        except Exception as e:
+            print(f"[{_ts()}] ERROR dashboard_routes: customer map query — {e}")
+
     # Calculated metrics
     total_billed = sum(float(i.get("amount_due") or 0) for i in invoices)
     total_paid = sum(float(i.get("amount_due") or 0) for i in invoices if i.get("status") == "paid")
@@ -253,14 +319,235 @@ def office_billing():
     ctx.update({
         "invoices": invoices,
         "proposals": proposals,
+        "cust_map": cust_map,
         "total_billed": total_billed,
         "total_paid": total_paid,
         "total_outstanding": total_outstanding,
         "proposals_sent": proposals_sent,
         "proposals_won": proposals_won,
         "win_rate": win_rate,
+        "fmt_short_date": fmt_short_date,
     })
     return render_template("dashboard/office.html", **ctx)
+
+
+# ---------------------------------------------------------------------------
+# GET /dashboard/proposal/<id> — Proposal document view
+# ---------------------------------------------------------------------------
+
+@dashboard_bp.route("/dashboard/proposal/<proposal_id>")
+def proposal_view(proposal_id):
+    client_id = _resolve_client_id()
+    if not client_id:
+        return redirect("/login")
+
+    ctx = _base_context("office", client_id)
+    sb = _get_supabase()
+
+    # Load proposal — must belong to this client
+    try:
+        result = sb.table("proposals").select("*").eq("id", proposal_id).eq("client_id", client_id).execute()
+        if not result.data:
+            abort(404)
+        proposal = result.data[0]
+    except Exception as e:
+        print(f"[{_ts()}] ERROR dashboard_routes: proposal view query — {e}")
+        abort(404)
+
+    # Load job
+    job = {}
+    if proposal.get("job_id"):
+        try:
+            result = sb.table("jobs").select("*").eq("id", proposal["job_id"]).execute()
+            if result.data:
+                job = result.data[0]
+        except Exception:
+            pass
+
+    # Load customer
+    customer = {}
+    if proposal.get("customer_id"):
+        try:
+            result = sb.table("customers").select("*").eq("id", proposal["customer_id"]).execute()
+            if result.data:
+                customer = result.data[0]
+        except Exception:
+            pass
+
+    # Parse line items
+    raw_items = proposal.get("line_items")
+    if isinstance(raw_items, str):
+        try:
+            line_items = json.loads(raw_items)
+        except Exception:
+            line_items = []
+    elif isinstance(raw_items, list):
+        line_items = raw_items
+    else:
+        line_items = []
+
+    # Fallback: show amount as single line if no line items
+    if not line_items and proposal.get("amount_estimate"):
+        line_items = [{"description": (proposal.get("proposal_text") or "Service")[:60], "amount": float(proposal.get("amount_estimate") or 0)}]
+
+    subtotal = sum(float(li.get("total") or li.get("amount") or 0) for li in line_items)
+    tax_rate = float(proposal.get("tax_rate") or 0)
+    tax_amount = round(subtotal * tax_rate, 2)
+    total = round(subtotal + tax_amount, 2) or float(proposal.get("amount_estimate") or 0)
+
+    ctx.update({
+        "proposal": proposal,
+        "job": job,
+        "customer": customer,
+        "line_items": line_items,
+        "subtotal": subtotal,
+        "tax_rate": tax_rate,
+        "tax_amount": tax_amount,
+        "total": total,
+        "fmt_date": fmt_date,
+        "fmt_phone": fmt_phone,
+    })
+    return render_template("dashboard/proposal_view.html", **ctx)
+
+
+@dashboard_bp.route("/dashboard/proposal/<proposal_id>/action", methods=["POST"])
+def proposal_action(proposal_id):
+    client_id = _resolve_client_id()
+    if not client_id:
+        return redirect("/login")
+
+    action = request.form.get("action", "")
+    sb = _get_supabase()
+    now = datetime.now(timezone.utc).isoformat()
+
+    try:
+        # Verify ownership
+        result = sb.table("proposals").select("id").eq("id", proposal_id).eq("client_id", client_id).execute()
+        if not result.data:
+            abort(404)
+
+        if action == "accepted":
+            sb.table("proposals").update({"status": "accepted", "accepted_at": now}).eq("id", proposal_id).execute()
+            flash("Proposal marked as accepted.", "success")
+        elif action == "lost":
+            sb.table("proposals").update({"status": "declined", "response_type": "declined"}).eq("id", proposal_id).execute()
+            flash("Proposal marked as lost.", "info")
+        elif action == "send":
+            flash("SMS sending queued. Will send when 10DLC is active.", "info")
+        else:
+            flash("Unknown action.", "error")
+    except Exception as e:
+        print(f"[{_ts()}] ERROR dashboard_routes: proposal action — {e}")
+        flash("Action failed.", "error")
+
+    return redirect(f"/dashboard/proposal/{proposal_id}")
+
+
+# ---------------------------------------------------------------------------
+# GET /dashboard/invoice/<id> — Invoice document view
+# ---------------------------------------------------------------------------
+
+@dashboard_bp.route("/dashboard/invoice/<invoice_id>")
+def invoice_view(invoice_id):
+    client_id = _resolve_client_id()
+    if not client_id:
+        return redirect("/login")
+
+    ctx = _base_context("office", client_id)
+    sb = _get_supabase()
+
+    # Load invoice — must belong to this client
+    try:
+        result = sb.table("invoices").select("*").eq("id", invoice_id).eq("client_id", client_id).execute()
+        if not result.data:
+            abort(404)
+        invoice = result.data[0]
+    except Exception as e:
+        print(f"[{_ts()}] ERROR dashboard_routes: invoice view query — {e}")
+        abort(404)
+
+    # Load job
+    job = {}
+    if invoice.get("job_id"):
+        try:
+            result = sb.table("jobs").select("*").eq("id", invoice["job_id"]).execute()
+            if result.data:
+                job = result.data[0]
+        except Exception:
+            pass
+
+    # Load customer
+    customer = {}
+    if invoice.get("customer_id"):
+        try:
+            result = sb.table("customers").select("*").eq("id", invoice["customer_id"]).execute()
+            if result.data:
+                customer = result.data[0]
+        except Exception:
+            pass
+
+    # Parse line items
+    raw_items = invoice.get("line_items")
+    if isinstance(raw_items, str):
+        try:
+            line_items = json.loads(raw_items)
+        except Exception:
+            line_items = []
+    elif isinstance(raw_items, list):
+        line_items = raw_items
+    else:
+        line_items = []
+
+    if not line_items and invoice.get("amount_due"):
+        line_items = [{"description": (invoice.get("invoice_text") or "Service")[:60], "amount": float(invoice.get("amount_due") or 0)}]
+
+    subtotal = sum(float(li.get("total") or li.get("amount") or 0) for li in line_items)
+    tax_rate = float(invoice.get("tax_rate") or 0)
+    tax_amount = round(subtotal * tax_rate, 2)
+    total = round(subtotal + tax_amount, 2) or float(invoice.get("amount_due") or 0)
+
+    ctx.update({
+        "invoice": invoice,
+        "job": job,
+        "customer": customer,
+        "line_items": line_items,
+        "subtotal": subtotal,
+        "tax_rate": tax_rate,
+        "tax_amount": tax_amount,
+        "total": total,
+        "fmt_date": fmt_date,
+        "fmt_phone": fmt_phone,
+    })
+    return render_template("dashboard/invoice_view.html", **ctx)
+
+
+@dashboard_bp.route("/dashboard/invoice/<invoice_id>/action", methods=["POST"])
+def invoice_action(invoice_id):
+    client_id = _resolve_client_id()
+    if not client_id:
+        return redirect("/login")
+
+    action = request.form.get("action", "")
+    sb = _get_supabase()
+    now = datetime.now(timezone.utc).isoformat()
+
+    try:
+        result = sb.table("invoices").select("id").eq("id", invoice_id).eq("client_id", client_id).execute()
+        if not result.data:
+            abort(404)
+
+        if action == "paid":
+            sb.table("invoices").update({"status": "paid", "paid_at": now}).eq("id", invoice_id).execute()
+            flash("Invoice marked as paid.", "success")
+        elif action == "send":
+            flash("SMS sending queued. Will send when 10DLC is active.", "info")
+        else:
+            flash("Unknown action.", "error")
+    except Exception as e:
+        print(f"[{_ts()}] ERROR dashboard_routes: invoice action — {e}")
+        flash("Action failed.", "error")
+
+    return redirect(f"/dashboard/invoice/{invoice_id}")
 
 
 # ---------------------------------------------------------------------------

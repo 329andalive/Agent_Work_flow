@@ -4,6 +4,12 @@
 {% block page_title %}Office / Billing{% endblock %}
 {% block topbar_meta %}{{ today }}{% endblock %}
 
+{% block extra_css %}
+  .data-table tr.clickable { cursor: pointer; }
+  .data-table tr.clickable:hover td { background: #eef2ff; }
+  .view-arrow { color: var(--text-tertiary); font-size: 12px; }
+{% endblock %}
+
 {% block content %}
 <!-- Stat cards -->
 <div class="metrics-row">
@@ -37,11 +43,11 @@
     <div class="card-body-flush">
       {% if invoices %}
       <table class="data-table">
-        <thead><tr><th>ID</th><th>Amount</th><th>Status</th><th>Due</th><th>Sent</th></tr></thead>
+        <thead><tr><th>Customer</th><th>Amount</th><th>Status</th><th>Date</th><th></th></tr></thead>
         <tbody>
           {% for inv in invoices[:25] %}
-          <tr>
-            <td><span class="id-short">{{ inv.id[:8] if inv.id else '—' }}</span></td>
+          <tr class="clickable" onclick="window.location='/dashboard/invoice/{{ inv.id }}'">
+            <td>{{ cust_map.get(inv.customer_id, {}).get('customer_name', 'Unknown') if inv.customer_id else '—' }}</td>
             <td>${{ "%.2f"|format(inv.amount_due|float) if inv.amount_due else '—' }}</td>
             <td>
               {% if inv.status == 'paid' %}
@@ -54,8 +60,8 @@
                 <span class="badge badge-gray">{{ inv.status or 'draft' }}</span>
               {% endif %}
             </td>
-            <td class="id-short">{{ inv.due_date[:10] if inv.due_date else '—' }}</td>
-            <td class="id-short">{{ inv.sent_at[:10] if inv.sent_at else '—' }}</td>
+            <td class="id-short">{{ fmt_short_date(inv.created_at) }}</td>
+            <td class="view-arrow">View &rarr;</td>
           </tr>
           {% endfor %}
         </tbody>
@@ -75,11 +81,11 @@
     <div class="card-body-flush">
       {% if proposals %}
       <table class="data-table">
-        <thead><tr><th>ID</th><th>Est $</th><th>Status</th><th>Sent</th><th>Outcome</th></tr></thead>
+        <thead><tr><th>Customer</th><th>Est $</th><th>Status</th><th>Date</th><th></th></tr></thead>
         <tbody>
           {% for p in proposals[:25] %}
-          <tr>
-            <td><span class="id-short">{{ p.id[:8] if p.id else '—' }}</span></td>
+          <tr class="clickable" onclick="window.location='/dashboard/proposal/{{ p.id }}'">
+            <td>{{ cust_map.get(p.customer_id, {}).get('customer_name', 'Unknown') if p.customer_id else '—' }}</td>
             <td>${{ "%.2f"|format(p.amount_estimate|float) if p.amount_estimate else '—' }}</td>
             <td>
               {% if p.status == 'accepted' %}
@@ -92,8 +98,8 @@
                 <span class="badge badge-gray">{{ p.status or 'draft' }}</span>
               {% endif %}
             </td>
-            <td class="id-short">{{ p.sent_at[:10] if p.sent_at else '—' }}</td>
-            <td class="id-short">{{ p.response_type or '—' }}{% if p.lost_reason %} ({{ p.lost_reason }}){% endif %}</td>
+            <td class="id-short">{{ fmt_short_date(p.created_at) }}</td>
+            <td class="view-arrow">View &rarr;</td>
           </tr>
           {% endfor %}
         </tbody>
