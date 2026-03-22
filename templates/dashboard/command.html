@@ -57,7 +57,7 @@
       </div>
     </div>
     <div id="chat-input-bar">
-      <textarea id="chat-input" rows="1" placeholder='Try: "estimate for Carol Reynolds 88 elm st pump out"'></textarea>
+      <textarea id="chat-input" rows="1" placeholder='INVOICE Mike Johnson 1000 gal $275 · ESTIMATE Sarah Nelson new septic · SCHEDULE Dave friday 9am'></textarea>
       <button class="send-btn" onclick="sendChat()">&#10132;</button>
     </div>
   </div>
@@ -107,10 +107,16 @@
     const text=inputEl.value.trim();if(!text)return;
     inputEl.value='';addMsg(text,'user');showTyping();
     try{
-      const res=await fetch(API_BASE+'/api/command',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'chat',client_phone:CLIENT_PHONE,operator_phone:OWNER_PHONE,payload:{message:text}})});
+      const res=await fetch(API_BASE+'/api/command',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:text})});
       const d=await res.json();hideTyping();
-      addMsg(d.success?(d.agent+': '+(d.message||'Done')):'Error: '+(d.error||'Unknown'),'system');
-    }catch(e){hideTyping();addMsg('Connection error','system')}
+      if(d.status==='error'){
+        addMsg('Error: '+d.message,'system');
+      }else{
+        const labels={'invoice_agent':'Invoice Agent','proposal_agent':'Proposal Agent','scheduling_agent':'Schedule Agent','clock_agent':'Clock Agent','report':'Daily Report','unknown':'System'};
+        const label=labels[d.agent]||d.agent||'System';
+        addMsg(label+': '+(d.message||'Done'),'system');
+      }
+    }catch(e){hideTyping();addMsg('Connection error: '+e,'system')}
   }
   inputEl.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendChat()}});
 </script>
