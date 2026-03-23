@@ -128,6 +128,133 @@
       border-top: 1px solid var(--sidebar-border);
     }
 
+    /* ── Collapsible nav ──────────────────────────────────────── */
+    .nav-section { }
+
+    .nav-section-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 9px 18px 9px 18px;
+      cursor: pointer;
+      user-select: none;
+      transition: background 0.1s;
+      border-left: 3px solid transparent;
+    }
+    .nav-section-header:hover {
+      background: rgba(255,255,255,0.04);
+    }
+    .nav-section-header.active {
+      color: var(--sidebar-active-text);
+      background: var(--sidebar-active-bg);
+      border-left-color: var(--sidebar-active-text);
+    }
+
+    .nav-section-label {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--sidebar-text);
+    }
+    .nav-section-header:hover .nav-section-label {
+      color: var(--sidebar-text-hover);
+    }
+    .nav-section-header.active .nav-section-label {
+      color: var(--sidebar-active-text);
+    }
+
+    .nav-section-icon {
+      width: 18px;
+      text-align: center;
+      font-size: 13px;
+      flex-shrink: 0;
+    }
+
+    .nav-chevron {
+      font-size: 9px;
+      color: var(--sidebar-text);
+      transition: transform 0.18s ease;
+      flex-shrink: 0;
+    }
+    .nav-section-header.open .nav-chevron {
+      transform: rotate(180deg);
+    }
+
+    .nav-children {
+      display: none;
+      flex-direction: column;
+      padding-bottom: 4px;
+    }
+    .nav-children.open {
+      display: flex;
+    }
+
+    .nav-child-link {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 7px 18px 7px 46px;
+      font-size: 12.5px;
+      color: var(--sidebar-text);
+      text-decoration: none;
+      transition: color 0.1s, background 0.1s;
+      border-left: 3px solid transparent;
+    }
+    .nav-child-link:hover {
+      color: var(--sidebar-text-hover);
+      background: rgba(255,255,255,0.03);
+      text-decoration: none;
+    }
+    .nav-child-link.active {
+      color: var(--sidebar-active-text);
+      background: var(--sidebar-active-bg);
+      border-left-color: var(--sidebar-active-text);
+    }
+
+    .nav-single-link {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 9px 18px;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--sidebar-text);
+      text-decoration: none;
+      transition: all 0.12s;
+      border-left: 3px solid transparent;
+    }
+    .nav-single-link:hover {
+      color: var(--sidebar-text-hover);
+      background: rgba(255,255,255,0.04);
+      text-decoration: none;
+    }
+    .nav-single-link.active {
+      color: var(--sidebar-active-text);
+      background: var(--sidebar-active-bg);
+      border-left-color: var(--sidebar-active-text);
+    }
+    .nav-single-link.disabled {
+      opacity: 0.38;
+      cursor: default;
+      pointer-events: none;
+    }
+
+    .nav-coming-soon {
+      font-family: 'DM Mono', monospace;
+      font-size: 9px;
+      font-weight: 500;
+      padding: 1px 5px;
+      border-radius: 3px;
+      background: rgba(245,158,11,0.15);
+      color: #f59e0b;
+      letter-spacing: 0.03em;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+
     /* ── Hamburger (mobile only) ──────────────────────────────── */
     #hamburger {
       display: none;
@@ -356,20 +483,110 @@
     <div class="sidebar-brand"><span style="color:#f59e0b;">&#9889;</span>BOLTS11</div>
     <div class="sidebar-sub">{{ business_name or 'Dashboard' }}</div>
 
-    <div class="sidebar-section">Main</div>
-    <a href="/dashboard/" class="sidebar-link {{ 'active' if active_page == 'control' else '' }}">
-      <span class="sidebar-icon">&#9632;</span> Control Board
-    </a>
-    <a href="/dashboard/office.html" class="sidebar-link {{ 'active' if active_page == 'office' else '' }}">
-      <span class="sidebar-icon">&#9783;</span> Invoices
+    <!-- Dashboard (single) -->
+    <a href="/dashboard/" class="nav-single-link {{ 'active' if active_page == 'control' else '' }}">
+      <span style="display:flex;align-items:center;gap:10px;">
+        <span class="nav-section-icon">⊞</span> Dashboard
+      </span>
     </a>
 
-    <div class="sidebar-section">System</div>
-    <a href="/dashboard/command.html" class="sidebar-link {{ 'active' if active_page == 'command' else '' }}">
-      <span class="sidebar-icon">&#9655;</span> Command Center
+    <!-- Sales & Payments -->
+    <div class="nav-section">
+      <div class="nav-section-header {% if active_page in ['office','estimates','payments','customers'] %}active{% endif %} {% if active_page in ['office','estimates','payments','customers'] %}open{% endif %}"
+           onclick="toggleNav(this)">
+        <span class="nav-section-label">
+          <span class="nav-section-icon">💳</span> Sales & Payments
+        </span>
+        <span class="nav-chevron">▼</span>
+      </div>
+      <div class="nav-children {% if active_page in ['office','estimates','payments','customers'] %}open{% endif %}">
+        <a href="/dashboard/office.html#estimates"
+           class="nav-child-link {{ 'active' if active_page == 'estimates' else '' }}">Estimates</a>
+        <a href="/dashboard/office.html"
+           class="nav-child-link {{ 'active' if active_page == 'office' else '' }}">Invoices</a>
+        <a href="/dashboard/office.html#payments"
+           class="nav-child-link {{ 'active' if active_page == 'payments' else '' }}">Payments</a>
+        <a href="/dashboard/customers/"
+           class="nav-child-link {{ 'active' if active_page == 'customers' else '' }}">Customers</a>
+      </div>
+    </div>
+
+    <!-- Purchases -->
+    <div class="nav-section">
+      <div class="nav-section-header {{ 'open' if active_page == 'purchases' else '' }}"
+           onclick="toggleNav(this)">
+        <span class="nav-section-label">
+          <span class="nav-section-icon">🛒</span> Purchases
+        </span>
+        <span class="nav-chevron">▼</span>
+      </div>
+      <div class="nav-children {{ 'open' if active_page == 'purchases' else '' }}">
+        <a href="/dashboard/purchases/#bills" class="nav-child-link">Bills</a>
+        <a href="/dashboard/purchases/#vendors" class="nav-child-link">Vendors</a>
+      </div>
+    </div>
+
+    <!-- Receipts (single) -->
+    <a href="/dashboard/receipts/" class="nav-single-link {{ 'active' if active_page == 'receipts' else '' }}">
+      <span style="display:flex;align-items:center;gap:10px;">
+        <span class="nav-section-icon">🧾</span> Receipts
+      </span>
     </a>
-    <a href="/dashboard/onboarding.html" class="sidebar-link {{ 'active' if active_page == 'onboarding' else '' }}">
-      <span class="sidebar-icon">&#10010;</span> Onboarding
+
+    <!-- Accounting -->
+    <div class="nav-section">
+      <div class="nav-section-header {{ 'open' if active_page == 'accounting' else '' }}"
+           onclick="toggleNav(this)">
+        <span class="nav-section-label">
+          <span class="nav-section-icon">⚖</span> Accounting
+        </span>
+        <span class="nav-chevron">▼</span>
+      </div>
+      <div class="nav-children {{ 'open' if active_page == 'accounting' else '' }}">
+        <a href="/api/invoices/export-csv" class="nav-child-link" download>
+          Export to QuickBooks
+        </a>
+        <a href="/dashboard/accounting/" class="nav-child-link">Transactions</a>
+      </div>
+    </div>
+
+    <!-- Banking (coming soon) -->
+    <a href="#" class="nav-single-link disabled">
+      <span style="display:flex;align-items:center;gap:10px;">
+        <span class="nav-section-icon">🏦</span> Banking
+      </span>
+      <span class="nav-coming-soon">soon</span>
+    </a>
+
+    <!-- Payroll (coming soon) -->
+    <a href="#" class="nav-single-link disabled">
+      <span style="display:flex;align-items:center;gap:10px;">
+        <span class="nav-section-icon">👥</span> Payroll
+      </span>
+      <span class="nav-coming-soon">soon</span>
+    </a>
+
+    <!-- Schedule (coming soon — our differentiator) -->
+    <a href="#" class="nav-single-link disabled">
+      <span style="display:flex;align-items:center;gap:10px;">
+        <span class="nav-section-icon">📅</span> Schedule
+      </span>
+      <span class="nav-coming-soon">soon</span>
+    </a>
+
+    <!-- System section (keep existing) -->
+    <div class="sidebar-section">System</div>
+    <a href="/dashboard/command.html"
+       class="nav-single-link {{ 'active' if active_page == 'command' else '' }}">
+      <span style="display:flex;align-items:center;gap:10px;">
+        <span class="nav-section-icon">▶</span> Command Center
+      </span>
+    </a>
+    <a href="/dashboard/onboarding.html"
+       class="nav-single-link {{ 'active' if active_page == 'onboarding' else '' }}">
+      <span style="display:flex;align-items:center;gap:10px;">
+        <span class="nav-section-icon">✚</span> Onboarding
+      </span>
     </a>
 
     <div class="sidebar-spacer"></div>
@@ -393,12 +610,26 @@
   {% block extra_js %}{% endblock %}
 
   <script>
-    // Mobile: close sidebar when a nav link is clicked
-    document.querySelectorAll('.sidebar-link').forEach(function(link) {
-      link.addEventListener('click', function() {
-        document.getElementById('sidebar').classList.remove('open');
-      });
+  function toggleNav(header) {
+    var isOpen = header.classList.contains('open');
+    // Close all other open sections
+    document.querySelectorAll('.nav-section-header.open').forEach(function(h) {
+      if (h !== header) {
+        h.classList.remove('open');
+        h.nextElementSibling.classList.remove('open');
+      }
     });
+    // Toggle this one
+    header.classList.toggle('open', !isOpen);
+    header.nextElementSibling.classList.toggle('open', !isOpen);
+  }
+
+  // Mobile: close sidebar when a nav link is clicked
+  document.querySelectorAll('.nav-single-link, .nav-child-link').forEach(function(link) {
+    link.addEventListener('click', function() {
+      document.getElementById('sidebar').classList.remove('open');
+    });
+  });
   </script>
 </body>
 </html>

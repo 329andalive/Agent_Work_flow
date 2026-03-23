@@ -820,6 +820,50 @@ def api_create_job():
 
 
 # ---------------------------------------------------------------------------
+# Stub routes — coming soon pages
+# ---------------------------------------------------------------------------
+
+@dashboard_bp.route("/dashboard/customers/")
+def customers():
+    client_id = _resolve_client_id()
+    if not client_id:
+        return redirect("/login")
+    ctx = _base_context("customers", client_id)
+    return render_template("dashboard/coming_soon.html",
+        page_name="Customers", **ctx)
+
+
+@dashboard_bp.route("/dashboard/purchases/")
+def purchases():
+    client_id = _resolve_client_id()
+    if not client_id:
+        return redirect("/login")
+    ctx = _base_context("purchases", client_id)
+    return render_template("dashboard/coming_soon.html",
+        page_name="Purchases", **ctx)
+
+
+@dashboard_bp.route("/dashboard/receipts/")
+def receipts():
+    client_id = _resolve_client_id()
+    if not client_id:
+        return redirect("/login")
+    ctx = _base_context("receipts", client_id)
+    return render_template("dashboard/coming_soon.html",
+        page_name="Receipts", **ctx)
+
+
+@dashboard_bp.route("/dashboard/accounting/")
+def accounting():
+    client_id = _resolve_client_id()
+    if not client_id:
+        return redirect("/login")
+    ctx = _base_context("accounting", client_id)
+    return render_template("dashboard/coming_soon.html",
+        page_name="Accounting", **ctx)
+
+
+# ---------------------------------------------------------------------------
 # Public routes — no sidebar, served as static files
 # ---------------------------------------------------------------------------
 

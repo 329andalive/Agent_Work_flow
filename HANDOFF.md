@@ -1,6 +1,6 @@
 # HANDOFF.md — Session Summary
 > Last updated: March 23, 2026
-> Session: Dashboard redesign, new job page, add customer page, brand identity
+> Session: Wave-style sidebar, dashboard redesign, new job/customer pages, brand identity
 
 ---
 
@@ -48,10 +48,14 @@ templates/dashboard/control.html — Redesigned: card-list jobs (no IDs),
                                    summary strip, amber invoice alert, team panel (name + role only)
 templates/dashboard/office.html  — Redesigned: flex-list invoices + proposals,
                                    summary strip, Export CSV button wired, age pills via JS
-templates/base.html              — Bolts11 brand: navy sidebar, amber active states, navy topbar
-routes/dashboard_routes.py       — New Job page, Add Customer page, proposal_agent wiring
+templates/base.html              — Bolts11 brand: navy sidebar, amber active states, navy topbar;
+                                   Wave-style collapsible nav (Sales & Payments, Purchases,
+                                   Accounting sections), coming soon badges, accordion JS
+routes/dashboard_routes.py       — New Job page, Add Customer page, proposal_agent wiring,
+                                   stub routes for customers/purchases/receipts/accounting
 templates/dashboard/new_job.html — New Job form with proposal checkbox
 templates/dashboard/new_customer.html — Add Customer form with phone normalization
+templates/dashboard/coming_soon.html — Generic stub page for unbuilt sections
 ```
 
 ---
@@ -250,3 +254,30 @@ Route needed: GET /dashboard/job/<job_id>
   - Temporary PIN debug print statements still active in login route
   - Remove before any customer demo or production handoff
   Owner: Backend Engineer
+
+### 7.5 Customers Page
+  Route: /dashboard/customers/ (stub exists, renders coming_soon.html)
+  Needs: Full page showing customer list — name, phone, address, job count,
+  last job date. Clickable rows to customer detail. Search/filter.
+  Owner: Frontend Engineer (once route passes real customer data)
+  Backend needed: dashboard_routes.py customers() route needs to query
+  customers table and pass list to a real template.
+
+### 7.6 Purchases / Bills / Vendors
+  Route: /dashboard/purchases/ (stub exists)
+  Needs: Expense tracking — bills from vendors, materials costs per job.
+  No Supabase table exists yet for expenses/bills.
+  Owner: Backend Engineer — schema design needed first.
+
+### 7.7 Receipts
+  Route: /dashboard/receipts/ (stub exists)
+  Needs: Receipt upload and parsing. Likely: file upload → Claude vision →
+  extract vendor, amount, date → write to expenses table.
+  Owner: Backend Engineer — depends on 7.6 schema.
+
+### 7.8 Accounting / Transactions
+  Route: /dashboard/accounting/ (stub exists)
+  For now: Export to QuickBooks CSV is wired (7.1).
+  Future: Full transaction ledger — income from invoices, expenses from bills,
+  net by period. Chart of accounts.
+  Owner: Backend Engineer — depends on 7.6 schema.

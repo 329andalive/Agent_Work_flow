@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}{{ page_name }}{% endblock %}
+{% block page_title %}{{ page_name }}{% endblock %}
+{% block topbar_meta %}{{ today }}{% endblock %}
+{% block content %}
+<div style="display:flex;flex-direction:column;align-items:center;
+            justify-content:center;height:60vh;text-align:center;gap:16px;">
+  <div style="font-size:40px;">🔧</div>
+  <div style="font-family:'Barlow Condensed',sans-serif;font-size:28px;
+              font-weight:700;color:var(--text-primary);">{{ page_name }}</div>
+  <div style="font-family:'DM Mono',monospace;font-size:12px;
+              color:var(--text-tertiary);max-width:320px;line-height:1.6;">
+    This section is being built.<br>
+    Check back soon.
+  </div>
+  <a href="/dashboard/"
+     style="font-family:'DM Mono',monospace;font-size:11px;
+            color:var(--sidebar-active-text);text-decoration:none;
+            margin-top:8px;">
+    ← Back to Dashboard
+  </a>
+</div>
+{% endblock %}
