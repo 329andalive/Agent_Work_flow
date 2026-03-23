@@ -10,24 +10,31 @@
   <style>
     /* ── Variables ────────────────────────────────────────────── */
     :root {
-      --sidebar-w: 220px;
-      --sidebar-bg: #12141c;
-      --sidebar-border: rgba(255,255,255,0.06);
-      --sidebar-text: #8b8fa3;
-      --sidebar-text-hover: #c8cad3;
-      --sidebar-active-bg: rgba(59,130,246,0.12);
-      --sidebar-active-text: #6ea8fe;
-      --topbar-h: 48px;
-      --bg-page: #f3f4f6;
-      --bg-card: #ffffff;
-      --border: rgba(0,0,0,0.08);
-      --text-primary: #111827;
-      --text-secondary: #6b7280;
-      --text-tertiary: #9ca3af;
-      --green: #16a34a;
-      --amber: #d97706;
-      --red: #dc2626;
-      --blue: #2563eb;
+      /* Layout */
+      --sidebar-w:           220px;
+      --topbar-h:            48px;
+
+      /* Sidebar — Bolts11 navy */
+      --sidebar-bg:          #111e31;
+      --sidebar-border:      rgba(255,255,255,0.07);
+      --sidebar-text:        rgba(255,255,255,0.50);
+      --sidebar-text-hover:  rgba(255,255,255,0.85);
+      --sidebar-active-bg:   rgba(245,158,11,0.12);
+      --sidebar-active-text: #f59e0b;
+
+      /* Page surface */
+      --bg-page:             #F1EFE8;
+      --bg-card:             #ffffff;
+      --border:              rgba(0,0,0,0.09);
+      --text-primary:        #1a1a18;
+      --text-secondary:      #5F5E5A;
+      --text-tertiary:       #888780;
+
+      /* Status colors */
+      --green:               #639922;
+      --amber:               #BA7517;
+      --red:                 #E24B4A;
+      --blue:                #2563eb;
     }
 
     /* ── Reset ────────────────────────────────────────────────── */
@@ -180,8 +187,8 @@
     #topbar {
       height: var(--topbar-h);
       flex-shrink: 0;
-      background: var(--bg-card);
-      border-bottom: 1px solid var(--border);
+      background: #1a2e4a;
+      border-bottom: 0.5px solid rgba(255,255,255,0.08);
       display: flex;
       align-items: center;
       justify-content: space-between;
@@ -190,16 +197,16 @@
     @media (max-width: 768px) { #topbar { padding-left: 56px; } }
     .topbar-title {
       font-family: 'Barlow Condensed', sans-serif;
-      font-size: 16px;
+      font-size: 14px;
       font-weight: 600;
       text-transform: uppercase;
-      letter-spacing: 0.03em;
-      color: var(--text-primary);
+      letter-spacing: 0.06em;
+      color: rgba(255,255,255,0.70);
     }
     .topbar-meta {
       font-family: 'DM Mono', monospace;
-      font-size: 11px;
-      color: var(--text-tertiary);
+      font-size: 10px;
+      color: rgba(255,255,255,0.35);
     }
 
     /* ── Content scroll area ──────────────────────────────────── */
@@ -296,7 +303,7 @@
       vertical-align: middle;
     }
     .data-table tr:last-child td { border-bottom: none; }
-    .data-table tr:hover td { background: #f9fafb; }
+    .data-table tr:hover td { background: #ECEAE3; }
 
     /* ── Badge ────────────────────────────────────────────────── */
     .badge {
@@ -309,11 +316,11 @@
       letter-spacing: 0.04em;
       display: inline-block;
     }
-    .badge-green { background: #dcfce7; color: #15803d; }
-    .badge-amber { background: #fef3c7; color: #b45309; }
-    .badge-red { background: #fee2e2; color: #b91c1c; }
+    .badge-green { background: #EAF3DE; color: #3B6D11; }
+    .badge-amber { background: #FAEEDA; color: #854F0B; }
+    .badge-red { background: #FCEBEB; color: #A32D2D; }
     .badge-blue { background: #dbeafe; color: #1d4ed8; }
-    .badge-gray { background: #f3f4f6; color: #6b7280; }
+    .badge-gray { background: #F1EFE8; color: #5F5E5A; }
 
     /* ── Two-column grid ──────────────────────────────────────── */
     .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
@@ -346,7 +353,7 @@
 
   <!-- Sidebar -->
   <nav id="sidebar">
-    <div class="sidebar-brand">BOLTS11</div>
+    <div class="sidebar-brand"><span style="color:#f59e0b;">&#9889;</span>BOLTS11</div>
     <div class="sidebar-sub">{{ business_name or 'Dashboard' }}</div>
 
     <div class="sidebar-section">Main</div>
