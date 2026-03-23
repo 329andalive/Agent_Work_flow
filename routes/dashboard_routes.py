@@ -422,6 +422,122 @@ def invoices_page():
 
 
 # ---------------------------------------------------------------------------
+# GET /dashboard/invoices/new — New Invoice form
+# ---------------------------------------------------------------------------
+
+@dashboard_bp.route("/dashboard/invoices/new")
+def new_invoice_page():
+    client_id = _resolve_client_id()
+    if not client_id:
+        return redirect("/login")
+
+    ctx = _base_context("invoices", client_id)
+    sb = _get_supabase()
+
+    customers_list = []
+    try:
+        result = sb.table("customers").select(
+            "id, customer_name, customer_phone, customer_address"
+        ).eq("client_id", client_id).order("customer_name").execute()
+        customers_list = result.data or []
+    except Exception as e:
+        print(f"[{_ts()}] ERROR dashboard_routes: new invoice customers — {e}")
+
+    jobs_list = []
+    try:
+        result = sb.table("jobs").select(
+            "id, job_type, scheduled_date, customer_id, status"
+        ).eq("client_id", client_id).neq("status", "cancelled").order("scheduled_date", desc=True).execute()
+        jobs_list = result.data or []
+    except Exception as e:
+        print(f"[{_ts()}] ERROR dashboard_routes: new invoice jobs — {e}")
+
+    ctx.update({
+        "customers": customers_list,
+        "customers_json": json.dumps(customers_list),
+        "jobs_json": json.dumps(jobs_list),
+    })
+    return render_template("dashboard/new_invoice.html", **ctx)
+
+
+# ---------------------------------------------------------------------------
+# POST /api/invoices/create — Create invoice from dashboard
+# ---------------------------------------------------------------------------
+
+@dashboard_bp.route("/api/invoices/create", methods=["POST"])
+def api_create_invoice():
+    client_id = _resolve_client_id()
+    if not client_id:
+        return jsonify({"success": False, "error": "Not authenticated"}), 401
+
+    data = request.get_json(silent=True)
+    if not data:
+        return jsonify({"success": False, "error": "Invalid JSON body"}), 400
+
+    customer_id = data.get("customer_id")
+    description = (data.get("description") or "").strip()
+    amount_due = data.get("amount_due")
+    due_date = data.get("due_date") or None
+    job_id = data.get("job_id") or None
+
+    if not customer_id:
+        return jsonify({"success": False, "error": "Customer is required"}), 400
+    if not description:
+        return jsonify({"success": False, "error": "Description is required"}), 400
+    if amount_due is None:
+        return jsonify({"success": False, "error": "Amount is required"}), 400
+
+    try:
+        amount_due = float(amount_due)
+    except (ValueError, TypeError):
+        return jsonify({"success": False, "error": "Amount must be a number"}), 400
+
+    sb = _get_supabase()
+
+    # Verify customer belongs to this client
+    try:
+        cust = sb.table("customers").select("id").eq("id", customer_id).eq("client_id", client_id).execute()
+        if not cust.data:
+            return jsonify({"success": False, "error": "Customer not found"}), 404
+    except Exception as e:
+        print(f"[{_ts()}] ERROR dashboard_routes: invoice create customer check — {e}")
+        return jsonify({"success": False, "error": "Failed to verify customer"}), 500
+
+    # Verify job if provided
+    if job_id:
+        try:
+            job = sb.table("jobs").select("id").eq("id", job_id).eq("client_id", client_id).execute()
+            if not job.data:
+                return jsonify({"success": False, "error": "Job not found"}), 404
+        except Exception as e:
+            print(f"[{_ts()}] ERROR dashboard_routes: invoice create job check — {e}")
+            return jsonify({"success": False, "error": "Failed to verify job"}), 500
+
+    row = {
+        "client_id": client_id,
+        "customer_id": customer_id,
+        "invoice_text": description,
+        "amount_due": amount_due,
+        "status": "draft",
+    }
+    if job_id:
+        row["job_id"] = job_id
+    if due_date:
+        row["due_date"] = due_date
+
+    try:
+        result = sb.table("invoices").insert(row).execute()
+        if not result.data:
+            return jsonify({"success": False, "error": "Failed to insert invoice"}), 500
+        invoice_id = result.data[0]["id"]
+    except Exception as e:
+        print(f"[{_ts()}] ERROR dashboard_routes: invoice create insert — {e}")
+        return jsonify({"success": False, "error": f"Database error: {e}"}), 500
+
+    return jsonify({"success": True, "invoice_id": invoice_id, "redirect": "/dashboard/invoices/"})
+
+
+# ---------------------------------------------------------------------------
 # GET /dashboard/payments/ — Payments page (paid invoices only)
 # ---------------------------------------------------------------------------
 

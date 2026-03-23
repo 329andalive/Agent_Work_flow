@@ -157,7 +157,11 @@
       <span class="card-title">Invoices</span>
       <span class="card-count">{{ invoices|length }}</span>
     </span>
-    <a href="/api/invoices/export-csv" download class="export-btn">Export CSV</a>
+    <span style="display:flex;align-items:center;gap:8px">
+      <a href="/api/invoices/export-csv" download class="export-btn">Export CSV</a>
+      <a href="/dashboard/invoices/new" style="font-family:'DM Mono',monospace;font-size:10px;font-weight:500;padding:4px 12px;border-radius:4px;border:none;background:#f59e0b;color:#fff;text-decoration:none;letter-spacing:0.04em;transition:opacity 0.12s;display:inline-block"
+         onmouseover="this.style.opacity='0.85'" onmouseout="this.style.opacity='1'">+ New Invoice</a>
+    </span>
   </div>
   <div class="card-body-flush">
     {% if invoices %}

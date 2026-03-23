@@ -1,0 +1,248 @@
+{% extends "base.html" %}
+
+{% block title %}New Invoice{% endblock %}
+{% block page_title %}New Invoice{% endblock %}
+{% block topbar_meta %}{{ today }}{% endblock %}
+
+{% block extra_css %}
+  .back-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    color: var(--text-secondary);
+    text-decoration: none;
+    margin-bottom: 16px;
+  }
+  .back-link:hover { color: var(--text-primary); }
+
+  .form-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 24px;
+    max-width: 560px;
+  }
+
+  .form-group { margin-bottom: 16px; }
+  .form-group:last-of-type { margin-bottom: 20px; }
+
+  .form-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-tertiary);
+    margin-bottom: 6px;
+  }
+
+  .form-input,
+  .form-select,
+  .form-textarea {
+    width: 100%;
+    font-family: 'Barlow', sans-serif;
+    font-size: 14px;
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg-card);
+    color: var(--text-primary);
+    outline: none;
+    transition: border-color 0.12s;
+  }
+  .form-input:focus,
+  .form-select:focus,
+  .form-textarea:focus { border-color: var(--blue); }
+  .form-textarea { resize: vertical; }
+
+  .form-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+
+  .amount-wrap {
+    position: relative;
+  }
+  .amount-wrap::before {
+    content: '$';
+    position: absolute;
+    left: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-family: 'DM Mono', monospace;
+    font-size: 14px;
+    color: var(--text-tertiary);
+    pointer-events: none;
+  }
+  .amount-wrap .form-input {
+    padding-left: 22px;
+  }
+
+  .btn-create {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-family: 'Barlow', sans-serif;
+    font-size: 14px;
+    font-weight: 600;
+    padding: 10px 24px;
+    border-radius: 6px;
+    border: none;
+    background: var(--blue);
+    color: #fff;
+    cursor: pointer;
+    transition: background 0.12s;
+  }
+  .btn-create:hover { background: #1d4ed8; }
+  .btn-create:disabled { opacity: 0.6; cursor: not-allowed; }
+
+  .form-error {
+    margin-top: 10px;
+    font-size: 13px;
+    color: var(--red);
+    display: none;
+  }
+  .form-success {
+    margin-top: 10px;
+    font-size: 13px;
+    color: var(--green);
+    display: none;
+  }
+{% endblock %}
+
+{% block content %}
+<a href="/dashboard/invoices/" class="back-link">&larr; Invoices</a>
+
+<div class="form-card">
+  <form id="new-invoice-form" autocomplete="off">
+
+    <div class="form-group">
+      <label class="form-label">Customer</label>
+      <select class="form-select" id="customer_id" required>
+        <option value="">Select a customer&hellip;</option>
+        {% for c in customers %}
+        <option value="{{ c.id }}">{{ c.customer_name or c.customer_phone }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">Link to Job (optional)</label>
+      <select class="form-select" id="job_id">
+        <option value="">No linked job</option>
+      </select>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">Description</label>
+      <textarea class="form-textarea" id="description" rows="3" required
+        placeholder="Work performed, materials, details&hellip;"></textarea>
+    </div>
+
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Amount Due</label>
+        <div class="amount-wrap">
+          <input type="number" class="form-input" id="amount_due" step="0.01" min="0" required
+            placeholder="0.00">
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Due Date</label>
+        <input type="date" class="form-input" id="due_date">
+      </div>
+    </div>
+
+    <button type="submit" class="btn-create" id="btn-submit">Create Invoice</button>
+    <div class="form-error" id="form-error"></div>
+    <div class="form-success" id="form-success"></div>
+  </form>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function() {
+  var allJobs = {{ jobs_json|safe }};
+  var selCustomer = document.getElementById('customer_id');
+  var selJob = document.getElementById('job_id');
+
+  // Filter jobs by selected customer
+  selCustomer.addEventListener('change', function() {
+    var cid = this.value;
+    selJob.innerHTML = '<option value="">No linked job</option>';
+    if (!cid) return;
+    allJobs.forEach(function(j) {
+      if (j.customer_id === cid) {
+        var opt = document.createElement('option');
+        opt.value = j.id;
+        opt.textContent = (j.job_type || 'Job') + ' | ' + (j.scheduled_date || '—');
+        selJob.appendChild(opt);
+      }
+    });
+  });
+
+  // Default due date to today + 30 days
+  var d = new Date();
+  d.setDate(d.getDate() + 30);
+  var yyyy = d.getFullYear();
+  var mm = String(d.getMonth() + 1).padStart(2, '0');
+  var dd = String(d.getDate()).padStart(2, '0');
+  document.getElementById('due_date').value = yyyy + '-' + mm + '-' + dd;
+
+  // Form submit
+  var form = document.getElementById('new-invoice-form');
+  var btnSubmit = document.getElementById('btn-submit');
+  var elError = document.getElementById('form-error');
+  var elSuccess = document.getElementById('form-success');
+
+  form.addEventListener('submit', function(e) {
+    e.preventDefault();
+    elError.style.display = 'none';
+    elSuccess.style.display = 'none';
+    btnSubmit.disabled = true;
+    btnSubmit.textContent = 'Creating\u2026';
+
+    var payload = {
+      customer_id: document.getElementById('customer_id').value,
+      job_id: document.getElementById('job_id').value || null,
+      description: document.getElementById('description').value,
+      amount_due: parseFloat(document.getElementById('amount_due').value),
+      due_date: document.getElementById('due_date').value || null
+    };
+
+    fetch('/api/invoices/create', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    })
+    .then(function(res) { return res.json(); })
+    .then(function(data) {
+      if (data.success) {
+        elSuccess.textContent = 'Invoice created as draft.';
+        elSuccess.style.display = 'block';
+        setTimeout(function() {
+          window.location.href = data.redirect || '/dashboard/invoices/';
+        }, 1500);
+      } else {
+        elError.textContent = data.error || 'Something went wrong.';
+        elError.style.display = 'block';
+        btnSubmit.disabled = false;
+        btnSubmit.textContent = 'Create Invoice';
+      }
+    })
+    .catch(function(err) {
+      elError.textContent = 'Network error: ' + err.message;
+      elError.style.display = 'block';
+      btnSubmit.disabled = false;
+      btnSubmit.textContent = 'Create Invoice';
+    });
+  });
+})();
+</script>
+{% endblock %}
