@@ -965,6 +965,143 @@ def api_create_job():
 
 
 # ---------------------------------------------------------------------------
+# GET /dashboard/job/<id> — Job detail page
+# ---------------------------------------------------------------------------
+
+@dashboard_bp.route("/dashboard/job/<job_id>")
+def job_detail(job_id):
+    client_id = _resolve_client_id()
+    if not client_id:
+        return redirect("/login")
+
+    ctx = _base_context("control", client_id)
+    sb = _get_supabase()
+
+    # Load job — must belong to this client
+    try:
+        result = sb.table("jobs").select("*").eq("id", job_id).eq("client_id", client_id).execute()
+        if not result.data:
+            abort(404)
+        job = result.data[0]
+    except Exception as e:
+        print(f"[{_ts()}] ERROR dashboard_routes: job_detail query — {e}")
+        abort(404)
+
+    # Load customer
+    customer = {}
+    if job.get("customer_id"):
+        try:
+            result = sb.table("customers").select("*").eq("id", job["customer_id"]).eq("client_id", client_id).execute()
+            if result.data:
+                customer = result.data[0]
+        except Exception:
+            pass
+
+    # Load proposals linked to this job
+    proposals = []
+    try:
+        proposals = sb.table("proposals").select(
+            "id, status, amount_estimate, created_at"
+        ).eq("client_id", client_id).eq("job_id", job_id).order("created_at", desc=True).execute().data or []
+    except Exception as e:
+        print(f"[{_ts()}] WARN dashboard_routes: job_detail proposals — {e}")
+
+    # Load invoices linked to this job
+    invoices = []
+    try:
+        invoices = sb.table("invoices").select(
+            "id, status, amount_due, paid_at, created_at"
+        ).eq("client_id", client_id).eq("job_id", job_id).order("created_at", desc=True).execute().data or []
+    except Exception as e:
+        print(f"[{_ts()}] WARN dashboard_routes: job_detail invoices — {e}")
+
+    # Load agent activity for this job
+    client_phone = ctx["_client"].get("phone", "")
+    activity = []
+    try:
+        activity = sb.table("agent_activity").select(
+            "agent_name, action_taken, output_summary, created_at"
+        ).eq("client_phone", client_phone).ilike("input_summary", f"%{job_id[:8]}%").order("created_at", desc=True).limit(10).execute().data or []
+    except Exception:
+        pass
+
+    ctx.update({
+        "job": job,
+        "customer": customer,
+        "proposals": proposals,
+        "invoices": invoices,
+        "activity": activity,
+        "fmt_date": fmt_date,
+        "fmt_phone": fmt_phone,
+        "fmt_short_date": fmt_short_date,
+        "fmt_activity_time": fmt_activity_time,
+    })
+    return render_template("dashboard/job_detail.html", **ctx)
+
+
+# ---------------------------------------------------------------------------
+# GET /dashboard/customers/<id> — Customer detail page
+# ---------------------------------------------------------------------------
+
+@dashboard_bp.route("/dashboard/customers/<customer_id>")
+def customer_detail(customer_id):
+    client_id = _resolve_client_id()
+    if not client_id:
+        return redirect("/login")
+
+    ctx = _base_context("customers", client_id)
+    sb = _get_supabase()
+
+    # Load customer — must belong to this client
+    try:
+        result = sb.table("customers").select("*").eq("id", customer_id).eq("client_id", client_id).execute()
+        if not result.data:
+            abort(404)
+        customer = result.data[0]
+    except Exception as e:
+        print(f"[{_ts()}] ERROR dashboard_routes: customer_detail query — {e}")
+        abort(404)
+
+    # Load jobs for this customer
+    jobs = []
+    try:
+        jobs = sb.table("jobs").select(
+            "id, job_type, status, scheduled_date, job_description"
+        ).eq("client_id", client_id).eq("customer_id", customer_id).order("scheduled_date", desc=True).execute().data or []
+    except Exception as e:
+        print(f"[{_ts()}] WARN dashboard_routes: customer_detail jobs — {e}")
+
+    # Load proposals
+    proposals = []
+    try:
+        proposals = sb.table("proposals").select(
+            "id, status, amount_estimate, created_at"
+        ).eq("client_id", client_id).eq("customer_id", customer_id).order("created_at", desc=True).limit(10).execute().data or []
+    except Exception as e:
+        print(f"[{_ts()}] WARN dashboard_routes: customer_detail proposals — {e}")
+
+    # Load invoices
+    invoices = []
+    try:
+        invoices = sb.table("invoices").select(
+            "id, status, amount_due, paid_at, created_at"
+        ).eq("client_id", client_id).eq("customer_id", customer_id).order("created_at", desc=True).limit(10).execute().data or []
+    except Exception as e:
+        print(f"[{_ts()}] WARN dashboard_routes: customer_detail invoices — {e}")
+
+    ctx.update({
+        "customer": customer,
+        "jobs": jobs,
+        "proposals": proposals,
+        "invoices": invoices,
+        "fmt_date": fmt_date,
+        "fmt_phone": fmt_phone,
+        "fmt_short_date": fmt_short_date,
+    })
+    return render_template("dashboard/customer_detail.html", **ctx)
+
+
+# ---------------------------------------------------------------------------
 # Stub routes — coming soon pages
 # ---------------------------------------------------------------------------
 

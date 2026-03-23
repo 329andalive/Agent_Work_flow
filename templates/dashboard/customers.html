@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+
+{% block title %}Customers{% endblock %}
+{% block page_title %}Customers{% endblock %}
+{% block topbar_meta %}{{ customers|length }} customers · {{ today }}{% endblock %}
+
+{% block extra_css %}
+  .search-bar {
+    width: 100%;
+    font-family: 'Barlow', sans-serif;
+    font-size: 13px;
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg-card);
+    color: var(--text-primary);
+    outline: none;
+    margin: 12px 16px;
+    width: calc(100% - 32px);
+    transition: border-color 0.12s;
+  }
+  .search-bar:focus { border-color: var(--blue); }
+  .search-bar::placeholder { color: var(--text-tertiary); }
+  .sms-dot {
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    vertical-align: middle;
+  }
+  .btn-add {
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+    padding: 4px 12px;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text-secondary);
+    text-decoration: none;
+    transition: background 0.12s, color 0.12s;
+  }
+  .btn-add:hover {
+    background: #1a2e4a;
+    color: #fff;
+    border-color: #1a2e4a;
+    text-decoration: none;
+  }
+{% endblock %}
+
+{% block content %}
+<!-- Metrics -->
+<div class="metrics-row">
+  <div class="metric">
+    <div class="metric-label">Total Customers</div>
+    <div class="metric-value">{{ customers|length }}</div>
+  </div>
+  <div class="metric">
+    <div class="metric-label">SMS Opted In</div>
+    <div class="metric-value c-green">{{ customers|selectattr('sms_consent')|list|length }}</div>
+  </div>
+  <div class="metric">
+    <div class="metric-label">With Jobs</div>
+    <div class="metric-value c-blue">{{ customers|selectattr('job_count')|list|length }}</div>
+  </div>
+</div>
+
+<!-- Customer List -->
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">All Customers</span>
+    <a href="/dashboard/customers/new" class="btn-add">+ Add Customer</a>
+  </div>
+  <input type="search" class="search-bar" id="cust-search"
+         placeholder="Search name, phone, or address…"
+         oninput="filterCustomers(this.value)">
+  <div class="card-body-flush">
+    {% if customers %}
+    <table class="data-table" id="cust-table">
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Phone</th>
+          <th>Address</th>
+          <th style="text-align:right">Jobs</th>
+          <th>Last Job</th>
+          <th>SMS</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for c in customers %}
+        <tr style="cursor:pointer"
+            onclick="window.location='/dashboard/customers/{{ c.id }}'"
+            data-search="{{ (c.customer_name or '')|lower }} {{ (c.customer_phone or '')|lower }} {{ (c.customer_address or '')|lower }}">
+          <td style="font-weight:500">{{ c.customer_name or '—' }}</td>
+          <td style="font-family:'DM Mono',monospace;font-size:12px">{{ fmt_phone(c.customer_phone) }}</td>
+          <td style="font-size:12px;color:var(--text-tertiary);max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ c.customer_address or '—' }}</td>
+          <td style="text-align:right">
+            {% if c.job_count > 0 %}<span class="badge badge-blue">{{ c.job_count }}</span>{% else %}—{% endif %}
+          </td>
+          <td style="font-family:'DM Mono',monospace;font-size:11px;color:var(--text-tertiary)">{{ fmt_short_date(c.last_job) if c.last_job else '—' }}</td>
+          <td><span class="sms-dot" style="background:{% if c.sms_consent %}var(--green){% else %}#d1d5db{% endif %}"></span></td>
+          <td style="font-family:'DM Mono',monospace;font-size:11px;color:var(--text-tertiary)">&rarr;</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <div id="no-results" class="empty-state" style="display:none">No customers match your search.</div>
+    {% else %}
+    <div class="empty-state">No customers yet. <a href="/dashboard/customers/new">Add your first customer &rarr;</a></div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function filterCustomers(q) {
+  q = q.toLowerCase();
+  var rows = document.querySelectorAll('#cust-table tbody tr');
+  var visible = 0;
+  rows.forEach(function(row) {
+    var match = row.dataset.search.includes(q);
+    row.style.display = match ? '' : 'none';
+    if (match) visible++;
+  });
+  var nr = document.getElementById('no-results');
+  if (nr) nr.style.display = visible === 0 && q ? 'block' : 'none';
+}
+</script>
+{% endblock %}

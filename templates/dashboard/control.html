@@ -179,7 +179,7 @@
           <span class="badge badge-{{ st }}">{{ st|replace('_',' ') }}</span>
           <span class="job-card-row__amount">${{ "%.0f"|format(j.estimated_amount|float) if j.estimated_amount else '—' }}</span>
         </div>
-        <a href="#" class="job-card-row__link">View &rarr;</a>
+        <a href="/dashboard/job/{{ j.id }}" class="job-card-row__link">View &rarr;</a>
       </div>
       {% endfor %}
     </div>

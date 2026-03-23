@@ -1,283 +1,297 @@
 # HANDOFF.md — Session Summary
 > Last updated: March 23, 2026
-> Session: Wave-style sidebar, dashboard redesign, new job/customer pages, brand identity
+> Session: Dashboard tab wiring, Sales & Payments split, Customers page redesign
 
 ---
 
 ## 1. What Was Built This Session
 
-### New Files Created
-```
-templates/base.html                    — Jinja2 base with persistent sidebar nav
-templates/dashboard/control.html       — Control Board (jobs today, invoices, SMS, team)
-templates/dashboard/command.html       — Command Center (chat + activity sidebar)
-templates/dashboard/office.html        — Office/Billing (invoices + proposals tables)
-templates/dashboard/onboarding.html    — Client onboarding admin
-templates/dashboard/proposal_view.html — Full proposal document view with action buttons
-templates/dashboard/invoice_view.html  — Full invoice document view with action buttons
-templates/login.html                   — Phone + PIN login form
-templates/set_pin.html                 — First-time PIN setup form
-routes/dashboard_routes.py             — Blueprint: all dashboard pages with Supabase queries
-routes/auth_routes.py                  — Blueprint: /login, /logout, /set-pin
-scripts/import_customers.py            — Bulk CSV customer import tool
-scripts/test_customers.csv             — 25 Waldo County test customers
-```
+### Work Completed — Frontend Engineer
 
-### Files Modified
-```
-execution/sms_receive.py      — Registered dashboard_bp + auth_bp, added SECRET_KEY + session lifetime
-execution/invoice_agent.py     — 5 fixes: field text rewrite, Haiku line items, clean job notes,
-                                 customer resolution without owner_mobile fallback, flat rate detection,
-                                 tech confirmation SMS, specific error messages
-execution/proposal_agent.py    — Human-readable output_summary
-execution/clarification_agent.py — Human-readable output_summary, opt-in check text
-execution/clock_agent.py       — Human-readable output_summary
-execution/scheduling_agent.py  — Human-readable output_summary
-execution/followup_agent.py    — Human-readable output_summary (5 locations)
-execution/noshow_agent.py      — Human-readable output_summary
-execution/db_customer.py       — _extract_name_from_text helper (unused import cleaned)
-routes/command_routes.py       — Complete rewrite: bypasses SMS router, direct agent dispatch,
-                                 Haiku intent classification, customer name resolution from DB,
-                                 specific result messages
-routes/document_routes.py      — Human-readable output_summary
-routes/invoice_routes.py       — Human-readable output_summary
-routes/dashboard_routes.py     — Schema-verified queries, fmt_date/fmt_phone/fmt_activity_time
-                                 helpers, customer name map, document view routes
-templates/dashboard/office.html — Clickable rows, customer names, short dates, View → arrows
-templates/dashboard/control.html — Redesigned: card-list jobs (no IDs),
-                                   summary strip, amber invoice alert, team panel (name + role only)
-templates/dashboard/office.html  — Redesigned: flex-list invoices + proposals,
-                                   summary strip, Export CSV button wired, age pills via JS
-templates/base.html              — Bolts11 brand: navy sidebar, amber active states, navy topbar;
-                                   Wave-style collapsible nav (Sales & Payments, Purchases,
-                                   Accounting sections), coming soon badges, accordion JS
-routes/dashboard_routes.py       — New Job page, Add Customer page, proposal_agent wiring,
-                                   stub routes for customers/purchases/receipts/accounting
-templates/dashboard/new_job.html — New Job form with proposal checkbox
-templates/dashboard/new_customer.html — Add Customer form with phone normalization
-templates/dashboard/coming_soon.html — Generic stub page for unbuilt sections
-```
+#### Claude Code Prompt Queue — 5 prompts written, ready to run in order
+
+**Prompt #1 — Wire Job "View →" Links on Control Board**
+File: `templates/dashboard/control.html`
+Fix: Every job row "View →" link currently has `href="#"`. Change to
+`href="/dashboard/job/{{ job.id }}"` inside the `{% for job in jobs %}` loop.
+Verified live: Three jobs on Control Board all showing `href="#"` — confirmed broken.
+Result: Clicking any job row on `/dashboard/` navigates to `/dashboard/job/<uuid>`.
+
+**Prompt #2 — Remove Customers Coming Soon Stub**
+File: `routes/dashboard_routes.py`
+Fix: `/dashboard/customers/` is rendering `coming_soon.html` instead of `customers.html`.
+The full `customers()` route function already exists and is correct. A stub route is
+overriding it. Find and remove the stub that calls
+`render_template("dashboard/coming_soon.html", ...)` for `/dashboard/customers/`.
+Keep only the full `customers()` function.
+Verified live: `/dashboard/customers/` shows "This section is being built." — confirmed broken.
+Result: `/dashboard/customers/` renders real customer data from `customers.html`.
+⚠️  PREREQUISITE: Must be deployed before Prompt #5 will work.
+
+**Prompt #3 — Build Customer Detail Page**
+Files: `routes/dashboard_routes.py` (new route) + `templates/dashboard/customer_detail.html` (new)
+Route: `GET /dashboard/customers/<customer_id>`
+Currently returns 404 — no route or template exists.
+Route logic:
+- `_resolve_client_id()` — redirect `/login` if missing
+- `_base_context("customers", client_id)`
+- Query `customers`: single record by `id` AND `client_id` — 404 if not found
+- Query `jobs`: all for this customer + client, ordered `scheduled_date` desc
+- Query `proposals`: all for this customer + client, ordered `created_at` desc, limit 10
+- Query `invoices`: all for this customer + client, ordered `created_at` desc, limit 10
+- Pass `fmt_date`, `fmt_phone`, `fmt_short_date` helpers
+Template: customer name, phone (formatted), address, SMS consent dot (green/grey),
+date added, jobs list, proposals list, invoices list — each row links to its detail page.
+Back link → `/dashboard/customers/`. Match `job_detail.html` card/dl/badge pattern exactly.
+Multi-tenancy: every query must filter by both `customer_id` AND `client_id`.
+
+**Prompt #4 — Split Sales & Payments into Three Separate Pages**
+Currently: Estimates, Invoices, Payments all link to `office.html` or `office.html#anchor`.
+Anchors go nowhere. Three real pages needed.
+Files:
+- `routes/dashboard_routes.py` — add 3 new routes
+- `templates/dashboard/estimates.html` — new
+- `templates/dashboard/invoices.html` — new
+- `templates/dashboard/payments.html` — new
+- `templates/base.html` — update 3 sidebar hrefs only
+
+Route 1: `GET /dashboard/estimates/` → `estimates_page()`
+- Query `proposals` table, last 90 days, ordered `created_at` desc
+- `_base_context("estimates", client_id)`
+- Compute: `proposals_sent`, `proposals_won`, `win_rate`
+- Summary strip: Win Rate, Sent, Accepted, Outstanding
+- List: clickable rows → `/dashboard/proposal/{{ p.id }}`, customer name, date, amount, status badge
+
+Route 2: `GET /dashboard/invoices/` → `invoices_page()`
+- Query `invoices` table, last 90 days, ordered `created_at` desc
+- `_base_context("invoices", client_id)`
+- Compute: `total_billed`, `total_paid`, `total_outstanding`
+- Summary strip: Billed, Collected, Outstanding, Count
+- List: extract directly from `office.html` — same `.list-row` pattern + age pills JS
+- Export CSV button → `/api/invoices/export-csv`
+
+Route 3: `GET /dashboard/payments/` → `payments_page()`
+- Query `invoices` WHERE `status='paid'`, last 90 days, ordered `paid_at` desc
+- `_base_context("payments", client_id)`
+- Compute: `total_collected`, `payment_count`
+- Summary strip: Total Collected, Payment Count, Average Payment
+- List: paid invoices only — customer name, amount, paid date, green badge
+
+base.html sidebar href changes (3 lines only — do not touch anything else in base.html):
+  `/dashboard/office.html#estimates` → `/dashboard/estimates/`
+  `/dashboard/office.html`           → `/dashboard/invoices/`
+  `/dashboard/office.html#payments`  → `/dashboard/payments/`
+Update active_page checks to use `'estimates'`, `'invoices'`, `'payments'`.
+Do NOT delete or modify `office.html`.
+
+**Prompt #5 — Customers Page: Inline Add Form + Searchable List**
+⚠️  BLOCKED: Requires Prompt #2 deployed first. Also requires Backend Engineer
+to fix item 7.9 (stub route removal) before results are visible.
+File: `templates/dashboard/customers.html` — full rewrite
+
+Layout: Two-column desktop (stacked mobile ≤768px)
+- Left column 300px: "New Customer" card — inline add form
+- Right column flex 1: "Customers" card — searchable list
+
+Left column — Add Customer card:
+- Fields: Full Name, Phone (required, hint: "Required for SMS"), Address, Notes (textarea 3 rows)
+- Submit: POST JSON to `/api/customers/create` (same fetch pattern as `new_customer.html`)
+- On success: show green "Customer saved", reload page after 1.2s
+- On error: show red error inline, re-enable button
+- No `<form>` action — JS fetch only
+
+Right column — Customer list:
+- Search input (live filter — searches name, phone, address via `data-search` attribute on rows)
+- Table: Name, Phone, Address, Jobs, Last Job, SMS dot, arrow →
+- Each row onclick → `/dashboard/customers/{{ c.id }}`
+- Empty state: "No customers yet. Add your first customer using the form."
+- Shows "No customers match your search." when search has no results
+
+Styling: `base.html` CSS variables only. DM Mono labels, Barlow body, flat cards, no shadows.
+Do NOT modify: `dashboard_routes.py`, `base.html`, `new_customer.html`, any other file.
 
 ---
 
-## 2. Current Architecture
+## 2. Backend Engineer Action Items
+
+### 7.9 — Customers Route Stub Removal (PRIORITY — BLOCKS FRONTEND)
+The `/dashboard/customers/` route serves `coming_soon.html` instead of real data.
+The full `customers()` function already exists in `routes/dashboard_routes.py` and is correct.
+A stub or duplicate route is overriding it.
+
+Action: Find and remove the stub route for `/dashboard/customers/` that renders
+`coming_soon.html`. The real `customers()` function must be the only handler for
+`@dashboard_bp.route("/dashboard/customers/")`.
+
+Verify: `/dashboard/customers/` shows the customer table with 25 Holt Sewer & Drain
+customers, search bar, and clickable rows. Not the stub.
+
+This unblocks: Frontend Prompts #2 and #5.
+Owner: Backend Engineer — PRIORITY this session
+
+### 7.10 — Payments Page: Square Write-Back Verification
+The new `/dashboard/payments/` page (Prompt #4) reads from `invoices WHERE status='paid'`.
+When Square goes live, confirm `routes/invoice_routes.py` Square webhook writes back
+`status='paid'` and `paid_at = now()` on payment confirmation. If not, add the write-back.
+Without this, the Payments page will show no data even after real payments are received.
+Owner: Backend Engineer — unblock after Square production switch
+
+### 7.11 — Remove Debug Logging from auth_routes.py (carry-forward)
+Temporary PIN debug print statements still active in the `/login` route.
+Remove before any customer demo or production handoff.
+Owner: Backend Engineer
+
+---
+
+## 3. Production Status — What Works Right Now
+
+- [x] Login with phone + PIN → session → dashboard loads
+- [x] Sidebar nav persists across all pages
+- [x] Control Board: real jobs today, invoices outstanding, SMS count, team panel
+- [x] Office page `/dashboard/office.html`: invoices + proposals, clickable rows
+- [x] Proposal document view: line items, action buttons (accept/lost/send)
+- [x] Invoice document view: Mark Paid, paid banner, line items
+- [x] Command Center: direct agent dispatch, Haiku classification
+- [x] New Job form `/dashboard/new-job`: customer dropdown, proposal checkbox, creates job
+- [x] Add Customer form `/dashboard/customers/new`: POSTs to `/api/customers/create`
+- [x] Export CSV `/api/invoices/export-csv`: QuickBooks-compatible, download works
+- [x] Job detail route `/dashboard/job/<id>`: customer, proposals, invoices, activity
+- [x] 25 test customers imported for Holt Sewer & Drain
+
+- [ ] Control Board job "View →" links — `href="#"` broken (Prompt #1)
+- [ ] `/dashboard/customers/` — showing coming_soon stub (Backend 7.9 + Prompt #2)
+- [ ] `/dashboard/customers/<id>` — 404 no route (Prompt #3)
+- [ ] `/dashboard/estimates/` — doesn't exist yet (Prompt #4)
+- [ ] `/dashboard/invoices/` — doesn't exist yet (Prompt #4)
+- [ ] `/dashboard/payments/` — doesn't exist yet (Prompt #4)
+- [ ] Customers page inline add form — not built (Prompt #5, blocked on #2)
+
+---
+
+## 4. Known Issues — Carry-Forward
+
+1. **10DLC not approved** — outbound SMS blocked. Agents run correctly, SMS fails silently.
+2. **Square in sandbox** — PAY NOW works but hits sandbox. Switch to production when ready.
+3. **Customer SMS opt-in** — all 25 imported customers have `sms_consent=false`. Need
+   SET OPTIN per customer or bulk update before SMS goes live.
+4. **Onboarding wizard** — built but not tested end-to-end. Personality MD generation unverified.
+5. **Pricing benchmarks** — `sql/pricing_benchmarks.sql` written, may not be run in Supabase yet.
+6. **Purchases / Bills / Vendors** — stub routes exist, no Supabase schema. Backend must design
+   schema before frontend can build these pages.
+7. **Receipts** — stub route exists, depends on Purchases schema (item 6).
+8. **Accounting / Transactions** — stub route exists, depends on Purchases schema (item 6).
+   CSV export already wired at `/api/invoices/export-csv`.
+
+---
+
+## 5. Architecture Reference
 
 ### Stack
-- **Backend:** Python 3.12 / Flask
-- **Database:** Supabase (PostgreSQL)
-- **SMS:** Telnyx (10DLC pending — SMS currently blocked)
-- **AI:** Anthropic Claude (Haiku for classification, Sonnet for generation)
-- **Payments:** Square (sandbox — not yet wired to production)
-- **Deploy:** Railway (auto-deploy from GitHub push)
-- **Auth:** Phone + 4-digit PIN → Flask session (30-day lifetime)
-
-### URL Structure
 ```
-Production:  https://web-production-043dc.up.railway.app
-Domain:      https://api.bolts11.com (when DNS pointed)
-
-/login                          — Phone + PIN auth
-/logout                         — Clear session
-/dashboard/                     — Control Board
-/dashboard/office.html          — Invoices + Proposals
-/dashboard/command.html         — Command Center (chat)
-/dashboard/onboarding.html      — Client onboarding
-/dashboard/proposal/<id>        — Proposal document view
-/dashboard/invoice/<id>         — Invoice document view
-/command                        — Command Center (alias)
-/book                           — Public booking form (no auth)
-/onboard/<token>                — Client setup wizard (no auth)
-/api/command                    — Command Center API (direct agent dispatch)
-/api/client/config              — Client config for dashboards
-/api/activity                   — Agent activity feed
-/api/stats                      — Open jobs, SMS status
-/webhooks/telnyx                — Primary SMS webhook
-/webhooks/square                — Square payment webhook
-/p/<token>                      — Public proposal view (72hr expiry)
-/i/<token>                      — Public invoice view (72hr expiry)
+Backend:   Python 3.12 / Flask
+Database:  Supabase (PostgreSQL)
+SMS:       Telnyx (10DLC pending — blocked)
+AI:        Claude Haiku (classification) + Claude Sonnet (generation)
+Payments:  Square (sandbox)
+Deploy:    Railway (auto-deploy on GitHub push)
+Auth:      Phone + 4-digit PIN → Flask session (30-day lifetime)
 ```
 
-### Supabase Tables in Use
+### Key Credentials
 ```
-clients              — id, business_name, owner_name, phone, owner_mobile, personality, active, pin_hash
-jobs                 — id, client_id, customer_id, job_type, status, scheduled_date, raw_input, job_notes
-customers            — id, client_id, customer_name, customer_phone, customer_address, sms_consent
-invoices             — id, client_id, customer_id, job_id, amount_due, status, invoice_text, line_items, edit_token
-proposals            — id, client_id, customer_id, job_id, amount_estimate, status, proposal_text, line_items, edit_token
-employees            — id, client_id, name, phone, role, active
-messages             — id, client_id, direction, from_number, to_number, body, delivery_status
-agent_activity       — id, client_phone, agent_name, action_taken, output_summary, sms_sent
-invoice_links        — id, token, job_id, client_phone, type, expires_at, viewed_at
-pending_clarifications — id, client_id, employee_phone, stage, collected_intent, expires_at
-customer_approvals   — id, client_id, customer_id, job_id, tech_phone, estimate_amount, status
-onboarding_sessions  — id, client_id, token, status, step_reached, company_name, personality_md
+Railway URL:   https://web-production-043dc.up.railway.app
+API domain:    https://api.bolts11.com (DNS may not be pointed yet)
+GitHub repo:   329andalive/Agent_Work_flow
+Client ID:     8aafcd73-b41c-4f1a-bd01-3e7955798367
+Business:      Holt Sewer & Drain
+Owner phone:   +12074190986 (Telnyx number)
+Owner mobile:  +12076538819 (Jeremy's cell)
+Supabase URL:  https://wczzlvhpryufohjwmxwd.supabase.co
+FLASK_ENV:     development (Railway — allows dev bypass)
 ```
 
----
-
-## 3. What Works — Confirmed in Production
-
-- [x] Login with phone + PIN → session set → dashboard loads
-- [x] Sidebar nav persists across all pages
-- [x] Control Board: real jobs, invoices, SMS count, team data
-- [x] Office: clickable invoice/proposal rows with customer names
-- [x] Proposal document view: full layout with customer info, line items, action buttons
-- [x] Invoice document view: same with Mark Paid, paid banner
-- [x] Command Center: direct agent dispatch, no clarification loop
-- [x] Command Center: Haiku classifies ambiguous commands
-- [x] Customer name resolution: extracts name from text, searches DB by ilike
-- [x] Invoice agent: flat rate detection for "$275" in natural language
-- [x] Invoice agent: Haiku extracts clean line items from Claude output
-- [x] Invoice agent: clean job notes (never stores raw field text)
-- [x] Invoice agent: tech confirmation SMS when triggered from field
-- [x] All output_summary strings are human-readable (activity feed)
-- [x] 25 test customers imported for Holt Sewer & Drain
-- [x] Logout clears session, redirects to /login
-- [x] No auth → /login redirect (production mode)
-
----
-
-## 4. Known Remaining Issues
-
-1. **10DLC not approved** — all outbound SMS blocked. Agents execute correctly but SMS fails silently. Dashboard shows "SMS BLOCKED" badge.
-
-2. **Debug logging in auth_routes.py** — temporary PIN debug prints still in login route (from Railway PIN mismatch debugging). Should be removed before production.
-
-3. **Square payments in sandbox** — square_agent.py and invoice template PAY NOW button work but point to Square sandbox. Need to switch to production when ready.
-
-4. ~~**No "New Job" button**~~ — RESOLVED. New Job page at /dashboard/new-job with proposal generation checkbox.
-
-5. **Customer opt-in (sms_consent)** — all 25 imported customers have sms_consent=false. Need to opt them in via SET OPTIN command or bulk update before SMS goes live.
-
-6. **Onboarding wizard** — built but not tested end-to-end in production. Personality MD generation via Claude Sonnet not verified.
-
-7. **Pricing benchmarks SQL** — sql/pricing_benchmarks.sql has been written but may not have been run in Supabase yet. 125 benchmark rows across 9 verticals.
-
-8. **Export CSV route not implemented** — Button wired in office.html at /api/invoices/export-csv but route does not exist yet. See section 7.1.
-
----
-
-## 5. Next Build: New Job Button
-
-User flow for the "New Job" feature on the Control Board:
-
-1. Owner clicks "+ New Job" button on control board
-2. Modal or slide-out form appears with fields:
-   - Customer (searchable dropdown from customers table)
-   - Job Type (select: pump, repair, inspect, etc.)
-   - Address (auto-fills from customer record)
-   - Scheduled Date + Time
-   - Notes
-3. On submit: POST to /api/jobs/create
-4. Backend creates job record in Supabase
-5. If scheduled_date = today → appears immediately in today's table
-6. Optionally: trigger proposal_agent to generate an estimate
-
----
-
-## 6. Key Facts for Next Session
-
+### URL Map
 ```
-Railway URL:     https://web-production-043dc.up.railway.app
-API domain:      https://api.bolts11.com (DNS may not be pointed yet)
-GitHub repo:     329andalive/Agent_Work_flow
-Client ID:       8aafcd73-b41c-4f1a-bd01-3e7955798367
-Business:        Holt Sewer & Drain
-Owner phone:     +12074190986 (Telnyx number)
-Owner mobile:    +12076538819 (Jeremy's cell)
-Supabase URL:    https://wczzlvhpryufohjwmxwd.supabase.co
-FLASK_ENV:       Set to "development" on Railway for dev bypass
-
-Stack:           Python 3.12, Flask, Supabase, Telnyx, Square, Railway
-AI:              Claude Haiku (classification), Claude Sonnet (generation)
-Auth:            Phone + 4-digit PIN → Flask session (30 days)
-Templates:       Jinja2 extending templates/base.html
-Blueprints:      dashboard_bp, auth_bp, command_bp, document_bp,
-                 invoice_bp, onboarding_bp, debug_bp
+/login                      — Phone + PIN auth
+/logout                     — Clear session
+/dashboard/                 — Control Board
+/dashboard/office.html      — Office summary (keep — do not delete)
+/dashboard/estimates/       — Estimates list (NEW — Prompt #4)
+/dashboard/invoices/        — Invoices list (NEW — Prompt #4)
+/dashboard/payments/        — Paid invoices (NEW — Prompt #4)
+/dashboard/customers/       — Customer list (broken — Backend 7.9 + Prompts #2 #5)
+/dashboard/customers/new    — Add Customer standalone (keep as fallback)
+/dashboard/customers/<id>   — Customer detail (NEW — Prompt #3)
+/dashboard/job/<id>         — Job detail (links broken — Prompt #1)
+/dashboard/proposal/<id>    — Proposal document view
+/dashboard/invoice/<id>     — Invoice document view
+/dashboard/command.html     — Command Center
+/dashboard/new-job          — New Job form
+/dashboard/onboarding.html  — Client onboarding admin
+/api/customers/create       — POST: create customer
+/api/jobs/create            — POST: create job
+/api/invoices/export-csv    — GET: QuickBooks CSV export
+/api/command                — POST: Command Center agent dispatch
+/book                       — Public booking form (no auth)
 ```
 
 ### File Map
 ```
-execution/sms_receive.py       — Flask app entry point, all blueprint registration
-execution/invoice_agent.py     — Invoice generation (most complex agent)
-execution/proposal_agent.py    — Proposal/estimate generation
-execution/sms_router.py        — SMS routing (NOT used by Command Center)
-routes/dashboard_routes.py     — All dashboard page routes
-routes/command_routes.py       — /api/command (direct agent dispatch)
-routes/auth_routes.py          — /login, /logout, /set-pin
-templates/base.html            — Shared sidebar + layout
-CLAUDE.md                      — Master architecture doc (read first)
+execution/sms_receive.py        — Flask app entry point, blueprint registration
+routes/dashboard_routes.py      — All dashboard page routes (main file this session)
+routes/auth_routes.py           — /login, /logout, /set-pin
+routes/command_routes.py        — /api/command direct agent dispatch
+templates/base.html             — Shared sidebar + layout (navy/amber)
+templates/dashboard/
+  control.html                  — Control Board
+  office.html                   — Office summary (keep)
+  command.html                  — Command Center chat
+  customers.html                — Customer list (rewrite — Prompt #5)
+  customer_detail.html          — Customer detail (NEW — Prompt #3)
+  estimates.html                — Estimates (NEW — Prompt #4)
+  invoices.html                 — Invoices (NEW — Prompt #4)
+  payments.html                 — Payments (NEW — Prompt #4)
+  job_detail.html               — Job detail
+  proposal_view.html            — Proposal document
+  invoice_view.html             — Invoice document
+  new_job.html                  — New Job form
+  new_customer.html             — Add Customer standalone (keep as fallback)
+  onboarding.html               — Client onboarding admin
+  coming_soon.html              — Stub for unbuilt sections
+CLAUDE.md                       — Master architecture doc (read first every session)
 ```
 
 ---
 
-## 7. Deferred Backend Tasks
+## 6. Prompt Run Order — Claude Code
 
-These items were identified during frontend work and need backend implementation.
-Each is blocked on a route or data change that does not exist yet.
+| # | Prompt | Files | Status |
+|---|--------|-------|--------|
+| 1 | Wire job "View →" links | `control.html` | ✅ DONE |
+| 2 | Remove customers stub | `dashboard_routes.py` | ✅ DONE |
+| 3 | Customer detail page | `dashboard_routes.py` + new `customer_detail.html` | ✅ DONE |
+| 4 | Estimates / Invoices / Payments pages | `dashboard_routes.py` + 3 templates + `base.html` | ✅ DONE |
+| 5 | Customers page inline add + search | `customers.html` rewrite | ✅ DONE |
 
-### 7.1 QuickBooks / CSV Export — PRIORITY
-Route needed: GET /api/invoices/export-csv
-  - Query: all invoices for client_id (last 90 days or all-time with ?range param)
-  - Join: customers table for customer_name, customer_phone, customer_address
-  - Join: jobs table for job_type, scheduled_date
-  - Output: CSV with columns:
-      Invoice Date, Customer Name, Customer Address, Job Type,
-      Amount Due, Amount Paid, Status, Paid Date
-  - Format: UTF-8 CSV, Content-Disposition: attachment; filename="bolts11-invoices.csv"
-  - Auth: session-protected (client_id from session, not query param)
-  - QuickBooks compatibility: column names should match QB import format where possible.
-    QB expects: Date, Description, Amount, Customer, Memo
-    Map: Invoice Date→Date, Job Type→Description, Amount Due→Amount,
-         Customer Name→Customer, "Invoice #XXXX"→Memo
-  - Future: add /api/proposals/export-csv on same pattern
-  Wired in: templates/dashboard/office.html Export CSV button
-  Owner: Backend Engineer
+---
 
-### 7.2 Job Detail Page
-Route needed: GET /dashboard/job/<job_id>
-  - Currently "View →" links on control.html job rows point to "#" (placeholder)
-  - Page should show: customer name + phone, job type, address, status,
-    scheduled date, notes, linked proposals, linked invoices, agent activity
-  - Same base.html sidebar layout
-  Owner: Frontend Engineer (once route exists)
+## Session Update — March 23, 2026
 
-### 7.3 Invoice Send Action from Office Page
-  - office.html invoice rows link to /dashboard/invoice/<id> (detail view)
-  - The invoice detail view has a "Send" button but it shows
-    "SMS sending queued. Will send when 10DLC is active."
-  - Once 10DLC is approved: wire the send action to actually dispatch
-    via Telnyx. Unblock in invoice_routes.py action handler.
-  Owner: Backend Engineer — unblock after 10DLC approval
+### Templates Created (Backend Engineer)
+- templates/dashboard/customers.html — customer list with search, job counts, SMS dots, metrics strip
+- templates/dashboard/job_detail.html — job detail with customer, proposals, invoices, activity
+- templates/dashboard/estimates.html — proposals list with metrics strip
+- templates/dashboard/invoices.html — invoices list with CSV export button
+- templates/dashboard/payments.html — paid invoices list
+- templates/dashboard/customer_detail.html — customer profile with linked records
 
-### 7.4 Remove Debug Logging from auth_routes.py
-  - Temporary PIN debug print statements still active in login route
-  - Remove before any customer demo or production handoff
-  Owner: Backend Engineer
+### Routes Added/Fixed (Backend Engineer)
+- GET /dashboard/job/<job_id> — job_detail() added to dashboard_routes.py
+- GET /dashboard/customers/<customer_id> — customer_detail() added to dashboard_routes.py
+- templates/dashboard/control.html — job row "View →" href="#" → href="/dashboard/job/{{ j.id }}"
+- routes/auth_routes.py — removed all DEBUG print statements from /login handler
 
-### 7.5 Customers Page
-  Route: /dashboard/customers/ (stub exists, renders coming_soon.html)
-  Needs: Full page showing customer list — name, phone, address, job count,
-  last job date. Clickable rows to customer detail. Search/filter.
-  Owner: Frontend Engineer (once route passes real customer data)
-  Backend needed: dashboard_routes.py customers() route needs to query
-  customers table and pass list to a real template.
-
-### 7.6 Purchases / Bills / Vendors
-  Route: /dashboard/purchases/ (stub exists)
-  Needs: Expense tracking — bills from vendors, materials costs per job.
-  No Supabase table exists yet for expenses/bills.
-  Owner: Backend Engineer — schema design needed first.
-
-### 7.7 Receipts
-  Route: /dashboard/receipts/ (stub exists)
-  Needs: Receipt upload and parsing. Likely: file upload → Claude vision →
-  extract vendor, amount, date → write to expenses table.
-  Owner: Backend Engineer — depends on 7.6 schema.
-
-### 7.8 Accounting / Transactions
-  Route: /dashboard/accounting/ (stub exists)
-  For now: Export to QuickBooks CSV is wired (7.1).
-  Future: Full transaction ledger — income from invoices, expenses from bills,
-  net by period. Chart of accounts.
-  Owner: Backend Engineer — depends on 7.6 schema.
+### 7.9 Status: RESOLVED
+/dashboard/customers/ was failing with TemplateNotFound — template now exists.
+All stub tabs are now live with real data. Purchases/Receipts/Accounting remain
+on coming_soon.html pending schema design.

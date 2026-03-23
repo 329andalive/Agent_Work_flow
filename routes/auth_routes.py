@@ -73,8 +73,6 @@ def login_submit():
         return render_template("login.html"), 400
 
     phone = normalize_phone(phone_raw)
-    print(f"[{_ts()}] DEBUG login attempt — raw phone: {phone_raw}")
-    print(f"[{_ts()}] DEBUG normalized: {phone}")
 
     if not phone or len(phone) < 11:
         flash("Please enter a valid phone number.", "error")
@@ -85,13 +83,6 @@ def login_submit():
         result = sb.table("clients").select(
             "id, pin_hash, business_name, active, owner_name, phone"
         ).eq("phone", phone).execute()
-
-        print(f"[{_ts()}] DEBUG client found: {bool(result.data)}")
-        if result.data:
-            print(f"[{_ts()}] DEBUG db phone value: {result.data[0].get('phone')}")
-            print(f"[{_ts()}] DEBUG pin_hash present: {bool(result.data[0].get('pin_hash'))}")
-            print(f"[{_ts()}] DEBUG pin_hash starts with: {(result.data[0].get('pin_hash') or '')[:20]}...")
-            print(f"[{_ts()}] DEBUG active: {result.data[0].get('active')}")
 
         if not result.data:
             flash("Phone number not recognized.", "error")
@@ -107,13 +98,10 @@ def login_submit():
 
         # No PIN set yet — redirect to set-pin
         if not client.get("pin_hash"):
-            print(f"[{_ts()}] DEBUG no pin_hash — redirecting to /set-pin")
             return redirect(f"/set-pin?phone={phone}")
 
         # Verify PIN
         check_result = check_password_hash(client["pin_hash"], pin)
-        print(f"[{_ts()}] DEBUG check_password_hash result: {check_result}")
-        print(f"[{_ts()}] DEBUG pin length: {len(pin)}, pin is digits: {pin.isdigit()}")
 
         if not check_result:
             flash("Incorrect PIN.", "error")
