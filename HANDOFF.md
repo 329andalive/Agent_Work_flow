@@ -1,6 +1,6 @@
 # HANDOFF.md — Session Summary
-> Last updated: March 22, 2026
-> Session: Dashboard build, auth system, invoice fixes, customer import
+> Last updated: March 23, 2026
+> Session: Dashboard redesign, new job page, add customer page, brand identity
 
 ---
 
@@ -44,6 +44,14 @@ routes/invoice_routes.py       — Human-readable output_summary
 routes/dashboard_routes.py     — Schema-verified queries, fmt_date/fmt_phone/fmt_activity_time
                                  helpers, customer name map, document view routes
 templates/dashboard/office.html — Clickable rows, customer names, short dates, View → arrows
+templates/dashboard/control.html — Redesigned: card-list jobs (no IDs),
+                                   summary strip, amber invoice alert, team panel (name + role only)
+templates/dashboard/office.html  — Redesigned: flex-list invoices + proposals,
+                                   summary strip, Export CSV button wired, age pills via JS
+templates/base.html              — Bolts11 brand: navy sidebar, amber active states, navy topbar
+routes/dashboard_routes.py       — New Job page, Add Customer page, proposal_agent wiring
+templates/dashboard/new_job.html — New Job form with proposal checkbox
+templates/dashboard/new_customer.html — Add Customer form with phone normalization
 ```
 
 ---
@@ -133,13 +141,15 @@ onboarding_sessions  — id, client_id, token, status, step_reached, company_nam
 
 3. **Square payments in sandbox** — square_agent.py and invoice template PAY NOW button work but point to Square sandbox. Need to switch to production when ready.
 
-4. **No "New Job" button** — control board shows today's jobs but no way to create one from the dashboard. Must use Command Center chat or SMS.
+4. ~~**No "New Job" button**~~ — RESOLVED. New Job page at /dashboard/new-job with proposal generation checkbox.
 
 5. **Customer opt-in (sms_consent)** — all 25 imported customers have sms_consent=false. Need to opt them in via SET OPTIN command or bulk update before SMS goes live.
 
 6. **Onboarding wizard** — built but not tested end-to-end in production. Personality MD generation via Claude Sonnet not verified.
 
 7. **Pricing benchmarks SQL** — sql/pricing_benchmarks.sql has been written but may not have been run in Supabase yet. 125 benchmark rows across 9 verticals.
+
+8. **Export CSV route not implemented** — Button wired in office.html at /api/invoices/export-csv but route does not exist yet. See section 7.1.
 
 ---
 
@@ -194,3 +204,49 @@ routes/auth_routes.py          — /login, /logout, /set-pin
 templates/base.html            — Shared sidebar + layout
 CLAUDE.md                      — Master architecture doc (read first)
 ```
+
+---
+
+## 7. Deferred Backend Tasks
+
+These items were identified during frontend work and need backend implementation.
+Each is blocked on a route or data change that does not exist yet.
+
+### 7.1 QuickBooks / CSV Export — PRIORITY
+Route needed: GET /api/invoices/export-csv
+  - Query: all invoices for client_id (last 90 days or all-time with ?range param)
+  - Join: customers table for customer_name, customer_phone, customer_address
+  - Join: jobs table for job_type, scheduled_date
+  - Output: CSV with columns:
+      Invoice Date, Customer Name, Customer Address, Job Type,
+      Amount Due, Amount Paid, Status, Paid Date
+  - Format: UTF-8 CSV, Content-Disposition: attachment; filename="bolts11-invoices.csv"
+  - Auth: session-protected (client_id from session, not query param)
+  - QuickBooks compatibility: column names should match QB import format where possible.
+    QB expects: Date, Description, Amount, Customer, Memo
+    Map: Invoice Date→Date, Job Type→Description, Amount Due→Amount,
+         Customer Name→Customer, "Invoice #XXXX"→Memo
+  - Future: add /api/proposals/export-csv on same pattern
+  Wired in: templates/dashboard/office.html Export CSV button
+  Owner: Backend Engineer
+
+### 7.2 Job Detail Page
+Route needed: GET /dashboard/job/<job_id>
+  - Currently "View →" links on control.html job rows point to "#" (placeholder)
+  - Page should show: customer name + phone, job type, address, status,
+    scheduled date, notes, linked proposals, linked invoices, agent activity
+  - Same base.html sidebar layout
+  Owner: Frontend Engineer (once route exists)
+
+### 7.3 Invoice Send Action from Office Page
+  - office.html invoice rows link to /dashboard/invoice/<id> (detail view)
+  - The invoice detail view has a "Send" button but it shows
+    "SMS sending queued. Will send when 10DLC is active."
+  - Once 10DLC is approved: wire the send action to actually dispatch
+    via Telnyx. Unblock in invoice_routes.py action handler.
+  Owner: Backend Engineer — unblock after 10DLC approval
+
+### 7.4 Remove Debug Logging from auth_routes.py
+  - Temporary PIN debug print statements still active in login route
+  - Remove before any customer demo or production handoff
+  Owner: Backend Engineer

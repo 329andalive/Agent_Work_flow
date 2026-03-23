@@ -50,6 +50,12 @@
     align-items: center;
     justify-content: space-between;
     margin-bottom: 12px;
+    margin-top: 4px;
+  }
+  .section-header__right {
+    display: flex;
+    align-items: center;
+    gap: 10px;
   }
   .section-header__title {
     font-family: 'DM Mono', monospace;
@@ -91,6 +97,7 @@
     transition: background 0.1s;
     text-decoration: none;
     color: inherit;
+    cursor: pointer;
   }
   .list-row:last-child { border-bottom: none; }
   .list-row:hover { background: #f8fafc; }
@@ -132,6 +139,7 @@
     padding: 1px 6px;
     border-radius: 3px;
     display: inline-block;
+    margin-left: 6px;
   }
   .age-pill--gray   { background: #f1f5f9; color: #64748b; }
   .age-pill--amber  { background: #FAEEDA; color: #854F0B; }
@@ -177,7 +185,7 @@
   <div class="summary-tile">
     <div class="summary-tile__label">Win Rate</div>
     <div class="summary-tile__value">{{ win_rate }}%</div>
-    <div class="summary-tile__sub">{{ proposals_won }}/{{ proposals_sent }} proposals</div>
+    <div class="summary-tile__sub">{{ proposals_won }} won of {{ proposals_sent }}</div>
   </div>
 </div>
 
@@ -188,7 +196,7 @@
       <span class="card-title">Invoices</span>
       <span class="card-count">{{ invoices|length }}</span>
     </span>
-    <a href="/api/invoices/export-csv?client_id={{ client_id }}" download class="export-btn">Export CSV</a>
+    <a href="/api/invoices/export-csv" download class="export-btn">Export CSV</a>
   </div>
   <div class="card-body-flush">
     {% if invoices %}
@@ -268,9 +276,12 @@
 <script>
 document.querySelectorAll('[data-sent]').forEach(function(el) {
   var sent = el.getAttribute('data-sent');
-  if (!sent) return;
+  if (!sent || sent === '') return;
   var days = Math.floor((Date.now() - new Date(sent).getTime()) / 86400000);
-  var cls = days >= 7 ? 'age-pill--red' : days >= 3 ? 'age-pill--amber' : 'age-pill--gray';
+  if (days < 0) return;
+  var cls = days >= 7 ? 'age-pill--red'
+          : days >= 3 ? 'age-pill--amber'
+          : 'age-pill--gray';
   var pill = document.createElement('span');
   pill.className = 'age-pill ' + cls;
   pill.textContent = days + 'd';
