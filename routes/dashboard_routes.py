@@ -19,7 +19,6 @@ import os
 import re
 import sys
 import json
-import threading
 from datetime import datetime, timezone, date, timedelta
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -566,6 +565,95 @@ def onboarding():
 
 
 # ---------------------------------------------------------------------------
+# GET /dashboard/customers/new — Add Customer form
+# ---------------------------------------------------------------------------
+
+@dashboard_bp.route("/dashboard/customers/new")
+def new_customer():
+    client_id = _resolve_client_id()
+    if not client_id:
+        return redirect("/login")
+
+    ctx = _base_context("control", client_id)
+    return render_template("dashboard/new_customer.html", **ctx)
+
+
+# ---------------------------------------------------------------------------
+# POST /api/customers/create — Create customer from dashboard
+# ---------------------------------------------------------------------------
+
+def _normalize_phone(raw: str) -> str:
+    """Strip non-digits and normalize to E.164 (+1XXXXXXXXXX)."""
+    digits = re.sub(r'\D', '', raw)
+    if len(digits) == 10:
+        digits = '1' + digits
+    if len(digits) == 11 and digits[0] == '1':
+        return '+' + digits
+    # Already has country code or non-US — return as-is with +
+    if digits and not digits.startswith('+'):
+        return '+' + digits
+    return raw.strip()
+
+
+@dashboard_bp.route("/api/customers/create", methods=["POST"])
+def api_create_customer():
+    client_id = _resolve_client_id()
+    if not client_id:
+        return jsonify({"success": False, "error": "Not authenticated"}), 401
+
+    data = request.get_json(silent=True)
+    if not data:
+        return jsonify({"success": False, "error": "Invalid JSON body"}), 400
+
+    # Hard Rule #1: phone is required
+    raw_phone = (data.get("customer_phone") or "").strip()
+    if not raw_phone:
+        return jsonify({"success": False, "error": "Phone number is required (Hard Rule #1)"}), 400
+
+    phone = _normalize_phone(raw_phone)
+    customer_name = (data.get("customer_name") or "").strip()
+    customer_address = (data.get("customer_address") or "").strip()
+    notes = (data.get("notes") or "").strip()
+
+    sb = _get_supabase()
+
+    # Duplicate check: same phone under same client
+    try:
+        dup = sb.table("customers").select("id").eq("client_id", client_id).eq("customer_phone", phone).execute()
+        if dup.data:
+            return jsonify({"success": False, "error": "A customer with this phone number already exists"}), 409
+    except Exception as e:
+        print(f"[{_ts()}] ERROR dashboard_routes: customer dup check — {e}")
+        return jsonify({"success": False, "error": "Failed to check for duplicates"}), 500
+
+    # Insert — Hard Rule #2: sms_consent always false
+    row = {
+        "client_id": client_id,
+        "customer_phone": phone,
+        "customer_name": customer_name or None,
+        "customer_address": customer_address or None,
+        "notes": notes or None,
+        "sms_consent": False,
+    }
+
+    try:
+        result = sb.table("customers").insert(row).execute()
+        if not result.data:
+            return jsonify({"success": False, "error": "Failed to insert customer"}), 500
+        new_cust = result.data[0]
+    except Exception as e:
+        print(f"[{_ts()}] ERROR dashboard_routes: customer insert — {e}")
+        return jsonify({"success": False, "error": f"Database error: {e}"}), 500
+
+    return jsonify({
+        "success": True,
+        "customer_id": new_cust["id"],
+        "customer_name": new_cust.get("customer_name", ""),
+        "customer_address": new_cust.get("customer_address", ""),
+    })
+
+
+# ---------------------------------------------------------------------------
 # GET /dashboard/new-job — New Job form
 # ---------------------------------------------------------------------------
 
@@ -668,25 +756,67 @@ def api_create_job():
         print(f"[{_ts()}] ERROR dashboard_routes: create job insert — {e}")
         return jsonify({"success": False, "error": f"Database error: {e}"}), 500
 
-    # Optionally trigger proposal_agent in background
+    # Optionally trigger proposal_agent — synchronous, matching command_routes pattern
+    proposal_id = None
+    proposal_summary = None
+    proposal_error = None
+
     if generate_proposal:
         client = _load_client(client_id)
         client_phone = client.get("phone", "")
         customer_phone = customer.get("customer_phone", "")
-        raw_input_text = f"{job_type}: {notes}" if notes else job_type
+        customer_name = customer.get("customer_name", "Customer")
 
-        def _run_proposal():
-            try:
-                from execution.proposal_agent import run as run_proposal
-                run_proposal(client_phone, customer_phone, raw_input_text)
+        # Build natural language description — same pattern as command_routes.py
+        raw_input_text = f"{job_type} job for {customer_name} at {address or 'address on file'}. Notes: {notes}" if notes else f"{job_type} job for {customer_name} at {address or 'address on file'}"
+
+        try:
+            from execution.proposal_agent import run as proposal_run
+            output = proposal_run(client_phone=client_phone, customer_phone=customer_phone, raw_input=raw_input_text)
+
+            if output:
+                # Fetch the proposal_id from the most recent proposal for this job
+                try:
+                    prop_result = sb.table("proposals").select("id, amount_estimate").eq("client_id", client_id).eq("customer_id", customer_id).order("created_at", desc=True).limit(1).execute()
+                    if prop_result.data:
+                        proposal_id = prop_result.data[0]["id"]
+                        amount = prop_result.data[0].get("amount_estimate", 0)
+                        proposal_summary = f"Proposal for {customer_name} — ${float(amount):.0f}"
+                except Exception as e:
+                    print(f"[{_ts()}] WARN dashboard_routes: could not fetch proposal_id — {e}")
+                    proposal_summary = "Proposal drafted successfully."
+
                 print(f"[{_ts()}] INFO dashboard_routes: proposal_agent completed for job {job_id}")
-            except Exception as e:
-                print(f"[{_ts()}] ERROR dashboard_routes: proposal_agent failed for job {job_id} — {e}")
+            else:
+                proposal_error = "Proposal agent returned no output — try from Command Center."
+                print(f"[{_ts()}] WARN dashboard_routes: proposal_agent returned None for job {job_id}")
 
-        t = threading.Thread(target=_run_proposal, daemon=True)
-        t.start()
+        except Exception as e:
+            proposal_error = f"Proposal generation failed: {e}"
+            print(f"[{_ts()}] ERROR dashboard_routes: proposal_agent failed for job {job_id} — {e}")
 
-    return jsonify({"success": True, "job_id": job_id, "redirect": "/dashboard/"})
+        # Log to agent_activity — success or failure
+        try:
+            from execution.db_agent_activity import log_activity
+            log_activity(
+                client_phone=client_phone,
+                agent_name="proposal_agent",
+                action_taken="proposal_from_new_job",
+                input_summary=raw_input_text[:120],
+                output_summary=(proposal_summary or proposal_error or "unknown")[:120],
+                sms_sent=False,
+            )
+        except Exception:
+            pass
+
+    return jsonify({
+        "success": True,
+        "job_id": job_id,
+        "proposal_id": proposal_id,
+        "proposal_summary": proposal_summary,
+        "proposal_error": proposal_error,
+        "redirect": "/dashboard/",
+    })
 
 
 # ---------------------------------------------------------------------------

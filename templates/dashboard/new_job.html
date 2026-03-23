@@ -143,7 +143,7 @@
     <div class="form-group">
       <label class="form-label">
         Customer
-        <a href="/dashboard/customers/new" class="add-link">+ Add Customer</a>
+        <a href="/dashboard/customers/new?redirect=new-job" class="add-link">+ Add Customer</a>
       </label>
       <select class="form-select" id="customer_id" name="customer_id" required>
         <option value="">Select a customer&hellip;</option>
@@ -211,9 +211,32 @@
   var custMap = {};
   customers.forEach(function(c) { custMap[c.id] = c; });
 
-  // Auto-fill address on customer select
+  // Check for new customer from redirect
   var selCustomer = document.getElementById('customer_id');
   var inpAddress = document.getElementById('address');
+  var urlParams = new URLSearchParams(window.location.search);
+  var newCustId = urlParams.get('new_customer_id');
+  var newCustName = urlParams.get('new_customer_name');
+  var newCustAddr = urlParams.get('new_customer_address');
+  if (newCustId) {
+    // Add and select the new customer if not already in the list
+    var exists = false;
+    for (var i = 0; i < selCustomer.options.length; i++) {
+      if (selCustomer.options[i].value === newCustId) { exists = true; selCustomer.options[i].selected = true; break; }
+    }
+    if (!exists) {
+      var opt = document.createElement('option');
+      opt.value = newCustId;
+      opt.textContent = newCustName || newCustId;
+      opt.selected = true;
+      selCustomer.appendChild(opt);
+    }
+    if (newCustAddr) { inpAddress.value = newCustAddr; }
+    // Add to custMap so address auto-fill works
+    custMap[newCustId] = { id: newCustId, customer_name: newCustName, customer_address: newCustAddr || '' };
+  }
+
+  // Auto-fill address on customer select
   selCustomer.addEventListener('change', function() {
     var c = custMap[this.value];
     if (c && c.customer_address) {
@@ -240,7 +263,8 @@
     elError.style.display = 'none';
     elSuccess.style.display = 'none';
     btnSubmit.disabled = true;
-    btnSubmit.textContent = 'Creating\u2026';
+    var isProposal = document.getElementById('generate_proposal').checked;
+    btnSubmit.textContent = isProposal ? 'Creating job + drafting proposal\u2026' : 'Creating\u2026';
 
     var payload = {
       customer_id: document.getElementById('customer_id').value,
@@ -260,11 +284,22 @@
     .then(function(res) { return res.json(); })
     .then(function(data) {
       if (data.success) {
-        elSuccess.textContent = 'Job created. Redirecting\u2026';
+        var msg, delay;
+        if (data.proposal_id) {
+          msg = 'Job created. Proposal drafted \u2014 view it in Office.';
+          delay = 3000;
+        } else if (data.proposal_error) {
+          msg = 'Job created. Proposal generation failed \u2014 try from Command Center.';
+          delay = 3000;
+        } else {
+          msg = 'Job created.';
+          delay = 2000;
+        }
+        elSuccess.textContent = msg;
         elSuccess.style.display = 'block';
         setTimeout(function() {
           window.location.href = data.redirect || '/dashboard/';
-        }, 1500);
+        }, delay);
       } else {
         elError.textContent = data.error || 'Something went wrong.';
         elError.style.display = 'block';
