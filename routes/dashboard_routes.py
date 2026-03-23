@@ -9,6 +9,8 @@ Routes:
     GET /command                     — Command Center (short alias)
     GET /dashboard/office.html       — Office / Billing
     GET /dashboard/onboarding.html   — Client Onboarding
+    GET /dashboard/new-job           — New Job form
+    POST /api/jobs/create            — Create job from dashboard
     GET /dashboard/book.html         — Customer booking (public, static)
     GET /book                        — Customer booking (public, static)
 """
@@ -17,11 +19,12 @@ import os
 import re
 import sys
 import json
+import threading
 from datetime import datetime, timezone, date, timedelta
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from flask import Blueprint, render_template, request, redirect, session, send_from_directory, current_app, flash, abort
+from flask import Blueprint, render_template, request, redirect, session, send_from_directory, current_app, flash, abort, jsonify
 
 dashboard_bp = Blueprint("dashboard_bp", __name__)
 
@@ -560,6 +563,130 @@ def onboarding():
             "today": date.today().strftime("%A, %B %-d"),
         }
     return render_template("dashboard/onboarding.html", **ctx)
+
+
+# ---------------------------------------------------------------------------
+# GET /dashboard/new-job — New Job form
+# ---------------------------------------------------------------------------
+
+@dashboard_bp.route("/dashboard/new-job")
+def new_job():
+    client_id = _resolve_client_id()
+    if not client_id:
+        return redirect("/login")
+
+    ctx = _base_context("control", client_id)
+    sb = _get_supabase()
+
+    # Load customers for the select dropdown
+    customers = []
+    try:
+        result = sb.table("customers").select(
+            "id, customer_name, customer_phone, customer_address"
+        ).eq("client_id", client_id).order("customer_name").execute()
+        customers = result.data or []
+    except Exception as e:
+        print(f"[{_ts()}] ERROR dashboard_routes: new-job customers query — {e}")
+
+    ctx.update({
+        "customers": customers,
+        "customers_json": json.dumps(customers),
+    })
+    return render_template("dashboard/new_job.html", **ctx)
+
+
+# ---------------------------------------------------------------------------
+# POST /api/jobs/create — Create job from dashboard
+# ---------------------------------------------------------------------------
+
+@dashboard_bp.route("/api/jobs/create", methods=["POST"])
+def api_create_job():
+    client_id = _resolve_client_id()
+    if not client_id:
+        return jsonify({"success": False, "error": "Not authenticated"}), 401
+
+    data = request.get_json(silent=True)
+    if not data:
+        return jsonify({"success": False, "error": "Invalid JSON body"}), 400
+
+    # Validate required fields
+    customer_id = data.get("customer_id")
+    job_type = data.get("job_type")
+    scheduled_date = data.get("scheduled_date")
+
+    if not customer_id:
+        return jsonify({"success": False, "error": "Customer is required"}), 400
+    if not job_type:
+        return jsonify({"success": False, "error": "Job type is required"}), 400
+    if not scheduled_date:
+        return jsonify({"success": False, "error": "Scheduled date is required"}), 400
+
+    # Build scheduled_date with optional time
+    scheduled_time = data.get("scheduled_time", "")
+    if scheduled_time:
+        scheduled_dt = f"{scheduled_date}T{scheduled_time}:00"
+    else:
+        scheduled_dt = scheduled_date
+
+    notes = data.get("notes", "").strip()
+    generate_proposal = data.get("generate_proposal", False)
+
+    sb = _get_supabase()
+
+    # Verify customer belongs to this client (multi-tenancy)
+    try:
+        cust_result = sb.table("customers").select("id, customer_name, customer_phone, customer_address").eq("id", customer_id).eq("client_id", client_id).execute()
+        if not cust_result.data:
+            return jsonify({"success": False, "error": "Customer not found"}), 404
+        customer = cust_result.data[0]
+    except Exception as e:
+        print(f"[{_ts()}] ERROR dashboard_routes: create job customer check — {e}")
+        return jsonify({"success": False, "error": "Failed to verify customer"}), 500
+
+    # Insert job
+    job_row = {
+        "client_id": client_id,
+        "customer_id": customer_id,
+        "job_type": job_type,
+        "status": "scheduled",
+        "scheduled_date": scheduled_dt,
+        "job_notes": notes,
+        "raw_input": "Created via dashboard New Job form",
+    }
+
+    # Include address if provided
+    address = data.get("address", "").strip()
+    if address:
+        job_row["job_description"] = address
+
+    try:
+        result = sb.table("jobs").insert(job_row).execute()
+        if not result.data:
+            return jsonify({"success": False, "error": "Failed to insert job"}), 500
+        job_id = result.data[0]["id"]
+    except Exception as e:
+        print(f"[{_ts()}] ERROR dashboard_routes: create job insert — {e}")
+        return jsonify({"success": False, "error": f"Database error: {e}"}), 500
+
+    # Optionally trigger proposal_agent in background
+    if generate_proposal:
+        client = _load_client(client_id)
+        client_phone = client.get("phone", "")
+        customer_phone = customer.get("customer_phone", "")
+        raw_input_text = f"{job_type}: {notes}" if notes else job_type
+
+        def _run_proposal():
+            try:
+                from execution.proposal_agent import run as run_proposal
+                run_proposal(client_phone, customer_phone, raw_input_text)
+                print(f"[{_ts()}] INFO dashboard_routes: proposal_agent completed for job {job_id}")
+            except Exception as e:
+                print(f"[{_ts()}] ERROR dashboard_routes: proposal_agent failed for job {job_id} — {e}")
+
+        t = threading.Thread(target=_run_proposal, daemon=True)
+        t.start()
+
+    return jsonify({"success": True, "job_id": job_id, "redirect": "/dashboard/"})
 
 
 # ---------------------------------------------------------------------------

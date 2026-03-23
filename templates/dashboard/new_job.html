@@ -1,0 +1,284 @@
+{% extends "base.html" %}
+
+{% block title %}New Job{% endblock %}
+{% block page_title %}New Job{% endblock %}
+{% block topbar_meta %}{{ today }}{% endblock %}
+
+{% block extra_css %}
+  .back-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    color: var(--text-secondary);
+    text-decoration: none;
+    margin-bottom: 16px;
+  }
+  .back-link:hover { color: var(--text-primary); }
+
+  .form-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 24px;
+    max-width: 560px;
+  }
+
+  .form-group {
+    margin-bottom: 16px;
+  }
+  .form-group:last-of-type {
+    margin-bottom: 20px;
+  }
+
+  .form-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-tertiary);
+    margin-bottom: 6px;
+  }
+  .form-label .add-link {
+    font-family: 'Barlow', sans-serif;
+    font-size: 11px;
+    text-transform: none;
+    letter-spacing: normal;
+    color: var(--blue);
+    text-decoration: none;
+  }
+  .form-label .add-link:hover { text-decoration: underline; }
+
+  .form-input,
+  .form-select,
+  .form-textarea {
+    width: 100%;
+    font-family: 'Barlow', sans-serif;
+    font-size: 14px;
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg-card);
+    color: var(--text-primary);
+    outline: none;
+    transition: border-color 0.12s;
+  }
+  .form-input:focus,
+  .form-select:focus,
+  .form-textarea:focus {
+    border-color: var(--blue);
+  }
+  .form-textarea { resize: vertical; }
+
+  .form-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+
+  .form-check {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    font-size: 13px;
+    color: var(--text-secondary);
+    margin-bottom: 20px;
+    cursor: pointer;
+  }
+  .form-check input[type="checkbox"] {
+    margin-top: 2px;
+    accent-color: var(--blue);
+  }
+  .form-check-hint {
+    font-size: 11px;
+    color: var(--text-tertiary);
+  }
+
+  .btn-create {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-family: 'Barlow', sans-serif;
+    font-size: 14px;
+    font-weight: 600;
+    padding: 10px 24px;
+    border-radius: 6px;
+    border: none;
+    background: var(--blue);
+    color: #fff;
+    cursor: pointer;
+    transition: background 0.12s;
+  }
+  .btn-create:hover { background: #1d4ed8; }
+  .btn-create:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  .form-error {
+    margin-top: 10px;
+    font-size: 13px;
+    color: var(--red);
+    display: none;
+  }
+
+  .form-success {
+    margin-top: 10px;
+    font-size: 13px;
+    color: var(--green);
+    display: none;
+  }
+{% endblock %}
+
+{% block content %}
+<a href="/dashboard/" class="back-link">&larr; Back to Control Board</a>
+
+<div class="form-card">
+  <form id="new-job-form" autocomplete="off">
+
+    <div class="form-group">
+      <label class="form-label">
+        Customer
+        <a href="/dashboard/customers/new" class="add-link">+ Add Customer</a>
+      </label>
+      <select class="form-select" id="customer_id" name="customer_id" required>
+        <option value="">Select a customer&hellip;</option>
+        {% for c in customers %}
+        <option value="{{ c.id }}">{{ c.customer_name or c.customer_phone }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">Job Type</label>
+      <select class="form-select" id="job_type" name="job_type" required>
+        <option value="">Select type&hellip;</option>
+        <option value="pump">Pump Out</option>
+        <option value="repair">Repair</option>
+        <option value="inspect">Inspection</option>
+        <option value="install">Installation</option>
+        <option value="jetting">Jetting</option>
+        <option value="camera">Locate / Camera</option>
+        <option value="other">Other</option>
+      </select>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">Address</label>
+      <input type="text" class="form-input" id="address" name="address" placeholder="Job site address">
+    </div>
+
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Scheduled Date</label>
+        <input type="date" class="form-input" id="scheduled_date" name="scheduled_date" required>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Scheduled Time</label>
+        <input type="time" class="form-input" id="scheduled_time" name="scheduled_time">
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">Notes</label>
+      <textarea class="form-textarea" id="notes" name="notes" rows="4"
+        placeholder="Job details, scope, special instructions&hellip;"></textarea>
+    </div>
+
+    <label class="form-check">
+      <input type="checkbox" id="generate_proposal" name="generate_proposal">
+      <span>
+        Generate a proposal estimate for this job
+        <span class="form-check-hint">(Claude will draft it)</span>
+      </span>
+    </label>
+
+    <button type="submit" class="btn-create" id="btn-submit">Create Job</button>
+    <div class="form-error" id="form-error"></div>
+    <div class="form-success" id="form-success"></div>
+  </form>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function() {
+  var customers = {{ customers_json|safe }};
+  var custMap = {};
+  customers.forEach(function(c) { custMap[c.id] = c; });
+
+  // Auto-fill address on customer select
+  var selCustomer = document.getElementById('customer_id');
+  var inpAddress = document.getElementById('address');
+  selCustomer.addEventListener('change', function() {
+    var c = custMap[this.value];
+    if (c && c.customer_address) {
+      inpAddress.value = c.customer_address;
+    }
+  });
+
+  // Default date to today, time to 08:00
+  var today = new Date();
+  var yyyy = today.getFullYear();
+  var mm = String(today.getMonth() + 1).padStart(2, '0');
+  var dd = String(today.getDate()).padStart(2, '0');
+  document.getElementById('scheduled_date').value = yyyy + '-' + mm + '-' + dd;
+  document.getElementById('scheduled_time').value = '08:00';
+
+  // Form submit
+  var form = document.getElementById('new-job-form');
+  var btnSubmit = document.getElementById('btn-submit');
+  var elError = document.getElementById('form-error');
+  var elSuccess = document.getElementById('form-success');
+
+  form.addEventListener('submit', function(e) {
+    e.preventDefault();
+    elError.style.display = 'none';
+    elSuccess.style.display = 'none';
+    btnSubmit.disabled = true;
+    btnSubmit.textContent = 'Creating\u2026';
+
+    var payload = {
+      customer_id: document.getElementById('customer_id').value,
+      job_type: document.getElementById('job_type').value,
+      address: document.getElementById('address').value,
+      scheduled_date: document.getElementById('scheduled_date').value,
+      scheduled_time: document.getElementById('scheduled_time').value,
+      notes: document.getElementById('notes').value,
+      generate_proposal: document.getElementById('generate_proposal').checked
+    };
+
+    fetch('/api/jobs/create', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    })
+    .then(function(res) { return res.json(); })
+    .then(function(data) {
+      if (data.success) {
+        elSuccess.textContent = 'Job created. Redirecting\u2026';
+        elSuccess.style.display = 'block';
+        setTimeout(function() {
+          window.location.href = data.redirect || '/dashboard/';
+        }, 1500);
+      } else {
+        elError.textContent = data.error || 'Something went wrong.';
+        elError.style.display = 'block';
+        btnSubmit.disabled = false;
+        btnSubmit.textContent = 'Create Job';
+      }
+    })
+    .catch(function(err) {
+      elError.textContent = 'Network error: ' + err.message;
+      elError.style.display = 'block';
+      btnSubmit.disabled = false;
+      btnSubmit.textContent = 'Create Job';
+    });
+  });
+})();
+</script>
+{% endblock %}
