@@ -5,107 +5,205 @@
 {% block topbar_meta %}{{ today }}{% endblock %}
 
 {% block extra_css %}
+  /* ── Status badges ───────────────────────────── */
   .badge-scheduled   { background: #e2e8f0; color: #475569; }
-  .badge-in_progress { background: #dcfce7; color: #166534; }
-  .badge-completed   { background: #dbeafe; color: #1e40af; }
+  .badge-in_progress { background: #EAF3DE; color: #3B6D11; }
+  .badge-completed   { background: #dcfce7; color: #166534; }
   .badge-cancelled   { background: #fee2e2; color: #991b1b; }
-  .badge-estimated   { background: #fef3c7; color: #92400e; }
+  .badge-estimated   { background: #FAEEDA; color: #854F0B; }
   .badge-new         { background: #f3f4f6; color: #6b7280; }
-  .btn-new-job {
+
+  /* ── Summary strip ─────────────────────────────── */
+  .summary-strip {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    margin-bottom: 20px;
+  }
+  @media (max-width: 640px) {
+    .summary-strip { grid-template-columns: repeat(2, 1fr); }
+  }
+  .summary-tile {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 16px;
+  }
+  .summary-tile__label {
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-tertiary);
+    margin-bottom: 6px;
+  }
+  .summary-tile__value {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 32px;
+    font-weight: 700;
+    line-height: 1;
+    color: var(--text-primary);
+  }
+  .summary-tile__sub {
+    font-size: 11px;
+    color: var(--text-tertiary);
+    margin-top: 4px;
+  }
+  .c-amber-val { color: #BA7517; }
+
+  /* ── Job cards ───────────────────────────────── */
+  .job-card-row {
+    display: grid;
+    grid-template-columns: 1fr auto auto;
+    align-items: center;
+    gap: 16px;
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--border);
+    transition: background 0.1s;
+  }
+  .job-card-row:last-child { border-bottom: none; }
+  .job-card-row:hover { background: #f8fafc; }
+  .job-card-row__type {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 17px;
+    font-weight: 700;
+    color: var(--text-primary);
+    text-transform: capitalize;
+  }
+  .job-card-row__desc {
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin-top: 2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 340px;
+  }
+  .job-card-row__amount {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-align: right;
+    white-space: nowrap;
+  }
+  .job-card-row__link {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    color: var(--text-tertiary);
+    text-decoration: none;
+    white-space: nowrap;
+  }
+  .job-card-row__link:hover { color: var(--text-primary); }
+
+  /* ── Action button ───────────────────────────── */
+  .btn-action {
     font-family: 'DM Mono', monospace;
     font-size: 10px;
     font-weight: 500;
     letter-spacing: 0.04em;
-    padding: 3px 10px;
+    padding: 4px 12px;
     border-radius: 4px;
     border: 1px solid var(--border);
     background: transparent;
     color: var(--text-secondary);
     text-decoration: none;
     transition: background 0.12s, color 0.12s;
+    display: inline-block;
   }
-  .btn-new-job:hover {
-    background: var(--blue);
+  .btn-action:hover {
+    background: #1a2e4a;
     color: #fff;
-    border-color: var(--blue);
+    border-color: #1a2e4a;
+    text-decoration: none;
+  }
+
+  /* ── Owner dot ───────────────────────────────── */
+  .owner-dot {
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #f59e0b;
+    margin-right: 6px;
+    vertical-align: middle;
   }
 {% endblock %}
 
 {% block content %}
-<!-- Stat cards -->
-<div class="metrics-row">
-  <div class="metric">
-    <div class="metric-label">Jobs Today</div>
-    <div class="metric-value c-blue">{{ jobs_today_count }}</div>
-    <div class="metric-sub">{{ jobs_complete }} complete · {{ jobs_active }} active</div>
+<!-- Summary strip -->
+<div class="summary-strip">
+  <div class="summary-tile">
+    <div class="summary-tile__label">Today</div>
+    <div class="summary-tile__value">{{ jobs_today_count }}</div>
+    <div class="summary-tile__sub">{{ jobs_complete }} done · {{ jobs_active }} active</div>
   </div>
-  <div class="metric">
-    <div class="metric-label">Outstanding Invoices</div>
-    <div class="metric-value c-amber">{{ invoice_count }}</div>
-    <div class="metric-sub">${{ "%.2f"|format(invoice_total) }}</div>
+  <div class="summary-tile">
+    <div class="summary-tile__label">Invoices Out</div>
+    <div class="summary-tile__value{% if invoice_count > 0 %} c-amber-val{% endif %}">{{ invoice_count }}</div>
+    <div class="summary-tile__sub">${{ "%.0f"|format(invoice_total) }} outstanding</div>
   </div>
-  <div class="metric">
-    <div class="metric-label">SMS Today</div>
-    <div class="metric-value">{{ sms_today }}</div>
-    <div class="metric-sub">inbound + outbound</div>
+  <div class="summary-tile">
+    <div class="summary-tile__label">Team</div>
+    <div class="summary-tile__value">{{ employees|length }}</div>
+    <div class="summary-tile__sub">active</div>
   </div>
-  <div class="metric">
-    <div class="metric-label">Team Members</div>
-    <div class="metric-value">{{ employees|length }}</div>
-    <div class="metric-sub">active employees</div>
+  <div class="summary-tile">
+    <div class="summary-tile__label">SMS</div>
+    <div class="summary-tile__value">{{ sms_today }}</div>
+    <div class="summary-tile__sub">today</div>
   </div>
 </div>
 
-<!-- Today's Jobs -->
+<!-- Today's Schedule -->
 <div class="card" style="margin-bottom:16px">
   <div class="card-header">
     <span class="card-title">Today's Schedule</span>
     <span style="display:flex;align-items:center;gap:10px">
       <span class="card-count">{{ jobs_today_count }} jobs</span>
-      <a href="/dashboard/new-job" class="btn-new-job">+ New Job</a>
+      <a href="/dashboard/new-job" class="btn-action">+ New Job</a>
     </span>
   </div>
   <div class="card-body-flush">
     {% if jobs %}
-    <table class="data-table">
-      <thead><tr><th>ID</th><th>Type</th><th>Description</th><th>Status</th><th>Est $</th></tr></thead>
-      <tbody>
-        {% for j in jobs %}
-        <tr>
-          <td><span class="id-short">{{ j.id[:8] if j.id else '—' }}</span></td>
-          <td>{{ j.job_type or '—' }}</td>
-          <td>{{ (j.job_description or j.raw_input or '—')[:50] }}{{ '...' if (j.job_description or j.raw_input or '')|length > 50 else '' }}</td>
-          <td>
-            {% set st = j.status or 'new' %}
-            <span class="badge badge-{{ st }}">{{ st|replace('_',' ') }}</span>
-          </td>
-          <td class="id-short">${{ "%.0f"|format(j.estimated_amount|float) if j.estimated_amount else '—' }}</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+    <div class="job-card-list">
+      {% for j in jobs %}
+      <div class="job-card-row">
+        <div>
+          <div class="job-card-row__type">{{ j.job_type or 'Job' }}</div>
+          <div class="job-card-row__desc">{{ (j.job_description or j.raw_input or 'No description')[:60] }}{{ '…' if (j.job_description or j.raw_input or '')|length > 60 else '' }}</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:12px">
+          {% set st = j.status or 'new' %}
+          <span class="badge badge-{{ st }}">{{ st|replace('_',' ') }}</span>
+          <span class="job-card-row__amount">${{ "%.0f"|format(j.estimated_amount|float) if j.estimated_amount else '—' }}</span>
+        </div>
+        <a href="#" class="job-card-row__link">View &rarr;</a>
+      </div>
+      {% endfor %}
+    </div>
     {% else %}
     <div class="empty-state">No jobs scheduled for today</div>
     {% endif %}
   </div>
 </div>
 
-<!-- Team Status -->
+<!-- Team -->
 <div class="card">
   <div class="card-header">
-    <span class="card-title">Team Status</span>
+    <span class="card-title">Team</span>
     <span class="card-count">{{ employees|length }} active</span>
   </div>
   <div class="card-body-flush">
     {% if employees %}
     <table class="data-table">
-      <thead><tr><th>Name</th><th>Role</th><th>Status</th></tr></thead>
+      <thead><tr><th>Name</th><th>Role</th></tr></thead>
       <tbody>
         {% for e in employees %}
         <tr>
-          <td>{{ e.name or '—' }}</td>
+          <td>{% if e.role == 'owner' %}<span class="owner-dot"></span>{% endif %}{{ e.name or '—' }}</td>
           <td><span class="badge badge-gray">{{ e.role or '—' }}</span></td>
-          <td><span class="badge badge-green">active</span></td>
         </tr>
         {% endfor %}
       </tbody>
