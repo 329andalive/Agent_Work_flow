@@ -492,19 +492,19 @@
 
     <!-- Sales & Payments -->
     <div class="nav-section">
-      <div class="nav-section-header {% if active_page in ['office','estimates','payments','customers'] %}active{% endif %} {% if active_page in ['office','estimates','payments','customers'] %}open{% endif %}"
+      <div class="nav-section-header {% if active_page in ['estimates','invoices','payments','customers'] %}active{% endif %} {% if active_page in ['estimates','invoices','payments','customers'] %}open{% endif %}"
            onclick="toggleNav(this)">
         <span class="nav-section-label">
           <span class="nav-section-icon">💳</span> Sales & Payments
         </span>
         <span class="nav-chevron">▼</span>
       </div>
-      <div class="nav-children {% if active_page in ['office','estimates','payments','customers'] %}open{% endif %}">
-        <a href="/dashboard/office.html#estimates"
+      <div class="nav-children {% if active_page in ['estimates','invoices','payments','customers'] %}open{% endif %}">
+        <a href="/dashboard/estimates/"
            class="nav-child-link {{ 'active' if active_page == 'estimates' else '' }}">Estimates</a>
-        <a href="/dashboard/office.html"
-           class="nav-child-link {{ 'active' if active_page == 'office' else '' }}">Invoices</a>
-        <a href="/dashboard/office.html#payments"
+        <a href="/dashboard/invoices/"
+           class="nav-child-link {{ 'active' if active_page == 'invoices' else '' }}">Invoices</a>
+        <a href="/dashboard/payments/"
            class="nav-child-link {{ 'active' if active_page == 'payments' else '' }}">Payments</a>
         <a href="/dashboard/customers/"
            class="nav-child-link {{ 'active' if active_page == 'customers' else '' }}">Customers</a>

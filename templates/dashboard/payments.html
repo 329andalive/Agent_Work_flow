@@ -1,0 +1,144 @@
+{% extends "base.html" %}
+
+{% block title %}Payments{% endblock %}
+{% block page_title %}Payments{% endblock %}
+{% block topbar_meta %}{{ today }}{% endblock %}
+
+{% block extra_css %}
+  .summary-strip {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+    margin-bottom: 20px;
+  }
+  @media (max-width: 640px) {
+    .summary-strip { grid-template-columns: repeat(2, 1fr); }
+  }
+  .summary-tile {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 16px;
+  }
+  .summary-tile__label {
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-tertiary);
+    margin-bottom: 6px;
+  }
+  .summary-tile__value {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 32px;
+    font-weight: 700;
+    line-height: 1;
+    color: var(--text-primary);
+  }
+  .summary-tile__sub {
+    font-size: 11px;
+    color: var(--text-tertiary);
+    margin-top: 4px;
+  }
+
+  .list-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 13px 16px;
+    border-bottom: 1px solid var(--border);
+    transition: background 0.1s;
+    text-decoration: none;
+    color: inherit;
+    cursor: pointer;
+  }
+  .list-row:last-child { border-bottom: none; }
+  .list-row:hover { background: #f8fafc; }
+  .list-row__name {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text-primary);
+  }
+  .list-row__meta {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    color: var(--text-tertiary);
+    margin-top: 2px;
+  }
+  .list-row__right { text-align: right; flex-shrink: 0; margin-left: 16px; }
+  .list-row__amount {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--text-primary);
+    line-height: 1;
+  }
+  .list-row__actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 4px;
+    justify-content: flex-end;
+  }
+
+  .badge-paid { background: #EAF3DE; color: #3B6D11; }
+
+  .view-link {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    color: var(--text-tertiary);
+    text-decoration: none;
+    white-space: nowrap;
+  }
+  .view-link:hover { color: var(--text-primary); }
+{% endblock %}
+
+{% block content %}
+<div class="summary-strip">
+  <div class="summary-tile">
+    <div class="summary-tile__label">Total Collected</div>
+    <div class="summary-tile__value">${{ "%.0f"|format(total_collected) }}</div>
+    <div class="summary-tile__sub">last 90 days</div>
+  </div>
+  <div class="summary-tile">
+    <div class="summary-tile__label">Payments</div>
+    <div class="summary-tile__value">{{ payment_count }}</div>
+    <div class="summary-tile__sub">received</div>
+  </div>
+  <div class="summary-tile">
+    <div class="summary-tile__label">Average</div>
+    <div class="summary-tile__value">${{ "%.0f"|format(avg_payment) }}</div>
+    <div class="summary-tile__sub">per payment</div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">Payments Received</span>
+    <span class="card-count">{{ payment_count }}</span>
+  </div>
+  <div class="card-body-flush">
+    {% if payments %}
+    {% for p in payments[:25] %}
+      {% set cust = cust_map.get(p.customer_id, {}) if p.customer_id else {} %}
+      <a href="/dashboard/invoice/{{ p.id }}" class="list-row">
+        <div>
+          <div class="list-row__name">{{ cust.get('customer_name', 'Customer') }}</div>
+          <div class="list-row__meta">{{ fmt_date(p.paid_at) }}</div>
+        </div>
+        <div class="list-row__right">
+          <div class="list-row__amount">${{ "%.2f"|format(p.amount_due|float) if p.amount_due else '—' }}</div>
+          <div class="list-row__actions">
+            <span class="badge badge-paid">paid</span>
+            <span class="view-link">View &rarr;</span>
+          </div>
+        </div>
+      </a>
+    {% endfor %}
+    {% else %}
+    <div class="empty-state">No payments recorded yet.</div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

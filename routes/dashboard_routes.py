@@ -325,6 +325,151 @@ def office_billing():
 
 
 # ---------------------------------------------------------------------------
+# GET /dashboard/estimates/ — Estimates (proposals) page
+# ---------------------------------------------------------------------------
+
+@dashboard_bp.route("/dashboard/estimates/")
+def estimates_page():
+    client_id = _resolve_client_id()
+    if not client_id:
+        return redirect("/login")
+
+    ctx = _base_context("estimates", client_id)
+    sb = _get_supabase()
+    ninety_days_ago = (date.today() - timedelta(days=90)).isoformat()
+
+    proposals = []
+    try:
+        result = sb.table("proposals").select(
+            "id, amount_estimate, status, sent_at, created_at, response_type, lost_reason, customer_id"
+        ).eq("client_id", client_id).gte("created_at", ninety_days_ago).order("created_at", desc=True).execute()
+        proposals = result.data or []
+    except Exception as e:
+        print(f"[{_ts()}] ERROR dashboard_routes: estimates proposals — {e}")
+
+    # Customer name map
+    customer_ids = list(set(p["customer_id"] for p in proposals if p.get("customer_id")))
+    cust_map = {}
+    if customer_ids:
+        try:
+            custs = sb.table("customers").select("id, customer_name, customer_phone").in_("id", customer_ids).execute().data or []
+            cust_map = {c["id"]: c for c in custs}
+        except Exception as e:
+            print(f"[{_ts()}] ERROR dashboard_routes: estimates cust map — {e}")
+
+    proposals_sent = len(proposals)
+    proposals_won = len([p for p in proposals if p.get("status") == "accepted"])
+    proposals_outstanding = len([p for p in proposals if p.get("status") in ("sent", "pending")])
+    win_rate = round((proposals_won / proposals_sent * 100) if proposals_sent else 0)
+
+    ctx.update({
+        "proposals": proposals,
+        "cust_map": cust_map,
+        "proposals_sent": proposals_sent,
+        "proposals_won": proposals_won,
+        "proposals_outstanding": proposals_outstanding,
+        "win_rate": win_rate,
+        "fmt_short_date": fmt_short_date,
+    })
+    return render_template("dashboard/estimates.html", **ctx)
+
+
+# ---------------------------------------------------------------------------
+# GET /dashboard/invoices/ — Invoices page
+# ---------------------------------------------------------------------------
+
+@dashboard_bp.route("/dashboard/invoices/")
+def invoices_page():
+    client_id = _resolve_client_id()
+    if not client_id:
+        return redirect("/login")
+
+    ctx = _base_context("invoices", client_id)
+    sb = _get_supabase()
+    ninety_days_ago = (date.today() - timedelta(days=90)).isoformat()
+
+    invoices = []
+    try:
+        result = sb.table("invoices").select(
+            "id, amount_due, status, due_date, sent_at, paid_at, created_at, job_id, customer_id, invoice_text"
+        ).eq("client_id", client_id).gte("created_at", ninety_days_ago).order("created_at", desc=True).execute()
+        invoices = result.data or []
+    except Exception as e:
+        print(f"[{_ts()}] ERROR dashboard_routes: invoices query — {e}")
+
+    customer_ids = list(set(i["customer_id"] for i in invoices if i.get("customer_id")))
+    cust_map = {}
+    if customer_ids:
+        try:
+            custs = sb.table("customers").select("id, customer_name, customer_phone").in_("id", customer_ids).execute().data or []
+            cust_map = {c["id"]: c for c in custs}
+        except Exception as e:
+            print(f"[{_ts()}] ERROR dashboard_routes: invoices cust map — {e}")
+
+    total_billed = sum(float(i.get("amount_due") or 0) for i in invoices)
+    total_paid = sum(float(i.get("amount_due") or 0) for i in invoices if i.get("status") == "paid")
+    total_outstanding = total_billed - total_paid
+
+    ctx.update({
+        "invoices": invoices,
+        "cust_map": cust_map,
+        "total_billed": total_billed,
+        "total_paid": total_paid,
+        "total_outstanding": total_outstanding,
+        "fmt_short_date": fmt_short_date,
+    })
+    return render_template("dashboard/invoices.html", **ctx)
+
+
+# ---------------------------------------------------------------------------
+# GET /dashboard/payments/ — Payments page (paid invoices only)
+# ---------------------------------------------------------------------------
+
+@dashboard_bp.route("/dashboard/payments/")
+def payments_page():
+    client_id = _resolve_client_id()
+    if not client_id:
+        return redirect("/login")
+
+    ctx = _base_context("payments", client_id)
+    sb = _get_supabase()
+    ninety_days_ago = (date.today() - timedelta(days=90)).isoformat()
+
+    payments = []
+    try:
+        result = sb.table("invoices").select(
+            "id, amount_due, status, paid_at, created_at, customer_id"
+        ).eq("client_id", client_id).eq("status", "paid").gte("created_at", ninety_days_ago).order("paid_at", desc=True).execute()
+        payments = result.data or []
+    except Exception as e:
+        print(f"[{_ts()}] ERROR dashboard_routes: payments query — {e}")
+
+    customer_ids = list(set(p["customer_id"] for p in payments if p.get("customer_id")))
+    cust_map = {}
+    if customer_ids:
+        try:
+            custs = sb.table("customers").select("id, customer_name, customer_phone").in_("id", customer_ids).execute().data or []
+            cust_map = {c["id"]: c for c in custs}
+        except Exception as e:
+            print(f"[{_ts()}] ERROR dashboard_routes: payments cust map — {e}")
+
+    total_collected = sum(float(p.get("amount_due") or 0) for p in payments)
+    payment_count = len(payments)
+    avg_payment = round(total_collected / payment_count, 2) if payment_count else 0
+
+    ctx.update({
+        "payments": payments,
+        "cust_map": cust_map,
+        "total_collected": total_collected,
+        "payment_count": payment_count,
+        "avg_payment": avg_payment,
+        "fmt_short_date": fmt_short_date,
+        "fmt_date": fmt_date,
+    })
+    return render_template("dashboard/payments.html", **ctx)
+
+
+# ---------------------------------------------------------------------------
 # GET /dashboard/proposal/<id> — Proposal document view
 # ---------------------------------------------------------------------------
 
@@ -828,9 +973,48 @@ def customers():
     client_id = _resolve_client_id()
     if not client_id:
         return redirect("/login")
+
     ctx = _base_context("customers", client_id)
-    return render_template("dashboard/coming_soon.html",
-        page_name="Customers", **ctx)
+    sb = _get_supabase()
+
+    # Load all customers for this client
+    customers_list = []
+    try:
+        result = sb.table("customers").select(
+            "id, customer_name, customer_phone, customer_address, sms_consent, created_at"
+        ).eq("client_id", client_id).order("customer_name").execute()
+        customers_list = result.data or []
+    except Exception as e:
+        print(f"[{_ts()}] ERROR dashboard_routes: customers query — {e}")
+
+    # Annotate each customer with job count and last job date
+    cust_ids = [c["id"] for c in customers_list]
+    job_counts = {}
+    last_jobs = {}
+    if cust_ids:
+        try:
+            jobs_result = sb.table("jobs").select(
+                "customer_id, scheduled_date"
+            ).eq("client_id", client_id).in_("customer_id", cust_ids).execute()
+            for j in (jobs_result.data or []):
+                cid = j["customer_id"]
+                job_counts[cid] = job_counts.get(cid, 0) + 1
+                sd = j.get("scheduled_date") or ""
+                if sd > last_jobs.get(cid, ""):
+                    last_jobs[cid] = sd
+        except Exception as e:
+            print(f"[{_ts()}] ERROR dashboard_routes: customer job counts — {e}")
+
+    for c in customers_list:
+        c["job_count"] = job_counts.get(c["id"], 0)
+        c["last_job"] = last_jobs.get(c["id"], "")
+
+    ctx.update({
+        "customers": customers_list,
+        "fmt_phone": fmt_phone,
+        "fmt_short_date": fmt_short_date,
+    })
+    return render_template("dashboard/customers.html", **ctx)
 
 
 @dashboard_bp.route("/dashboard/purchases/")
