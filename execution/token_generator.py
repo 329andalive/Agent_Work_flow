@@ -228,25 +228,42 @@ def mark_invoice_paid(invoice_id: str, square_payment_id: str = None) -> bool:
     Mark an invoice as paid in the invoices table.
     Called by the Square webhook handler when payment is confirmed.
 
-    Args:
-        invoice_id:         UUID of the invoice
-        square_payment_id:  Square payment ID for audit trail (optional)
+    Uses a two-pass strategy: first attempts full update including
+    square_payment_id audit column; if that fails (schema not yet
+    migrated), retries with only status + paid_at so the payment
+    is never silently dropped.
 
+    Args:
+        invoice_id: UUID of the invoice
+        square_payment_id: Square payment ID for audit trail (optional)
     Returns:
-        True on success, False on failure.
+        True on success, False on unrecoverable failure.
     """
     try:
         supabase = get_supabase()
         now = datetime.now(timezone.utc).isoformat()
-
-        update = {"paid_at": now, "status": "paid"}
+        update = {"status": "paid", "paid_at": now}
         if square_payment_id:
             update["square_payment_id"] = square_payment_id
-
         supabase.table("invoices").update(update).eq("id", invoice_id).execute()
         print(f"[token_generator] INFO: Invoice {invoice_id} marked paid (square_payment_id={square_payment_id})")
         return True
     except Exception as e:
+        # If full update failed and square_payment_id was in the payload,
+        # retry with only the core fields — never drop a real payment.
+        if square_payment_id and "square_payment_id" in str(e).lower():
+            print(f"[token_generator] WARN: square_payment_id column missing — retrying without it")
+            try:
+                supabase = get_supabase()
+                supabase.table("invoices").update({
+                    "status": "paid",
+                    "paid_at": datetime.now(timezone.utc).isoformat(),
+                }).eq("id", invoice_id).execute()
+                print(f"[token_generator] INFO: Invoice {invoice_id} marked paid (fallback — no square_payment_id)")
+                return True
+            except Exception as e2:
+                print(f"[token_generator] ERROR: mark_invoice_paid fallback also failed — {e2}")
+                return False
         print(f"[token_generator] ERROR: mark_invoice_paid failed — {e}")
         return False
 

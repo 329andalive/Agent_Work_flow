@@ -685,6 +685,49 @@ def run(client_phone: str, raw_input: str, customer_phone: str | None = None) ->
             print(f"[{timestamp()}] WARN invoice_agent: Could not fetch edit_token — {e}")
 
     # ------------------------------------------------------------------
+    # Step 8b: Create Square payment link and attach to invoice_links
+    # This populates invoice_links.square_order_id so the Square
+    # webhook can reverse-lookup the invoice when payment lands.
+    # Only runs if SQUARE_ACCESS_TOKEN is configured.
+    # ------------------------------------------------------------------
+    if invoice_id and os.environ.get("SQUARE_ACCESS_TOKEN"):
+        try:
+            from execution.token_generator import generate_token, attach_payment_link
+            invoice_token = generate_token(
+                job_id=job_id,
+                client_phone=client_phone,
+                link_type="invoice",
+            )
+            if invoice_token:
+                from execution.square_agent import create_payment_link
+                amount_cents = int(round(final_amount * 100))
+                square_result = create_payment_link(
+                    invoice_id=invoice_id,
+                    amount_cents=amount_cents,
+                    description=f"{clean_job_desc} — {client['business_name']}",
+                    customer_name=customer_name,
+                )
+                if square_result.get("success"):
+                    attach_payment_link(
+                        token=invoice_token,
+                        payment_link_url=square_result["payment_link_url"],
+                        square_order_id=square_result.get("square_order_id"),
+                        square_payment_link_id=square_result.get("square_payment_link_id"),
+                    )
+                    try:
+                        from execution.db_connection import get_client as _get_sb
+                        _get_sb().table("invoices").update({
+                            "payment_link_url": square_result["payment_link_url"],
+                        }).eq("id", invoice_id).execute()
+                    except Exception:
+                        pass  # Non-fatal — column may not exist yet
+                    print(f"[{timestamp()}] INFO invoice_agent: Square payment link created and wired → {square_result['payment_link_url']}")
+                else:
+                    print(f"[{timestamp()}] WARN invoice_agent: Square payment link failed — {square_result.get('error')} (invoice still saved)")
+        except Exception as e:
+            print(f"[{timestamp()}] WARN invoice_agent: Square payment link creation error — {e} (non-fatal)")
+
+    # ------------------------------------------------------------------
     # Step 9: Run job cost agent → get private margin summary
     # ------------------------------------------------------------------
     cost_summary = calculate_job_cost(job_id=job_id, client_id=client_id)
