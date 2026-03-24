@@ -74,7 +74,14 @@ def handle_command():
     client_phone = client.get("phone", "")
     owner_mobile = client.get("owner_mobile") or client_phone
 
-    print(f"[{timestamp()}] INFO command: client={client_id} input={text[:120]}")
+    # ─────────────────────────────────────────
+    # FIX 1: Command Center is always the owner — never treat as customer
+    # The sender is the owner/dispatcher at the dashboard. Skip customer
+    # self-creation. Resolve customer from the TEXT, not the sender.
+    # ─────────────────────────────────────────
+    sender_role = "owner"  # Command Center is always owner
+
+    print(f"[{timestamp()}] INFO command: client={client_id} sender=owner input={text[:120]}")
 
     # ─────────────────────────────────────────
     # DIRECT DISPATCH — no clarification loop
@@ -87,7 +94,7 @@ def handle_command():
         if any(kw in text_upper for kw in
                ["INVOICE", "BILL ", "SEND HER A BILL",
                 "SEND HIM A BILL", "BILL FOR"]):
-            customer_phone = _resolve_customer_phone(text, client_id)
+            customer_phone, customer_name = _resolve_customer_from_text(text, client_id)
             from execution.invoice_agent import run as invoice_run
             output = invoice_run(client_phone=client_phone, raw_input=text, customer_phone=customer_phone)
             if output:
@@ -99,7 +106,7 @@ def handle_command():
         # ── ESTIMATE / PROPOSAL ─────────────
         elif any(kw in text_upper for kw in
                  ["ESTIMATE", "PROPOSAL", "QUOTE", "BID"]):
-            customer_phone = _resolve_customer_phone(text, client_id)
+            customer_phone, customer_name = _resolve_customer_from_text(text, client_id)
             from execution.proposal_agent import run as proposal_run
             output = proposal_run(client_phone=client_phone, customer_phone=customer_phone, raw_input=text)
             result = {"agent": "proposal_agent", "status": "ok", "message": output or "Proposal generated."}
@@ -125,7 +132,7 @@ def handle_command():
         elif any(kw in text_upper for kw in
                  ["DONE", "COMPLETE", "FINISHED", "WRAPPED UP",
                   "ALL DONE", "JOB DONE"]):
-            customer_phone = _resolve_customer_phone(text, client_id)
+            customer_phone, _ = _resolve_customer_from_text(text, client_id)
             from execution.invoice_agent import run as invoice_run
             output = invoice_run(client_phone=client_phone, raw_input=text, customer_phone=customer_phone)
             if output:
@@ -190,20 +197,50 @@ def _extract_customer_name(text: str) -> str | None:
     return None
 
 
-def _resolve_customer_phone(text: str, client_id: str) -> str | None:
+def _resolve_customer_from_text(text: str, client_id: str) -> tuple:
     """
-    Try to find a customer phone number from the command text.
-    1. Check for an explicit phone number in the text
-    2. Try to find a customer by name in the database
-    3. Return None — never fall back to owner_mobile
+    Resolve a customer from the command text (NOT from sender phone).
+    The Command Center sender is always the owner — never create a
+    customer record from the owner's phone.
+
+    Strategy:
+    1. Check for explicit phone number in text → look up by phone
+    2. Extract candidate name → search by partial match (ilike)
+    3. Also try leading word as surname (handles "Wentworth needs...")
+    4. Return (customer_phone, customer_name) or (None, None)
+
+    Returns:
+        Tuple of (customer_phone, customer_name) or (None, None)
     """
     # Try explicit phone first
     phone = _extract_phone(text)
     if phone:
-        return phone
+        try:
+            sb = _get_supabase()
+            results = sb.table("customers").select(
+                "id, customer_phone, customer_name"
+            ).eq("client_id", client_id).eq("customer_phone", phone).limit(1).execute()
+            if results.data:
+                found = results.data[0]
+                print(f"[{timestamp()}] INFO command: Found customer by phone: {found['customer_name']} → {found['customer_phone']}")
+                return (found["customer_phone"], found.get("customer_name"))
+        except Exception as e:
+            print(f"[{timestamp()}] WARN command: Phone lookup failed — {e}")
+        return (phone, None)
 
-    # Try name lookup
+    # Try name extraction from text
     name = _extract_customer_name(text)
+
+    # Also try leading word as a surname — handles "Wentworth needs..."
+    if not name:
+        leading_word = text.strip().split()[0] if text.strip() else ""
+        if leading_word and leading_word[0].isupper() and len(leading_word) > 2:
+            # Check it's not a command keyword
+            if leading_word.upper() not in {"INVOICE", "BILL", "ESTIMATE", "PROPOSAL",
+                                             "QUOTE", "BID", "SCHEDULE", "BOOK", "DONE",
+                                             "COMPLETE", "FINISHED", "CLOCK", "REPORT"}:
+                name = leading_word
+
     if name:
         try:
             sb = _get_supabase()
@@ -211,17 +248,21 @@ def _resolve_customer_phone(text: str, client_id: str) -> str | None:
                 "id, customer_phone, customer_name"
             ).eq("client_id", client_id).ilike(
                 "customer_name", f"%{name}%"
-            ).limit(1).execute()
-            if results.data:
+            ).execute()
+            if results.data and len(results.data) == 1:
                 found = results.data[0]
-                print(f"[{timestamp()}] INFO command: Found customer by name: {found['customer_name']} → {found['customer_phone']}")
-                return found["customer_phone"]
+                print(f"[{timestamp()}] INFO command: Found customer by name '{name}': {found['customer_name']} → {found['customer_phone']}")
+                return (found["customer_phone"], found.get("customer_name"))
+            elif results.data and len(results.data) > 1:
+                names = ", ".join(r.get("customer_name", "?") for r in results.data[:5])
+                print(f"[{timestamp()}] INFO command: Multiple customers match '{name}': {names}")
+                # Return None — caller should handle ambiguity
             else:
-                print(f"[{timestamp()}] INFO command: Customer '{name}' not found in DB — will pass None to agent")
+                print(f"[{timestamp()}] INFO command: Customer '{name}' not found in DB")
         except Exception as e:
             print(f"[{timestamp()}] WARN command: Name lookup failed — {e}")
 
-    return None
+    return (None, None)
 
 
 def _interpret_and_route(text, client, client_phone, owner_mobile, client_id):
@@ -252,7 +293,7 @@ def _interpret_and_route(text, client, client_phone, owner_mobile, client_id):
     intent = (raw_intent or "UNKNOWN").strip().upper()
     print(f"[{timestamp()}] INFO command: Haiku classified intent={intent}")
 
-    customer_phone = _resolve_customer_phone(text, client_id)
+    customer_phone, _ = _resolve_customer_from_text(text, client_id)
 
     if intent == "INVOICE":
         from execution.invoice_agent import run as invoice_run

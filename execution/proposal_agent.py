@@ -137,52 +137,73 @@ def extract_address(text: str) -> str:
     return ""
 
 
-def build_system_prompt(client: dict) -> str:
+def summarize_job(raw_input: str) -> str:
     """
-    Build the system prompt using the client's Personality Layer.
-    This is what makes every proposal sound like the owner wrote it.
+    Use Claude Haiku to summarize raw owner input into a clean 1-line
+    job description. This is what gets stored in jobs.job_description
+    and displayed on the proposal — NOT the raw SMS text.
     """
-    return (
-        f"You are the AI back office assistant for {client['business_name']}, "
-        f"owned by {client['owner_name']}.\n"
-        f"Read this Personality Layer completely before doing anything. "
-        f"This is who you are writing for:\n\n"
-        f"{client['personality']}\n\n"
-        f"CRITICAL RULES:\n"
-        f"Every word must sound like {client['owner_name']} wrote it personally\n"
-        f"Use the same vocabulary a rural tradesperson would use\n"
-        f"Never use corporate language or filler phrases\n"
-        f"Never say 'I hope this finds you well'\n"
-        f"Never say 'please do not hesitate to contact us'\n"
-        f"Be direct, honest, and specific\n"
-        f"Include real numbers and real timelines\n"
-        f"The customer should feel like they are dealing with a real person who knows what they are doing\n"
-        f"Format for SMS — no markdown, no bullet symbols, use plain line breaks only\n"
-        f"Keep under 1500 characters so it fits in SMS"
+    try:
+        summary = call_claude(
+            "You summarize trade job descriptions in one clean sentence.",
+            (
+                "Summarize this job description in one clean sentence of 15 words or fewer.\n"
+                "Use plain trade language. Include: job type, property type if mentioned, key scope items.\n"
+                "Do not include customer names, pricing, or conversational filler.\n"
+                f"Input: {raw_input}"
+            ),
+            model="haiku",
+        )
+        if summary and len(summary.strip()) > 5:
+            return summary.strip()
+    except Exception as e:
+        print(f"[{timestamp()}] WARN proposal_agent: Job summarization failed — {e}")
+    # Fallback: use job type detection
+    return detect_job_type(raw_input).replace("_", " ").title() + " service"
+
+
+def build_structured_prompt(client: dict, customer_name: str, customer_address: str,
+                            job_type: str, raw_input: str) -> tuple:
+    """
+    Build system + user prompts that demand structured JSON output.
+    Returns (system_prompt, user_prompt) tuple.
+    """
+    personality = client.get("personality", "")
+    address_line = customer_address if customer_address else "address not provided"
+
+    system_prompt = (
+        f"You are generating a professional trade services proposal for {client['business_name']}.\n\n"
+        f"PERSONALITY AND VOICE:\n{personality}\n\n"
+        f"OUTPUT FORMAT — NON-NEGOTIABLE:\n"
+        f"You must return a JSON object with this exact structure and nothing else:\n"
+        f'{{\n'
+        f'  "job_summary": "One sentence describing the job in plain trade language",\n'
+        f'  "line_items": [\n'
+        f'    {{"description": "Service description — no customer names, no filler", "amount": 000.00}},\n'
+        f'    ...\n'
+        f'  ],\n'
+        f'  "notes": "Any scope clarifications or assumptions (optional, can be empty string)"\n'
+        f'}}\n\n'
+        f"LINE ITEM RULES:\n"
+        f"- Each line item describes ONE specific item of work or material\n"
+        f"- Description: trade language only — \"Septic pump-out — 1,000 gal. tank\", \"Labor: 5 hrs @ $125/hr\"\n"
+        f"- Never include customer names, greetings, or partial sentences in any line item\n"
+        f"- Never truncate — every description must be complete\n"
+        f"- Amount: number only, no $ sign\n"
+        f"- Minimum charge is $150 — never go below this\n"
+        f"- If the owner specified a price, use it exactly\n"
+        f"- If the owner specified hours, calculate labor at $125/hr\n"
+        f"- Return ONLY the JSON object — no markdown, no explanation, no code fences"
     )
 
-
-def build_user_prompt(customer_name: str, customer_address: str, job_type: str, raw_input: str, business_name: str) -> str:
-    """
-    Build the user prompt with job details for Claude to work from.
-    """
-    address_line = customer_address if customer_address else "address not provided — ask before finalizing price"
-    return (
-        f"A customer needs a septic service proposal. Here are the details:\n"
+    user_prompt = (
         f"Customer: {customer_name}\n"
         f"Location: {address_line}\n"
         f"Job type: {job_type}\n"
-        f"Details: {raw_input}\n\n"
-        f"Write a complete proposal this owner can send directly to the customer. Include:\n"
-        f"What the job is in plain language\n"
-        f"What the work involves\n"
-        f"A realistic price range based on typical {job_type} costs in rural Maine\n"
-        f"Timeline for when the work can be done\n"
-        f"A clear call to action — how to confirm the job\n"
-        f"The owner's name and business name at the end\n\n"
-        f"Do not add any explanation or commentary.\n"
-        f"Output the proposal text only."
+        f"Owner's description: {raw_input}"
     )
+
+    return (system_prompt, user_prompt)
 
 
 FALLBACK_MESSAGE = (
@@ -263,7 +284,13 @@ def run(client_phone: str, customer_phone: str, raw_input: str) -> str | None:
         return None
 
     # ------------------------------------------------------------------
-    # Step 5: Create a new job record
+    # Step 5: Summarize raw input into clean job description
+    # ------------------------------------------------------------------
+    job_summary = summarize_job(raw_input)
+    print(f"[{timestamp()}] INFO proposal_agent: Job summary → {job_summary}")
+
+    # ------------------------------------------------------------------
+    # Step 5b: Create a new job record with clean description
     # ------------------------------------------------------------------
     try:
         job_id = create_job(
@@ -271,6 +298,7 @@ def run(client_phone: str, customer_phone: str, raw_input: str) -> str | None:
             customer_id=customer_id,
             job_type=job_type,
             raw_input=raw_input,
+            job_description=job_summary,
         )
         print(f"[{timestamp()}] INFO proposal_agent: Created job (id={job_id})")
     except Exception as e:
@@ -279,12 +307,13 @@ def run(client_phone: str, customer_phone: str, raw_input: str) -> str | None:
         return None
 
     # ------------------------------------------------------------------
-    # Step 6: Build prompts and call Claude
-    # Inject style overrides from owner's past edits if available
+    # Step 6: Build structured prompt and call Claude for JSON line items
     # ------------------------------------------------------------------
-    system_prompt = build_system_prompt(client)
+    system_prompt, user_prompt = build_structured_prompt(
+        client, customer_name, customer_address, job_type, raw_input,
+    )
 
-    # Check for learned style preferences from past edits
+    # Inject style overrides from owner's past edits if available
     try:
         from execution.db_document import get_prompt_override
         override = get_prompt_override(client_id)
@@ -298,31 +327,58 @@ def run(client_phone: str, customer_phone: str, raw_input: str) -> str | None:
     except Exception as e:
         print(f"[{timestamp()}] WARN proposal_agent: Could not load prompt override — {e}")
 
-    user_prompt   = build_user_prompt(customer_name, customer_address, job_type, raw_input, client["business_name"])
+    print(f"[{timestamp()}] INFO proposal_agent: Calling Claude (sonnet) for structured proposal...")
+    raw_response = call_claude(system_prompt, user_prompt, model="sonnet")
 
-    print(f"[{timestamp()}] INFO proposal_agent: Calling Claude (sonnet) to generate proposal...")
-    proposal_text = call_claude(system_prompt, user_prompt, model="sonnet")
-
-    if not proposal_text:
+    if not raw_response:
         print(f"[{timestamp()}] ERROR proposal_agent: Claude returned no text — sending fallback")
         send_sms(to_number=client_phone, message_body=FALLBACK_MESSAGE)
-        update_job_status(job_id, "new")  # leave as new so it can be retried
+        update_job_status(job_id, "new")
         return None
 
-    print(f"[{timestamp()}] INFO proposal_agent: Proposal generated ({len(proposal_text)} chars)")
+    print(f"[{timestamp()}] INFO proposal_agent: Raw response ({len(raw_response)} chars)")
 
     # ------------------------------------------------------------------
-    # Step 7: Save proposal to Supabase
+    # Step 6b: Parse structured JSON response
     # ------------------------------------------------------------------
+    import json as _json
+    import re
+
+    line_items = []
+    amount = 0.00
+    proposal_text = raw_response  # fallback
+
     try:
-        # Parse a rough dollar estimate from the proposal for the amount field
-        # We store 0 if we can't parse one — the full text has the real range
-        amount = 0.00
-        import re
-        price_match = re.search(r"\$(\d{2,4})", proposal_text)
+        # Strip markdown code fences if Claude wrapped the JSON
+        cleaned = re.sub(r'^```(?:json)?\s*', '', raw_response.strip())
+        cleaned = re.sub(r'\s*```$', '', cleaned)
+        parsed = _json.loads(cleaned)
+
+        if isinstance(parsed, dict) and "line_items" in parsed:
+            line_items = parsed["line_items"]
+            amount = sum(float(li.get("amount", 0)) for li in line_items)
+            # Use parsed job_summary if available
+            if parsed.get("job_summary"):
+                job_summary = parsed["job_summary"]
+            # Build clean proposal text from line items for SMS/display
+            lines = [f"{li['description']} — ${float(li['amount']):.2f}" for li in line_items]
+            proposal_text = f"{job_summary}\n\n" + "\n".join(lines) + f"\n\nTotal: ${amount:.2f}"
+            if parsed.get("notes"):
+                proposal_text += f"\n\n{parsed['notes']}"
+            print(f"[{timestamp()}] INFO proposal_agent: Parsed {len(line_items)} line items, total=${amount:.2f}")
+        else:
+            print(f"[{timestamp()}] WARN proposal_agent: Claude returned JSON but no line_items key — using as text")
+    except (_json.JSONDecodeError, ValueError) as e:
+        print(f"[{timestamp()}] WARN proposal_agent: JSON parse failed — {e}. Using raw text fallback.")
+        # Fallback: extract dollar amount from raw text
+        price_match = re.search(r"\$(\d{2,5})", raw_response)
         if price_match:
             amount = float(price_match.group(1))
 
+    # ------------------------------------------------------------------
+    # Step 7: Save proposal to Supabase with structured line items
+    # ------------------------------------------------------------------
+    try:
         proposal_id = save_proposal(
             job_id=job_id,
             client_id=client_id,
@@ -330,6 +386,15 @@ def run(client_phone: str, customer_phone: str, raw_input: str) -> str | None:
             proposal_text=proposal_text,
             amount=amount,
         )
+        # Write line_items JSON to the proposal row if we have structured data
+        if proposal_id and line_items:
+            try:
+                from execution.db_connection import get_client as get_supabase
+                get_supabase().table("proposals").update({
+                    "line_items": _json.dumps(line_items),
+                }).eq("id", proposal_id).execute()
+            except Exception:
+                pass  # Non-fatal — line_items column may not exist
         print(f"[{timestamp()}] INFO proposal_agent: Saved proposal (id={proposal_id})")
     except Exception as e:
         print(f"[{timestamp()}] WARN proposal_agent: save_proposal failed — {e}. Continuing anyway.")
