@@ -29,7 +29,13 @@ from datetime import datetime
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from dotenv import load_dotenv
-from square.client import Client
+try:
+    from square import Client
+except ImportError:
+    try:
+        from square.client import Client
+    except ImportError:
+        Client = None
 
 load_dotenv()
 
@@ -38,8 +44,10 @@ def timestamp():
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
-def get_square_client() -> Client:
+def get_square_client():
     """Return an initialised Square SDK client."""
+    if Client is None:
+        raise ImportError("Square SDK (squareup) is not installed — run: pip install squareup")
     environment = os.environ.get("SQUARE_ENVIRONMENT", "sandbox")
     access_token = os.environ.get("SQUARE_ACCESS_TOKEN")
     if not access_token:

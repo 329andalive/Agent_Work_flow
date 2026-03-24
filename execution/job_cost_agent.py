@@ -32,6 +32,10 @@ def _save_job_cost(costing: dict, client_id: str) -> str | None:
     """
     Persist the full job cost breakdown to the job_costs table.
 
+    Uses a two-pass strategy: tries full insert first. If table or
+    columns don't exist yet (migration not run), logs the error clearly
+    and returns None without crashing the invoice flow.
+
     Args:
         costing:   Dict returned by db_jobs.calculate_job_cost()
         client_id: UUID of the client (for the FK)
@@ -42,27 +46,34 @@ def _save_job_cost(costing: dict, client_id: str) -> str | None:
     try:
         supabase = get_supabase()
         record = {
-            "job_id":           costing["job_id"],
+            "job_id":           costing.get("job_id"),
             "client_id":        client_id,
-            "contract_type":    costing["contract_type"],
-            "estimated_hours":  costing["estimated_hours"],
-            "actual_hours":     costing["actual_hours"],
-            "hour_variance":    costing["hour_variance"],
-            "estimated_amount": costing["estimated_amount"],
-            "actual_amount":    costing["actual_amount"],
-            "amount_variance":  costing["amount_variance"],
-            "labor_cost":       costing["labor_cost"],
-            "job_margin":       costing["job_margin"],
-            "result":           costing["result"],
-            "summary_line":     costing["summary"],
+            "contract_type":    costing.get("contract_type"),
+            "estimated_hours":  costing.get("estimated_hours"),
+            "actual_hours":     costing.get("actual_hours"),
+            "hour_variance":    costing.get("hour_variance"),
+            "estimated_amount": costing.get("estimated_amount"),
+            "actual_amount":    costing.get("actual_amount"),
+            "amount_variance":  costing.get("amount_variance"),
+            "labor_cost":       costing.get("labor_cost"),
+            "job_margin":       costing.get("job_margin"),
+            "result":           costing.get("result"),
+            "summary_line":     costing.get("summary"),
         }
         result = supabase.table("job_costs").insert(record).execute()
         cost_id = result.data[0]["id"]
-        print(f"[{timestamp()}] INFO job_cost_agent: Saved job_cost id={cost_id} result={costing['result']}")
+        print(f"[{timestamp()}] INFO job_cost_agent: Saved job_cost id={cost_id} result={costing.get('result')}")
         return cost_id
 
     except Exception as e:
-        print(f"[{timestamp()}] ERROR job_cost_agent: _save_job_cost failed — {e}")
+        error_str = str(e).lower()
+        if "schema" in error_str or "not in schema cache" in error_str or "relation" in error_str:
+            print(
+                f"[{timestamp()}] WARN job_cost_agent: job_costs table or columns missing — "
+                f"run directives/supabase_migration_001.sql in Supabase SQL editor. Error: {e}"
+            )
+        else:
+            print(f"[{timestamp()}] ERROR job_cost_agent: _save_job_cost failed — {e}")
         return None
 
 
