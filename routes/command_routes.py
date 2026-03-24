@@ -74,6 +74,14 @@ def handle_command():
     client_phone = client.get("phone", "")
     owner_mobile = client.get("owner_mobile") or client_phone
 
+    # ── Load context object (stateful single-pass foundation) ──────────────
+    from execution.context_loader import load_context
+    ctx = load_context(
+        from_phone=owner_mobile,
+        client_phone=client_phone
+    )
+    print(f"[{timestamp()}] INFO command: context loaded | cold_start={ctx['cold_start']} | jobs={len(ctx['active_jobs'])} | thread={len(ctx['recent_thread'])}")
+
     # ─────────────────────────────────────────
     # FIX 1: Command Center is always the owner — never treat as customer
     # The sender is the owner/dispatcher at the dashboard. Skip customer
@@ -143,7 +151,7 @@ def handle_command():
 
         # ── EVERYTHING ELSE → Claude classifies and routes
         else:
-            result = _interpret_and_route(text=text, client=client, client_phone=client_phone, owner_mobile=owner_mobile, client_id=client_id)
+            result = _interpret_and_route(text=text, client=client, client_phone=client_phone, owner_mobile=owner_mobile, client_id=client_id, ctx=ctx)
 
     except Exception as e:
         print(f"[{timestamp()}] ERROR command: {e}")
@@ -265,7 +273,7 @@ def _resolve_customer_from_text(text: str, client_id: str) -> tuple:
     return (None, None)
 
 
-def _interpret_and_route(text, client, client_phone, owner_mobile, client_id):
+def _interpret_and_route(text, client, client_phone, owner_mobile, client_id, ctx=None):
     """
     For ambiguous commands: use Claude Haiku to identify intent
     and call the right agent. No clarification questions — decide and execute.
@@ -340,9 +348,12 @@ def _interpret_and_route(text, client, client_phone, owner_mobile, client_id):
             return {"agent": "report", "status": "ok", "message": f"Report generation failed: {e}"}
 
     else:
+        # Use context to give a smarter unknown response
+        active_job_names = [j.get("job_description", "")[:40] for j in (ctx or {}).get("active_jobs", [])]
+        context_hint = f" You have {len(active_job_names)} active job(s) open." if active_job_names else ""
         return {
             "agent": "unknown", "status": "ok",
-            "message": "I received your message but wasn't sure which action to take. Try starting with: INVOICE, ESTIMATE, SCHEDULE, CLOCK IN, or DONE.",
+            "message": f"I received your message but wasn't sure which action to take.{context_hint} Try starting with: INVOICE, ESTIMATE, SCHEDULE, CLOCK IN, or DONE.",
         }
 
 
