@@ -595,10 +595,27 @@ def route_message(sms_data: dict) -> str:
         # ------------------------------------------------------------------
         pending_clar = get_pending_clarification(client_id, from_number)
         if pending_clar:
-            print(f"[{timestamp()}] INFO sms_router: Pending clarification found → clarification_agent")
-            full_client = _load_full_client(to_number) or client
-            dispatch("clarification_agent", sms_data, employee=employee, role=role, full_client=full_client)
-            return "clarification_agent"
+            # Check if the message is actually a new job, not a clarification reply.
+            # A stage=2 clarification expects an address, but the owner may have
+            # started a completely new request. Detect this and kill the stale session.
+            _JOB_KEYWORDS = [
+                "needs", "pump", "tank", "repair", "install", "replace", "drain",
+                "inspect", "baffle", "riser", "clog", "line", "camera", "jetting",
+                "gallon", "labor", "hours", "travel", "cost", "$",
+            ]
+            body_lower = body.lower()
+            looks_like_job = sum(1 for kw in _JOB_KEYWORDS if kw in body_lower) >= 2
+
+            if looks_like_job and pending_clar.get("stage", 1) >= 2:
+                print(f"[{timestamp()}] INFO sms_router: Stale clarification detected — message looks like a new job. Killing session.")
+                from execution.db_clarification import delete_pending
+                delete_pending(pending_clar["id"])
+                # Fall through to normal routing below
+            else:
+                print(f"[{timestamp()}] INFO sms_router: Pending clarification found → clarification_agent")
+                full_client = _load_full_client(to_number) or client
+                dispatch("clarification_agent", sms_data, employee=employee, role=role, full_client=full_client)
+                return "clarification_agent"
 
         # ------------------------------------------------------------------
         # Step 5: Check for customer approval replies (YES/NO from customer)

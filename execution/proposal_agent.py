@@ -174,6 +174,18 @@ def build_structured_prompt(client: dict, customer_name: str, customer_address: 
     system_prompt = (
         f"You are generating a professional trade services proposal for {client['business_name']}.\n\n"
         f"PERSONALITY AND VOICE:\n{personality}\n\n"
+        f"PRICING RULES — NON-NEGOTIABLE:\n"
+        f"- Pump-out (1,000 gal): $275. Pump-out (1,500 gal): $325. Never $0.\n"
+        f"- Baffle replacement: $175 minimum. Never $0.\n"
+        f"- Riser and cover (12\"): use the price stated by the owner if given.\n"
+        f"- Labor: multiply hours stated by owner × $125/hr. Show as \"Labor: X hrs @ $125/hr\"\n"
+        f"- Travel: if owner mentions travel, add as a separate line item using minimum charge $150\n"
+        f"  unless owner stated a different amount.\n"
+        f"- If the owner stated a specific price for any item, use that price exactly.\n"
+        f"- If no price is stated, use the standard rate from the personality layer.\n"
+        f"- NEVER produce a $0.00 line item. If you don't know the price, use the minimum charge.\n"
+        f"- NEVER duplicate line items across multiple locations unless the owner explicitly\n"
+        f"  states there are multiple job sites.\n\n"
         f"OUTPUT FORMAT — NON-NEGOTIABLE:\n"
         f"You must return a JSON object with this exact structure and nothing else:\n"
         f'{{\n'
@@ -263,14 +275,30 @@ def run(client_phone: str, customer_phone: str, raw_input: str) -> str | None:
     print(f"[{timestamp()}] INFO proposal_agent: Parsed → job_type={job_type} name={customer_name} address='{customer_address}'")
 
     # ------------------------------------------------------------------
-    # Step 4: Look up or create the customer record
+    # Step 4: HARD RULE — owner phones must never become customers
+    # ------------------------------------------------------------------
+    owner_phones = {client.get("phone", ""), client.get("owner_mobile", "")}
+    owner_phones.discard("")
+    if customer_phone and customer_phone in owner_phones:
+        print(f"[{timestamp()}] ERROR proposal_agent: customer_phone {customer_phone} matches owner — aborting")
+        send_sms(
+            to_number=owner_mobile,
+            message_body="I couldn't identify the customer for that job. Reply with their name or phone number.",
+            from_number=client_phone,
+        )
+        return None
+
+    # ------------------------------------------------------------------
+    # Step 4b: Look up or create the customer record
     # ------------------------------------------------------------------
     try:
-        customer = get_customer_by_phone(client_id, customer_phone)
+        customer = get_customer_by_phone(client_id, customer_phone) if customer_phone else None
         if customer:
             customer_id = customer["id"]
-            print(f"[{timestamp()}] INFO proposal_agent: Existing customer → {customer['customer_name']} (id={customer_id})")
-        else:
+            customer_name = customer.get("customer_name", customer_name)
+            customer_address = customer.get("customer_address", customer_address) or customer_address
+            print(f"[{timestamp()}] INFO proposal_agent: Existing customer → {customer_name} (id={customer_id})")
+        elif customer_phone:
             customer_id = create_customer(
                 client_id=client_id,
                 name=customer_name,
@@ -278,6 +306,36 @@ def run(client_phone: str, customer_phone: str, raw_input: str) -> str | None:
                 address=customer_address if customer_address else None,
             )
             print(f"[{timestamp()}] INFO proposal_agent: Created new customer (id={customer_id})")
+        else:
+            # No customer phone provided — try name search in DB
+            customer_id = None
+            if customer_name and customer_name != "Customer":
+                try:
+                    from execution.db_connection import get_client as get_supabase
+                    sb = get_supabase()
+                    name_results = sb.table("customers").select(
+                        "id, customer_name, customer_phone, customer_address"
+                    ).eq("client_id", client_id).ilike(
+                        "customer_name", f"%{customer_name}%"
+                    ).limit(1).execute()
+                    if name_results.data:
+                        found = name_results.data[0]
+                        customer_id = found["id"]
+                        customer_name = found.get("customer_name", customer_name)
+                        customer_address = found.get("customer_address", customer_address) or customer_address
+                        customer_phone = found.get("customer_phone")
+                        print(f"[{timestamp()}] INFO proposal_agent: Found customer by name: {customer_name}")
+                except Exception as e:
+                    print(f"[{timestamp()}] WARN proposal_agent: Name search failed — {e}")
+
+            if not customer_id:
+                print(f"[{timestamp()}] ERROR proposal_agent: Could not resolve customer — no phone, name search failed")
+                send_sms(
+                    to_number=owner_mobile,
+                    message_body="I couldn't identify the customer for that job. Reply with their name or phone number.",
+                    from_number=client_phone,
+                )
+                return None
     except Exception as e:
         print(f"[{timestamp()}] ERROR proposal_agent: Customer lookup/create failed — {e}")
         send_sms(to_number=client_phone, message_body=FALLBACK_MESSAGE)

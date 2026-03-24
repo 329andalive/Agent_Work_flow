@@ -159,6 +159,32 @@ def delete_pending(pending_id: str) -> bool:
         return False
 
 
+def cleanup_expired(client_id: str) -> int:
+    """
+    Delete all expired clarifications for a client.
+    Returns count of deleted rows.
+    """
+    try:
+        supabase = get_supabase()
+        now = datetime.now(timezone.utc).isoformat()
+        result = (
+            supabase.table("pending_clarifications")
+            .select("id")
+            .eq("client_id", client_id)
+            .lt("expires_at", now)
+            .execute()
+        )
+        expired = result.data or []
+        for row in expired:
+            supabase.table("pending_clarifications").delete().eq("id", row["id"]).execute()
+        if expired:
+            print(f"[{timestamp()}] INFO db_clarification: Cleaned up {len(expired)} expired clarifications")
+        return len(expired)
+    except Exception as e:
+        print(f"[{timestamp()}] ERROR db_clarification: cleanup_expired failed — {e}")
+        return 0
+
+
 # ---------------------------------------------------------------------------
 # Customer approvals
 # ---------------------------------------------------------------------------
