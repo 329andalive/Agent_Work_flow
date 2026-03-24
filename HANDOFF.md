@@ -1,5 +1,5 @@
 # HANDOFF.md — Bolts11 Session Log
-> Last updated: March 23, 2026 — Backend Engineer
+> Last updated: March 24, 2026 — Backend Engineer
 > Read CLAUDE.md first every session before touching any code.
 
 ---
@@ -12,298 +12,139 @@ API domain:    https://api.bolts11.com (DNS may not be pointed yet)
 GitHub repo:   329andalive/Agent_Work_flow
 Python:        3.12.9 (pinned via .python-version — DO NOT remove this file)
 Deploy:        Auto-deploy on push to main
-Build status:  ✅ GREEN as of March 23, 2026 — gunicorn 25.1.0 booting clean
+Build status:  ✅ GREEN as of March 24, 2026 — gunicorn 25.1.0 booting clean
 ```
 
 ---
 
 ## What Works Right Now — Confirmed in Production
 
+### Dashboard & Navigation
 - [x] Login with phone + PIN → session → dashboard loads
-- [x] Sidebar nav — wave-style collapsible, navy/amber, persists across all pages
+- [x] Sidebar nav — Wave-style collapsible, navy/amber, persists across all pages
 - [x] Control Board `/dashboard/` — jobs today, invoices outstanding, SMS count, team
+- [x] Control Board job "View →" links wired to `/dashboard/job/<id>`
+- [x] Job detail `/dashboard/job/<id>` — customer, proposals, invoices, activity
 - [x] Office page `/dashboard/office.html` — invoices + proposals, clickable rows
+
+### Sales & Payments (3 standalone pages)
+- [x] Estimates `/dashboard/estimates/` — proposals list with win rate metrics
+- [x] Invoices `/dashboard/invoices/` — invoices list with Export CSV + age pills
+- [x] Payments `/dashboard/payments/` — paid invoices only with collection metrics
+- [x] New Estimate form `/dashboard/estimates/new` — customer/job dropdown, scope, amount
+- [x] New Invoice form `/dashboard/invoices/new` — customer/job dropdown, amount, due date
+
+### Customers
+- [x] Customer list `/dashboard/customers/` — metrics, search, data table with SMS dots
+- [x] Customer detail `/dashboard/customers/<id>` — profile, jobs, proposals, invoices
+- [x] Add Customer form `/dashboard/customers/new` — POSTs to `/api/customers/create`
+
+### Documents & Views
 - [x] Proposal document view `/dashboard/proposal/<id>` — line items, accept/lost/send
 - [x] Invoice document view `/dashboard/invoice/<id>` — Mark Paid, paid banner
-- [x] Command Center `/dashboard/command.html` — direct agent dispatch, Haiku classification
+
+### Forms & APIs
 - [x] New Job form `/dashboard/new-job` — customer dropdown, proposal checkbox
-- [x] Add Customer form `/dashboard/customers/new` — POSTs to `/api/customers/create`
-- [x] Export CSV `/api/invoices/export-csv` — QuickBooks-compatible download
-- [x] Job detail route `/dashboard/job/<id>` — customer, proposals, invoices, activity
+- [x] POST `/api/customers/create` — phone normalization, duplicate check, Hard Rules #1 + #2
+- [x] POST `/api/jobs/create` — synchronous proposal_agent trigger
+- [x] POST `/api/invoices/create` — draft invoice creation
+- [x] POST `/api/estimates/create` — draft estimate creation
+- [x] GET `/api/invoices/export-csv` — QuickBooks-compatible download
+
+### Command Center & Agent Intelligence
+- [x] Command Center `/dashboard/command.html` — direct agent dispatch
+- [x] Context loader wired — `load_context()` runs on every command before routing
+- [x] Haiku classification uses recent thread + active jobs for context-aware intent
+- [x] Fuzzy customer matching — "seekings" → "Seekins", prefix-based fallback
+- [x] Soft customer failure — returns clarification message instead of crashing
+- [x] Owner phone guard — owner_mobile never creates a customer record
+- [x] Stale clarification detection — new job messages kill expired sessions
+
+### Proposal Agent (rebuilt)
+- [x] Structured JSON output — line items as `{"description", "amount"}` array
+- [x] Job summarization via Haiku — clean 1-line descriptions, raw input preserved
+- [x] Explicit pricing rules — pump $275, baffle $175, labor $125/hr, never $0.00
+- [x] Owner-as-customer guard — aborts if customer_phone matches owner phones
+- [x] Name-based customer search when no phone provided
+
+### Infrastructure
 - [x] 25 test customers imported for Holt Sewer & Drain
-- [x] `squareup==44.0.1.20260122` installed and pinned — Square SDK available on Railway
-- [x] All 66 dependencies fully pinned in requirements.txt — no floating versions
-
-## Still Broken / Not Yet Built
-
-- [ ] Control Board job "View →" links — `href="#"` (Claude Code Prompt #1)
-- [ ] `/dashboard/customers/` — TemplateNotFound, `customers.html` missing (Prompt #2 + 7.9)
-- [ ] `/dashboard/customers/<id>` — 404, no route or template (Prompt #3)
-- [ ] `/dashboard/estimates/` — route exists, `estimates.html` template missing (Prompt #4)
-- [ ] `/dashboard/invoices/` — route exists, `invoices.html` template missing (Prompt #4)
-- [ ] `/dashboard/payments/` — route exists, `payments.html` template missing (Prompt #4)
-- [ ] Customers page inline add form — `customers.html` not yet built (Prompt #5, blocked on #2)
-- [ ] `customer_detail.html` — template missing (Prompt #3)
-- [ ] `job_detail.html` — template missing (needs to be created)
-- [ ] Square payment link not wired in invoice_agent.py (7.10 — see below)
-- [ ] Debug prints still in auth_routes.py login handler (7.11)
+- [x] `squareup==44.0.1.20260122` installed and pinned
+- [x] All 66 dependencies fully pinned in requirements.txt
+- [x] Python 3.12.9 pinned via `.python-version`
+- [x] Square SDK v44 import fixed (`from square import Client`)
+- [x] Debug prints removed from auth_routes.py login handler
+- [x] Defensive job_cost_agent — schema-missing errors log actionable message
 
 ---
 
-## Backend Action Items — This Session
+## What Was Built This Session (March 23-24, 2026)
 
-### 7.9 — PRIORITY: Create Missing Dashboard Templates
-**Root cause confirmed:** Routes are correct. Templates are missing. Flask throws
-`TemplateNotFound` for every new tab. The fix is creating the template files.
+### 20 commits pushed to main — full list:
 
-Templates needed (all extend `base.html`, use existing CSS classes):
-```
-templates/dashboard/customers.html       — customer list + inline add form
-templates/dashboard/customer_detail.html — single customer profile
-templates/dashboard/job_detail.html      — job detail with customer/proposals/invoices
-templates/dashboard/estimates.html       — proposals list with metrics strip
-templates/dashboard/invoices.html        — invoices list with CSV export button
-templates/dashboard/payments.html        — paid invoices only
-```
+**Dashboard Templates (7.9 — RESOLVED)**
+- `26427f4` — Created all 6 missing templates: customers.html, customer_detail.html,
+  job_detail.html, estimates.html, invoices.html, payments.html
+- `825c353` — Standalone Estimates, Invoices, Payments pages with routes
+- Control Board job "View →" links wired from `href="#"` to `/dashboard/job/{{ j.id }}`
 
-Full specs for each template are in the Claude Code Prompt Queue below (Section 4).
-Also fix `control.html` job row `href="#"` → `href="/dashboard/job/{{ j.id }}"`.
+**New Create Forms**
+- `4d62d99` — New Invoice page `/dashboard/invoices/new` with customer/job linking
+- `8e30ce7` — New Estimate page `/dashboard/estimates/new` with customer/job linking
 
-Owner: Backend Engineer (or run Claude Code prompts in order)
+**Square Payment Pipeline (7.10 — CODE COMPLETE)**
+- `a6a3a1f` — Step 8b wired in invoice_agent.py — Square payment link → invoice_links
+- `a6a3a1f` — mark_invoice_paid() two-pass fallback in token_generator.py
+- `a6a3a1f` — sql/square_payment_writeback.sql created
+- `48cb9c3` — Square SDK v44 import fix (`from square import Client`)
+- `48cb9c3` — Defensive job_cost_agent (schema-missing → actionable warning)
 
-### 7.10 — Square Write-Back: Three Gaps Found and Fixed (Partially)
+**Proposal Agent Rebuild (Prompt #8-9)**
+- `c2c87be` — Customer resolution: owner phone guard, name-based DB search
+- `c2c87be` — Job summarization via Haiku (clean 1-line descriptions)
+- `c2c87be` — Structured JSON line items with explicit pricing rules
+- `92079c1` — Stale clarification poisoning fix + owner-as-customer guard
+- `92079c1` — Explicit pricing in Sonnet prompt ($275 pump, $175 baffle, $125/hr)
 
-Full audit completed. The `status='paid'` and `paid_at` write-back in
-`token_generator.mark_invoice_paid()` is structurally correct. Three gaps found:
+**Stateful Context Architecture**
+- `5bdcdf6` — Created `execution/context_loader.py` — assembles tech/client/jobs/thread/pending
+- `a1ea12d` — Wired context_loader into command_routes.py handle_command()
+- `f215f3f` — Context-aware Haiku (recent thread + active jobs in classify prompt)
+- `f215f3f` — Fuzzy customer matching (prefix-based fallback for misspellings)
+- `f215f3f` — Soft customer failure (clarification message instead of ValueError crash)
 
-**Gap 1 — Schema (BLOCKING):** `square_payment_id` column missing from `invoices` table.
-`mark_invoice_paid()` tries to write it — Supabase will throw if column doesn't exist.
+**Personality & Auth**
+- `cd55828` — personality.md rewritten with document standards and voice rules
+- `2208ec4` — Simplified owner name to first name only
+- `26427f4` — Removed all DEBUG prints from auth_routes.py (7.11 — RESOLVED)
 
-ACTION REQUIRED — Run this SQL in Supabase SQL editor before Square goes live:
+---
+
+## Remaining Action Items
+
+### Manual — Run SQL Migrations in Supabase
+Two SQL files need to be run in Supabase SQL editor:
+
+**1. Square payment columns** (`sql/square_payment_writeback.sql`):
 ```sql
-ALTER TABLE invoices
-  ADD COLUMN IF NOT EXISTS square_payment_id TEXT;
-
-CREATE INDEX IF NOT EXISTS idx_invoices_square_payment_id
-  ON invoices (square_payment_id)
-  WHERE square_payment_id IS NOT NULL;
-
-ALTER TABLE invoice_links
-  ADD COLUMN IF NOT EXISTS square_order_id TEXT;
-
-ALTER TABLE invoice_links
-  ADD COLUMN IF NOT EXISTS square_payment_link_id TEXT;
-
-ALTER TABLE invoice_links
-  ADD COLUMN IF NOT EXISTS payment_link_url TEXT;
-
-CREATE INDEX IF NOT EXISTS idx_invoice_links_square_order_id
-  ON invoice_links (square_order_id)
-  WHERE square_order_id IS NOT NULL;
-```
-This SQL is also saved at `sql/square_payment_writeback.sql`.
-
-**Gap 2 — Missing wire (CRITICAL):** `attach_payment_link()` is never called after
-`square_agent.create_payment_link()`. The `invoice_links.square_order_id` column is
-never populated, so the Square webhook reverse-lookup (`get_link_by_square_order`)
-always returns None — payment received but invoice never marked paid.
-
-Fix needed in `execution/invoice_agent.py` — add Step 8b after the edit_url block:
-```python
-        # Step 8b: Create Square payment link + wire square_order_id to invoice_links
-        # This is what allows the /webhooks/square handler to find the invoice on payment.
-        # Non-fatal — if Square is not configured, invoice still saves and SMS still sends.
-        if invoice_id and os.environ.get("SQUARE_ACCESS_TOKEN"):
-            try:
-                from execution.token_generator import generate_token, attach_payment_link
-                invoice_token = generate_token(
-                    job_id=job_id,
-                    client_phone=client_phone,
-                    link_type="invoice",
-                )
-                if invoice_token:
-                    from execution.square_agent import create_payment_link
-                    amount_cents = int(round(final_amount * 100))
-                    square_result = create_payment_link(
-                        invoice_id=invoice_id,
-                        amount_cents=amount_cents,
-                        description=f"{clean_job_desc} — {client['business_name']}",
-                        customer_name=customer_name,
-                    )
-                    if square_result.get("success"):
-                        attach_payment_link(
-                            token=invoice_token,
-                            payment_link_url=square_result["payment_link_url"],
-                            square_order_id=square_result.get("square_order_id"),
-                            square_payment_link_id=square_result.get("square_payment_link_id"),
-                        )
-                        print(f"[{timestamp()}] INFO invoice_agent: Square payment link wired → {square_result['payment_link_url']}")
-                    else:
-                        print(f"[{timestamp()}] WARN invoice_agent: Square link failed — {square_result.get('error')}")
-            except Exception as e:
-                print(f"[{timestamp()}] WARN invoice_agent: Square link creation error — {e} (non-fatal)")
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS square_payment_id TEXT;
+ALTER TABLE invoice_links ADD COLUMN IF NOT EXISTS square_order_id TEXT;
+ALTER TABLE invoice_links ADD COLUMN IF NOT EXISTS square_payment_link_id TEXT;
+ALTER TABLE invoice_links ADD COLUMN IF NOT EXISTS payment_link_url TEXT;
+-- Plus indexes. Full file at sql/square_payment_writeback.sql
 ```
 
-**Gap 3 — Multi-tenancy:** Confirmed safe. No code change needed.
+**2. Job costing table** (`directives/supabase_migration_001.sql`):
+The `job_costs` table may not exist yet. Run this migration to enable
+job cost tracking on every invoice.
 
-**To go live with Square production:**
-1. Run `sql/square_payment_writeback.sql` in Supabase SQL editor
-2. Add Step 8b to `execution/invoice_agent.py`
-3. Add `mark_invoice_paid()` two-pass fallback to `execution/token_generator.py`
-   (retry without `square_payment_id` if column error — never drop a real payment)
-4. Set Railway env vars:
-   - `SQUARE_ACCESS_TOKEN` — production token
-   - `SQUARE_ENVIRONMENT` — `production`
-   - `SQUARE_LOCATION_ID` — production location ID
-   - `SQUARE_WEBHOOK_SIGNATURE_KEY` — from Square dashboard
-   - `SQUARE_WEBHOOK_URL` — `https://api.bolts11.com/webhooks/square`
-5. Register webhook in Square Dashboard: event `payment.completed`, URL above
-6. Test: send a sandbox payment, verify invoice flips to `status='paid'` in Supabase
-   and appears in `/dashboard/payments/`
-
-Owner: Backend Engineer
-
-### 7.11 — Remove Debug Prints from auth_routes.py
-Remove all `print(f"[...] DEBUG ...")` lines from the `/login` POST handler.
-Keep only `INFO`, `WARN`, `ERROR` level prints. Must be done before any customer demo.
-Owner: Backend Engineer
-
----
-
-## Build Infrastructure — Fixed This Session
-
-**Problem:** Railway was auto-resolving Python to `3.13.12` (freethreaded build),
-which failed with `mise ERROR: Python installation is missing a lib directory`.
-The broken build was triggered by adding `squareup` to `requirements.txt`.
-
-**Fix applied:**
-1. Added `.python-version` to repo root containing `3.12.9` — pins Railway/mise
-   to a stable build. **DO NOT delete this file.**
-2. Ran `pip freeze` inside a clean Python 3.12 venv — `requirements.txt` now has
-   66 fully pinned packages instead of 9 unpinned names.
-3. `squareup==44.0.1.20260122` is now a proper pinned dependency.
-
-**Build confirmed green:** `gunicorn 25.1.0` starting, worker booting, no import errors.
-
----
-
-## Claude Code Prompt Queue — Run in Order
-
-| # | Prompt | Files | Status |
-|---|--------|-------|--------|
-| 1 | Wire job "View →" links on Control Board | `control.html` | Ready |
-| 2 | Create missing dashboard templates (7.9) | 6 new templates | Ready — PRIORITY |
-| 3 | Add Step 8b to invoice_agent.py (7.10 Gap 2) | `invoice_agent.py` | Ready |
-| 4 | Remove debug prints from auth_routes.py (7.11) | `auth_routes.py` | Ready |
-| 5 | Run square_payment_writeback.sql in Supabase | SQL editor | Manual step |
-
-### Prompt #1 — Wire Job "View →" Links
-File: `templates/dashboard/control.html`
-Inside the `{% for j in jobs %}` loop, find: `<a href="#" class="job-card-row__link">`
-Change to: `<a href="/dashboard/job/{{ j.id }}" class="job-card-row__link">`
-Do not change anything else in this file.
-
-### Prompt #2 — Create All Six Missing Templates (7.9)
-This is the big one. Read the full spec below before starting.
-
-Read first: `templates/base.html`, `templates/dashboard/office.html`,
-`templates/dashboard/proposal_view.html`, `routes/dashboard_routes.py`
-
-All templates must:
-- `{% extends "base.html" %}`
-- Use only CSS variables and classes already defined in `base.html`
-- Match the visual style of `office.html` exactly — no new CSS frameworks
-
-**customers.html** — context: `customers` (list), `fmt_phone`, `fmt_short_date`
-Each customer dict has: `id`, `customer_name`, `customer_phone`, `customer_address`,
-`sms_consent` (bool), `job_count` (int), `last_job` (ISO string or empty string).
-Layout: two-column desktop (≤768px stacked).
-- Left col (300px): "New Customer" card with inline add form
-  - Fields: Full Name, Phone (required), Address, Notes (textarea)
-  - JS fetch POST to `/api/customers/create`, no `<form>` action attribute
-  - On success: green "Customer saved" message, reload after 1.2s
-  - On error: red inline error, re-enable submit button
-- Right col (flex 1): "Customers" card
-  - Search input — live JS filter on `data-search` attribute
-  - `.data-table`: Name, Phone, Address, Jobs (badge-blue if > 0), Last Job,
-    SMS dot (green=#639922 if consent, grey=#d1d5db if not), arrow →
-  - Each `<tr>` has `onclick="window.location='/dashboard/customers/{{ c.id }}'"` 
-  - Empty state if no customers. "No results" div when search yields nothing.
-- Metrics strip above: Total Customers, SMS Opted In, With Jobs
-
-**customer_detail.html** — context: `customer`, `jobs`, `proposals`, `invoices`,
-`fmt_date`, `fmt_phone`, `fmt_short_date`
-Layout:
-- Back link: `← Customers` → `/dashboard/customers/`
-- Header card: customer name (large), phone formatted, address, SMS consent dot + label,
-  date added via `fmt_date(customer.created_at)`
-- Three cards: Jobs list (rows link to `/dashboard/job/{{ j.id }}`),
-  Proposals list (→ `/dashboard/proposal/{{ p.id }}`),
-  Invoices list (→ `/dashboard/invoice/{{ inv.id }}`)
-- Each list uses `.data-table` with status badge and short date
-- Empty states on all three lists
-
-**job_detail.html** — context: `job`, `customer`, `proposals`, `invoices`, `activity`,
-`fmt_date`, `fmt_phone`, `fmt_short_date`, `fmt_activity_time`
-Layout:
-- Back link: `← Control Board` → `/dashboard/`
-- Status banner: colored by status (scheduled=blue, in_progress=amber,
-  completed=green, cancelled=red)
-- `.grid-2`: left col (Job Details card + Customer card), right col (Proposals + Invoices)
-- Job Details: job_type, scheduled_date via fmt_date, address from job.job_description
-  or customer.customer_address, job_notes
-- Customer card: name, phone, address, SMS dot. "View →" links to `/dashboard/customers/{{ customer.id }}`
-- Proposals: rows link to `/dashboard/proposal/{{ p.id }}`, show amount/date/badge
-- Invoices: rows link to `/dashboard/invoice/{{ inv.id }}`, show amount/date/badge
-- Activity card below grid: `activity[:10]`, agent name, time, output_summary
-
-**estimates.html** — context: `proposals`, `cust_map`, `proposals_sent`,
-`proposals_won`, `proposals_outstanding`, `win_rate`, `fmt_short_date`
-Layout:
-- `{% block page_title %}Estimates{% endblock %}`
-- Metrics strip: Win Rate (`{{ win_rate }}%`), Sent, Accepted, Open
-- Card "Estimates — Last 90 Days"
-- `.data-table`: Customer name (from `cust_map[p.customer_id].customer_name` or `—`),
-  Date (`fmt_short_date(p.created_at)`), Amount (`${{ "%.0f"|format(p.amount_estimate|float) }}`),
-  Status badge. Each row `onclick` → `/dashboard/proposal/{{ p.id }}`
-- Empty state: "No estimates in the last 90 days."
-
-**invoices.html** — context: `invoices`, `cust_map`, `total_billed`, `total_paid`,
-`total_outstanding`, `fmt_short_date`
-Layout:
-- `{% block page_title %}Invoices{% endblock %}`
-- Metrics strip: Billed, Collected, Outstanding (amber if > 0), Count
-- Card header: "Invoices — Last 90 Days" + Export CSV button → `/api/invoices/export-csv`
-- `.data-table`: Customer name, Date, Amount, Status badge. Each row → `/dashboard/invoice/{{ inv.id }}`
-- Age pill JS: if `inv.status != 'paid'` and age > 30 days, show `Xd` badge in amber
-- Empty state: "No invoices in the last 90 days."
-
-**payments.html** — context: `payments`, `cust_map`, `total_collected`,
-`payment_count`, `avg_payment`, `fmt_short_date`, `fmt_date`
-Layout:
-- `{% block page_title %}Payments{% endblock %}`
-- Metrics strip: Total Collected (`${{ "%.2f"|format(total_collected) }}`),
-  Count, Average (`${{ "%.2f"|format(avg_payment) }}`)
-- Card "Payments Received — Last 90 Days"
-- `.data-table`: Customer name, Amount (green), Paid Date (`fmt_short_date(p.paid_at)`),
-  green paid badge. Each row → `/dashboard/invoice/{{ p.id }}`
-- Empty state: "No payments recorded in the last 90 days."
-
-After creating all 6 templates, commit with message:
-`feat: add 6 missing dashboard templates — fixes TemplateNotFound on all new tabs (7.9)`
-
-### Prompt #3 — Wire Step 8b in invoice_agent.py (7.10 Gap 2)
-See the full code block in section 7.10 above. Insert it in
-`execution/invoice_agent.py` immediately after the `edit_url` block, before Step 9.
-Commit: `fix: wire Square payment link to invoice_links in invoice_agent Step 8b (7.10)`
-
-### Prompt #4 — Remove debug prints from auth_routes.py (7.11)
-Remove every line containing `print(f"[{_ts()}] DEBUG` from the login POST handler.
-Keep all INFO/WARN/ERROR prints. Commit: `fix: remove debug prints from auth login handler (7.11)`
-
-### Prompt #5 — Run SQL migration (manual)
-Open Supabase dashboard → SQL editor → paste and run the SQL from section 7.10 Gap 1.
-This is a manual step, not a code change.
+### Square Production Go-Live Checklist
+Code is complete. Remaining steps are configuration:
+1. Run `sql/square_payment_writeback.sql` in Supabase
+2. Set Railway env vars: `SQUARE_ACCESS_TOKEN`, `SQUARE_ENVIRONMENT=production`,
+   `SQUARE_LOCATION_ID`, `SQUARE_WEBHOOK_SIGNATURE_KEY`, `SQUARE_WEBHOOK_URL`
+3. Register webhook in Square Dashboard: `payment.completed` → `/webhooks/square`
+4. Test with sandbox payment first
 
 ---
 
@@ -315,7 +156,7 @@ Backend:     Python 3.12.9 / Flask 3.1.3
 Database:    Supabase (PostgreSQL)
 SMS:         Telnyx (10DLC pending — all outbound SMS blocked)
 AI:          Anthropic Claude — Haiku for classification, Sonnet for generation
-Payments:    Square 44.0.1 (sandbox — not yet wired to production)
+Payments:    Square 44.0.1 (sandbox — code complete, needs config)
 Deploy:      Railway — auto-deploy on push to main
 Auth:        Phone + 4-digit PIN → Flask session (30-day lifetime)
 ```
@@ -335,71 +176,87 @@ FLASK_ENV:      development (Railway — allows ?client_id= dev bypass)
 
 ### URL Map
 ```
-/login                       — Phone + PIN auth
-/logout                      — Clear session
-/dashboard/                  — Control Board
-/dashboard/office.html       — Office summary (keep — do not delete)
-/dashboard/estimates/        — Estimates/proposals list
-/dashboard/invoices/         — Invoices list
-/dashboard/payments/         — Paid invoices list
-/dashboard/customers/        — Customer list (broken — missing template)
-/dashboard/customers/new     — Add Customer standalone form (keep as fallback)
-/dashboard/customers/<id>    — Customer detail (missing route + template)
-/dashboard/job/<id>          — Job detail (missing template)
-/dashboard/proposal/<id>     — Proposal document view ✅
-/dashboard/invoice/<id>      — Invoice document view ✅
-/dashboard/command.html      — Command Center ✅
-/dashboard/new-job           — New Job form ✅
-/dashboard/onboarding.html   — Client onboarding admin ✅
-/api/customers/create        — POST: create customer ✅
-/api/jobs/create             — POST: create job ✅
-/api/invoices/export-csv     — GET: QuickBooks CSV export ✅
-/api/command                 — POST: Command Center agent dispatch ✅
-/webhooks/telnyx             — SMS webhook ✅
-/webhooks/square             — Square payment webhook ✅
-/book                        — Public booking form (no auth) ✅
+/login                        — Phone + PIN auth
+/logout                       — Clear session
+/dashboard/                   — Control Board ✅
+/dashboard/office.html        — Office summary (keep — do not delete) ✅
+/dashboard/estimates/         — Estimates list ✅
+/dashboard/estimates/new      — New Estimate form ✅
+/dashboard/invoices/          — Invoices list ✅
+/dashboard/invoices/new       — New Invoice form ✅
+/dashboard/payments/          — Paid invoices list ✅
+/dashboard/customers/         — Customer list + search ✅
+/dashboard/customers/new      — Add Customer standalone ✅
+/dashboard/customers/<id>     — Customer detail ✅
+/dashboard/job/<id>           — Job detail ✅
+/dashboard/proposal/<id>      — Proposal document view ✅
+/dashboard/invoice/<id>       — Invoice document view ✅
+/dashboard/command.html       — Command Center ✅
+/dashboard/new-job            — New Job form ✅
+/dashboard/onboarding.html    — Client onboarding admin ✅
+/dashboard/purchases/         — Coming soon (stub)
+/dashboard/receipts/          — Coming soon (stub)
+/dashboard/accounting/        — Coming soon (stub)
+/api/customers/create         — POST: create customer ✅
+/api/jobs/create              — POST: create job ✅
+/api/invoices/create          — POST: create invoice ✅
+/api/estimates/create         — POST: create estimate ✅
+/api/invoices/export-csv      — GET: QuickBooks CSV export ✅
+/api/command                  — POST: Command Center dispatch ✅
+/webhooks/telnyx              — SMS webhook ✅
+/webhooks/square              — Square payment webhook ✅
+/book                         — Public booking form (no auth) ✅
 ```
 
 ### File Map
 ```
 execution/sms_receive.py         — Flask app entry point, all blueprint registration
-execution/invoice_agent.py       — Invoice generation (needs Step 8b for Square)
-execution/token_generator.py     — Token generation + mark_invoice_paid() (needs fallback)
-execution/square_agent.py        — Square Payment Links API
-routes/dashboard_routes.py       — All dashboard page routes
-routes/auth_routes.py            — /login, /logout, /set-pin (needs debug print cleanup)
+execution/proposal_agent.py      — Proposal generation (structured JSON output, Haiku summarization)
+execution/invoice_agent.py       — Invoice generation + Square Step 8b
+execution/context_loader.py      — Stateful context assembly (NEW — wired into command_routes)
+execution/token_generator.py     — Token generation + mark_invoice_paid() (two-pass fallback)
+execution/square_agent.py        — Square Payment Links API (v44 import fixed)
+execution/job_cost_agent.py      — Job cost tracking (defensive — warns if table missing)
+execution/db_clarification.py    — Clarification DB ops + cleanup_expired()
+execution/sms_router.py          — SMS routing (stale clarification detection added)
+routes/dashboard_routes.py       — All dashboard page routes (17 templates served)
+routes/auth_routes.py            — /login, /logout, /set-pin (debug prints removed ✅)
 routes/invoice_routes.py         — Square webhook handler
-routes/command_routes.py         — /api/command direct agent dispatch
-templates/base.html              — Shared sidebar + layout (navy/amber) — read before any template work
+routes/command_routes.py         — /api/command — context loader + fuzzy matching + soft failure
+templates/base.html              — Shared sidebar + layout (navy/amber)
 templates/dashboard/
-  control.html                   — Control Board (job links broken)
-  office.html                    — Office summary (keep, do not delete)
-  command.html                   — Command Center chat ✅
-  customers.html                 — MISSING — needs to be created
-  customer_detail.html           — MISSING — needs to be created
-  estimates.html                 — MISSING — needs to be created
-  invoices.html                  — MISSING — needs to be created
-  payments.html                  — MISSING — needs to be created
-  job_detail.html                — MISSING — needs to be created
-  proposal_view.html             — Proposal document ✅
-  invoice_view.html              — Invoice document ✅
+  control.html                   — Control Board ✅
+  office.html                    — Office summary ✅
+  command.html                   — Command Center ✅
+  customers.html                 — Customer list + search + metrics ✅
+  customer_detail.html           — Customer profile ✅
+  job_detail.html                — Job detail ✅
+  estimates.html                 — Estimates list + metrics ✅
+  invoices.html                  — Invoices list + CSV export ✅
+  payments.html                  — Paid invoices ✅
+  new_estimate.html              — New Estimate form ✅
+  new_invoice.html               — New Invoice form ✅
   new_job.html                   — New Job form ✅
   new_customer.html              — Add Customer standalone ✅
+  proposal_view.html             — Proposal document ✅
+  invoice_view.html              — Invoice document ✅
   onboarding.html                — Client onboarding ✅
   coming_soon.html               — Stub for unbuilt sections ✅
-sql/square_payment_writeback.sql — Schema migration for Square columns (run in Supabase)
-.python-version                  — Pins Python 3.12.9 for Railway/mise — DO NOT DELETE
-requirements.txt                 — 66 pinned packages — regenerate with pip freeze if adding deps
+directives/clients/personality.md — Holt Sewer & Drain voice, pricing, document rules
+directives/agents/proposal_agent.md — Proposal agent architecture + line item rules
+sql/square_payment_writeback.sql — Square schema migration (run in Supabase)
+.python-version                  — Pins Python 3.12.9 — DO NOT DELETE
+requirements.txt                 — 66 pinned packages
 CLAUDE.md                        — Master architecture doc — read every session
 ```
 
 ### Known Issues — Carry-Forward
 1. **10DLC not approved** — outbound SMS blocked. Agents run, SMS fails silently.
-2. **Square in sandbox** — PAY NOW works but hits sandbox. Full go-live checklist in 7.10.
-3. **Customer SMS opt-in** — all 25 imported test customers have `sms_consent=false`.
-   Bulk update needed before SMS goes live.
+2. **Square in sandbox** — code complete, needs config + SQL migration to go live.
+3. **Customer SMS opt-in** — all 25 test customers have `sms_consent=false`.
 4. **Onboarding wizard** — built but not tested end-to-end in production.
 5. **Pricing benchmarks** — `sql/pricing_benchmarks.sql` written, may not be run yet.
 6. **Purchases / Bills / Vendors** — stub routes exist, no Supabase schema designed.
 7. **Receipts** — stub route exists, depends on Purchases schema.
 8. **Accounting / Transactions** — stub route exists, depends on Purchases schema.
+9. **job_costs table** — may not exist in Supabase. Run `directives/supabase_migration_001.sql`.
