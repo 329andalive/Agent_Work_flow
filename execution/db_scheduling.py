@@ -55,48 +55,42 @@ def get_todays_jobs(client_id: str, target_date: str = None) -> list:
 
     try:
         sb = get_supabase()
-        # Query all jobs for this date. We cannot use .neq("dispatch_status", "cancelled")
-        # because PostgreSQL treats NULL != 'cancelled' as NULL (not TRUE), which
-        # would exclude jobs created without dispatch_status set. Instead, fetch all
-        # and filter in Python.
-        result = (
-            sb.table("jobs")
-            .select(
-                "id, job_type, job_description, status, scheduled_date, "
-                "estimated_amount, customer_id, raw_input, job_notes, "
-                "geo_lat, geo_lng, zone_cluster, requested_time, "
-                "dispatch_status, assigned_worker_id, wave_id, sort_order"
+
+        # Try full query with dispatch columns first
+        try:
+            result = (
+                sb.table("jobs")
+                .select(
+                    "id, job_type, job_description, status, scheduled_date, "
+                    "estimated_amount, customer_id, raw_input, job_notes, "
+                    "geo_lat, geo_lng, zone_cluster, requested_time, "
+                    "dispatch_status, assigned_worker_id, wave_id, sort_order"
+                )
+                .eq("client_id", client_id)
+                .eq("scheduled_date", target_date)
+                .order("created_at")
+                .execute()
             )
-            .eq("client_id", client_id)
-            .eq("scheduled_date", target_date)
-            .order("zone_cluster")
-            .order("requested_time", nullsfirst=False)
-            .execute()
-        )
-        # Filter out cancelled — keep NULL (unset), unassigned, assigned, etc.
+        except Exception:
+            # Dispatch columns don't exist yet — use basic query
+            print(f"[{timestamp()}] WARN db_scheduling: Dispatch columns not on jobs table yet — basic query")
+            result = (
+                sb.table("jobs")
+                .select("id, job_type, job_description, status, scheduled_date, "
+                        "estimated_amount, customer_id, raw_input, job_notes")
+                .eq("client_id", client_id)
+                .eq("scheduled_date", target_date)
+                .order("created_at")
+                .execute()
+            )
+
+        # Filter out dispatch-cancelled — keep NULL, unassigned, assigned, etc.
         all_jobs = result.data or []
         jobs = [j for j in all_jobs if j.get("dispatch_status") != "cancelled"]
-        jobs = result.data or []
         print(f"[{timestamp()}] INFO db_scheduling: get_todays_jobs({target_date}) → {len(jobs)} jobs")
         return jobs
+
     except Exception as e:
-        # If dispatch columns don't exist yet, fall back to basic query
-        if "column" in str(e).lower() and ("dispatch_status" in str(e).lower() or "zone_cluster" in str(e).lower()):
-            print(f"[{timestamp()}] WARN db_scheduling: Dispatch columns not yet added to jobs table — falling back to basic query")
-            try:
-                sb = get_supabase()
-                result = (
-                    sb.table("jobs")
-                    .select("id, job_type, job_description, status, scheduled_date, estimated_amount, customer_id")
-                    .eq("client_id", client_id)
-                    .eq("scheduled_date", target_date)
-                    .order("created_at")
-                    .execute()
-                )
-                return result.data or []
-            except Exception as e2:
-                print(f"[{timestamp()}] ERROR db_scheduling: fallback query also failed — {e2}")
-                return []
         print(f"[{timestamp()}] ERROR db_scheduling: get_todays_jobs failed — {e}")
         return []
 
