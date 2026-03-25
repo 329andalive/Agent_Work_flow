@@ -456,6 +456,164 @@ def handle_optin_command(client: dict, body: str, from_number: str, to_number: s
         print(f"[{timestamp()}] ERROR sms_router: handle_optin_command failed — {e}")
 
 
+def _handle_worker_status_reply(
+    client, client_id, from_number, to_number,
+    command, job_num, sms_data, employee,
+):
+    """
+    Handle worker SMS replies: DONE/BACK/PARTS/NOSHOW/SCOPE [job#].
+    Looks up today's route assignments for this worker, applies the status
+    update, replies with confirmation, and logs to agent_activity.
+    """
+    from datetime import date as date_cls
+    from execution.sms_send import send_sms
+
+    worker_name = employee.get("name", "Worker")
+    today_str = date_cls.today().isoformat()
+    client_phone = client.get("phone", to_number)
+
+    # Map commands to scheduled_jobs status values
+    STATUS_MAP = {
+        "DONE": "completed",
+        "BACK": "carry_forward",
+        "PARTS": "parts_pending",
+        "NOSHOW": "no_show",
+        "SCOPE": "scope_review",
+    }
+    new_status = STATUS_MAP.get(command, command.lower())
+
+    try:
+        from execution.db_connection import get_client as get_supabase
+        sb = get_supabase()
+
+        # Get today's assignments for this worker
+        # Find worker_id from employees table
+        worker_result = sb.table("employees").select("id").eq(
+            "client_id", client_id
+        ).eq("phone", from_number).eq("active", True).limit(1).execute()
+
+        # Also check workers table
+        if not worker_result.data:
+            worker_result = sb.table("workers").select("id").eq(
+                "client_phone", client_phone
+            ).eq("phone", from_number).eq("active", True).limit(1).execute()
+
+        if not worker_result.data:
+            send_sms(to_number=from_number, message_body="I don't have you listed as a worker. Contact your dispatcher.",
+                     from_number=client_phone, message_type="route")
+            return
+
+        worker_id = worker_result.data[0]["id"]
+
+        # Get today's route assignments for this worker
+        assignments = sb.table("route_assignments").select(
+            "id, job_id, sort_order"
+        ).eq("worker_id", worker_id).order("sort_order").execute()
+
+        if not assignments.data:
+            send_sms(to_number=from_number, message_body="No jobs assigned to you today.",
+                     from_number=client_phone, message_type="route")
+            return
+
+        assigned_jobs = assignments.data
+
+        # Resolve which job to update
+        target_assignment = None
+        if job_num is not None:
+            # Job number is 1-indexed (matches the route page display)
+            idx = job_num - 1
+            if 0 <= idx < len(assigned_jobs):
+                target_assignment = assigned_jobs[idx]
+            else:
+                send_sms(to_number=from_number,
+                         message_body=f"Job #{job_num} not found. You have {len(assigned_jobs)} jobs today. Reply {command} 1-{len(assigned_jobs)}.",
+                         from_number=client_phone, message_type="route")
+                return
+        elif len(assigned_jobs) == 1:
+            target_assignment = assigned_jobs[0]
+        else:
+            send_sms(to_number=from_number,
+                     message_body=f"Which job? You have {len(assigned_jobs)} today. Reply {command} 1-{len(assigned_jobs)}.",
+                     from_number=client_phone, message_type="route")
+            return
+
+        job_id = target_assignment["job_id"]
+
+        # Get job details for the confirmation message
+        job_name = "Job"
+        customer_phone = None
+        try:
+            job_row = sb.table("scheduled_jobs").select(
+                "customer_name, customer_phone, job_type"
+            ).eq("id", job_id).execute()
+            if job_row.data:
+                job_name = job_row.data[0].get("customer_name") or job_row.data[0].get("job_type") or "Job"
+                customer_phone = job_row.data[0].get("customer_phone")
+        except Exception:
+            pass
+
+        # Update job status
+        from execution.db_scheduling import update_job_status
+        incomplete_reason = None
+        if command == "BACK":
+            incomplete_reason = f"carry_forward_from={today_str}"
+        elif command in ("PARTS", "NOSHOW", "SCOPE"):
+            incomplete_reason = f"{command.lower()} reported by {worker_name}"
+
+        update_job_status(job_id, new_status, incomplete_reason=incomplete_reason)
+
+        # NOSHOW: queue follow-up SMS to customer (if consent)
+        if command == "NOSHOW" and customer_phone:
+            try:
+                cust = sb.table("customers").select("sms_consent").eq(
+                    "customer_phone", customer_phone
+                ).eq("client_id", client_id).limit(1).execute()
+                if cust.data and cust.data[0].get("sms_consent"):
+                    biz_name = client.get("business_name", "your service provider")
+                    send_sms(
+                        to_number=customer_phone,
+                        message_body=f"Hi, {biz_name} arrived for your appointment but no one was available. Please call to reschedule.",
+                        from_number=client_phone,
+                        message_type="no_show_followup",
+                    )
+                    print(f"[{timestamp()}] INFO sms_router: No-show follow-up SMS sent to {customer_phone}")
+                else:
+                    print(f"[{timestamp()}] INFO sms_router: No-show follow-up skipped — no SMS consent")
+            except Exception as e:
+                print(f"[{timestamp()}] WARN sms_router: No-show follow-up failed — {e}")
+
+        # Reply to worker with confirmation
+        status_label = new_status.replace("_", " ")
+        send_sms(to_number=from_number,
+                 message_body=f"Got it. {job_name} marked {status_label}.",
+                 from_number=client_phone, message_type="route")
+
+        print(f"[{timestamp()}] INFO sms_router: Worker {worker_name} → {command} job {job_id[:8]} → {new_status}")
+
+        # Log to agent_activity
+        try:
+            from execution.db_agent_activity import log_activity
+            log_activity(
+                client_phone=client_phone,
+                agent_name="worker_status_reply",
+                action_taken=f"{command.lower()}_job",
+                input_summary=f"{worker_name}: {command} {job_num or ''}".strip(),
+                output_summary=f"{job_name} → {status_label}",
+                sms_sent=True,
+            )
+        except Exception:
+            pass
+
+    except Exception as e:
+        print(f"[{timestamp()}] ERROR sms_router: Worker status reply failed — {e}")
+        try:
+            send_sms(to_number=from_number,
+                     message_body="Something went wrong processing your update. Try again or call dispatch.",
+                     from_number=client_phone, message_type="route")
+        except Exception:
+            pass
+
+
 def route_message(sms_data: dict) -> str:
     """
     Main entry point. Resolves client + employee, priority-detects intent,
@@ -653,7 +811,11 @@ def route_message(sms_data: dict) -> str:
             dispatch("scheduling_agent", sms_data, employee=employee, role=role)
             return "scheduling_agent"
 
-        if body_upper.startswith("DONE") or body_upper.startswith("COMPLETE"):
+        # DONE with a job number (e.g. "DONE 3") → worker status reply (handled in step 6.5 below)
+        # DONE without a number + long text → invoice_agent
+        import re as _re
+        _worker_reply_match = _re.match(r'^(DONE|BACK|PARTS|NOSHOW|SCOPE)\s*(\d+)?$', body.strip(), _re.IGNORECASE)
+        if not _worker_reply_match and (body_upper.startswith("DONE") or body_upper.startswith("COMPLETE")):
             print(f"[{timestamp()}] INFO sms_router: Explicit trigger → invoice_agent")
             dispatch("invoice_agent", sms_data, employee=employee, role=role)
             return "invoice_agent"
@@ -685,6 +847,21 @@ def route_message(sms_data: dict) -> str:
             print(f"[{timestamp()}] INFO sms_router: Keyword match → {agent} (body: '{body[:60]}')")
             dispatch(agent, sms_data, employee=employee, role=role)
             return agent
+
+        # ------------------------------------------------------------------
+        # Step 6.5: Worker SMS reply — DONE/BACK/PARTS/NOSHOW/SCOPE + job #
+        # Pattern: ^(DONE|BACK|PARTS|NOSHOW|SCOPE)\s*(\d+)?$
+        # Only fires for known workers with open route assignments today.
+        # ------------------------------------------------------------------
+        _wr_match = _re.match(r'^(DONE|BACK|PARTS|NOSHOW|SCOPE)\s*(\d+)?$', body.strip(), _re.IGNORECASE)
+        if _wr_match and employee and employee.get("name") != "Unknown":
+            _handle_worker_status_reply(
+                client=client, client_id=client_id, from_number=from_number,
+                to_number=to_number, command=_wr_match.group(1).upper(),
+                job_num=int(_wr_match.group(2)) if _wr_match.group(2) else None,
+                sms_data=sms_data, employee=employee,
+            )
+            return "worker_status_reply"
 
         # ------------------------------------------------------------------
         # Step 8: Everything else → clarification_agent
