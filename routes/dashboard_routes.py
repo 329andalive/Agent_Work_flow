@@ -1636,6 +1636,97 @@ def schedule_page():
 
 # NOTE: /api/slots/generate is now in booking_routes.py (idempotent version)
 
+
+# ---------------------------------------------------------------------------
+# GET /dashboard/admin — Super admin heartbeat view
+# ---------------------------------------------------------------------------
+
+@dashboard_bp.route("/dashboard/admin")
+def admin_heartbeat():
+    if not session.get("is_super_admin"):
+        abort(403)
+
+    sb = _get_supabase()
+    now_iso = datetime.now(timezone.utc)
+
+    # All clients
+    clients_list = []
+    try:
+        result = sb.table("clients").select(
+            "id, business_name, owner_name, phone, active"
+        ).eq("active", True).order("business_name").execute()
+        clients_list = result.data or []
+    except Exception as e:
+        print(f"[{_ts()}] ERROR dashboard_routes: admin clients query — {e}")
+
+    # Per-client stats
+    for c in clients_list:
+        cid = c["id"]
+        cphone = c.get("phone", "")
+
+        # Last 5 agent activity
+        try:
+            act = sb.table("agent_activity").select(
+                "agent_name, action_taken, output_summary, created_at"
+            ).eq("client_phone", cphone).order("created_at", desc=True).limit(5).execute()
+            c["recent_activity"] = act.data or []
+            c["last_activity"] = act.data[0].get("created_at", "") if act.data else ""
+        except Exception:
+            c["recent_activity"] = []
+            c["last_activity"] = ""
+
+        # Open jobs count
+        try:
+            jobs = sb.table("jobs").select("id").eq("client_id", cid).not_.in_(
+                "status", ["completed", "cancelled", "invoiced", "paid"]
+            ).execute()
+            c["open_jobs"] = len(jobs.data or [])
+        except Exception:
+            c["open_jobs"] = 0
+
+        # Needs attention count
+        try:
+            na = sb.table("needs_attention").select("id").eq(
+                "client_phone", cphone
+            ).eq("status", "open").execute()
+            c["needs_attention"] = len(na.data or [])
+        except Exception:
+            c["needs_attention"] = 0
+
+    # Board counts by type
+    board_counts = {}
+    try:
+        boards = sb.table("class_boards").select("board_type").execute()
+        for b in (boards.data or []):
+            bt = b.get("board_type", "unknown")
+            board_counts[bt] = board_counts.get(bt, 0) + 1
+    except Exception:
+        pass
+
+    # SMS sent today
+    sms_today = 0
+    try:
+        today_start = now_iso.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+        sms = sb.table("sms_message_log").select("id").gte("sent_at", today_start).execute()
+        sms_today = len(sms.data or [])
+    except Exception:
+        pass
+
+    ctx = {
+        "active_page": "admin",
+        "business_name": "Bolts11 Admin",
+        "owner_name": session.get("owner_name", ""),
+        "current_date": datetime.now().strftime("%a %b %d, %Y"),
+        "today": date.today().strftime("%A, %B %-d"),
+        "clients": clients_list,
+        "board_counts": board_counts,
+        "sms_today": sms_today,
+        "total_clients": len(clients_list),
+        "total_boards": sum(board_counts.values()),
+        "fmt_activity_time": fmt_activity_time,
+    }
+    return render_template("dashboard/admin.html", **ctx)
+
 # ---------------------------------------------------------------------------
 # Stub routes — coming soon pages
 # ---------------------------------------------------------------------------

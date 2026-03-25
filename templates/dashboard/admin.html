@@ -1,0 +1,192 @@
+{% extends "base.html" %}
+
+{% block title %}Admin — Heartbeat{% endblock %}
+{% block page_title %}Admin Heartbeat{% endblock %}
+{% block topbar_meta %}{{ today }}{% endblock %}
+
+{% block extra_css %}
+.admin-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.admin-metric {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px 16px;
+}
+.admin-metric__label {
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-tertiary);
+  margin-bottom: 4px;
+}
+.admin-metric__value {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1;
+}
+.admin-metric__sub {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  margin-top: 3px;
+}
+
+.client-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 14px;
+}
+.client-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  transition: box-shadow 0.12s;
+  text-decoration: none;
+  color: inherit;
+  display: block;
+}
+.client-card:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+.client-card__header {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.client-card__name {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 16px;
+  font-weight: 700;
+}
+.client-card__badges { display: flex; gap: 4px; }
+.na-badge {
+  font-family: 'DM Mono', monospace;
+  font-size: 9px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: #FCEBEB;
+  color: #A32D2D;
+}
+.client-card__body { padding: 12px 16px; }
+.client-card__row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--text-secondary);
+  padding: 3px 0;
+}
+.client-card__row-label {
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.client-card__activity {
+  padding: 8px 16px;
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+.activity-line {
+  padding: 2px 0;
+  display: flex;
+  justify-content: space-between;
+}
+.activity-line__agent {
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+}
+.activity-line__time {
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  color: var(--text-tertiary);
+}
+.board-tag {
+  font-family: 'DM Mono', monospace;
+  font-size: 9px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: #dbeafe;
+  color: #1d4ed8;
+  margin-right: 3px;
+}
+{% endblock %}
+
+{% block content %}
+<!-- Metrics -->
+<div class="admin-metrics">
+  <div class="admin-metric">
+    <div class="admin-metric__label">Clients</div>
+    <div class="admin-metric__value">{{ total_clients }}</div>
+    <div class="admin-metric__sub">active</div>
+  </div>
+  <div class="admin-metric">
+    <div class="admin-metric__label">Boards</div>
+    <div class="admin-metric__value">{{ total_boards }}</div>
+    <div class="admin-metric__sub">
+      {% for bt, count in board_counts.items() %}
+      {{ count }} {{ bt }}{% if not loop.last %}, {% endif %}
+      {% endfor %}
+    </div>
+  </div>
+  <div class="admin-metric">
+    <div class="admin-metric__label">SMS Today</div>
+    <div class="admin-metric__value">{{ sms_today }}</div>
+    <div class="admin-metric__sub">outbound</div>
+  </div>
+</div>
+
+<!-- Client cards -->
+<div class="client-grid">
+  {% for c in clients %}
+  <a href="/dashboard/?client_id={{ c.id }}" class="client-card">
+    <div class="client-card__header">
+      <span class="client-card__name">{{ c.business_name or 'Client' }}</span>
+      <div class="client-card__badges">
+        {% if c.needs_attention > 0 %}
+        <span class="na-badge">{{ c.needs_attention }} alert{{ 's' if c.needs_attention != 1 else '' }}</span>
+        {% endif %}
+      </div>
+    </div>
+    <div class="client-card__body">
+      <div class="client-card__row">
+        <span class="client-card__row-label">Open Jobs</span>
+        <span>{{ c.open_jobs }}</span>
+      </div>
+      <div class="client-card__row">
+        <span class="client-card__row-label">Last Activity</span>
+        <span>{{ fmt_activity_time(c.last_activity) if c.last_activity else '—' }}</span>
+      </div>
+      <div class="client-card__row">
+        <span class="client-card__row-label">Owner</span>
+        <span>{{ c.owner_name or '—' }}</span>
+      </div>
+    </div>
+    {% if c.recent_activity %}
+    <div class="client-card__activity">
+      {% for a in c.recent_activity[:3] %}
+      <div class="activity-line">
+        <span class="activity-line__agent">{{ a.agent_name }}</span>
+        <span class="activity-line__time">{{ fmt_activity_time(a.created_at) }}</span>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </a>
+  {% endfor %}
+</div>
+
+{% if not clients %}
+<div class="empty-state">No active clients found.</div>
+{% endif %}
+{% endblock %}

@@ -81,7 +81,7 @@ def login_submit():
     try:
         sb = _get_supabase()
         result = sb.table("clients").select(
-            "id, pin_hash, business_name, active, owner_name, phone"
+            "id, pin_hash, business_name, active, owner_name, phone, is_super_admin"
         ).eq("phone", phone).execute()
 
         if not result.data:
@@ -112,9 +112,11 @@ def login_submit():
         session["client_id"] = client["id"]
         session["business_name"] = client.get("business_name", "")
         session["owner_name"] = client.get("owner_name", "")
+        if client.get("is_super_admin"):
+            session["is_super_admin"] = True
         session.permanent = True
 
-        print(f"[{_ts()}] INFO auth: Login success — {client.get('business_name')} ({phone})")
+        print(f"[{_ts()}] INFO auth: Login success — {client.get('business_name')} ({phone}){' [SUPER ADMIN]' if client.get('is_super_admin') else ''}")
         return redirect("/dashboard/")
 
     except Exception as e:
