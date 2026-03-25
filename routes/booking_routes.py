@@ -685,3 +685,149 @@ def run_scheduled_sms():
 
     print(f"[{timestamp()}] INFO admin: run-scheduled-sms job={job} results={results}")
     return jsonify({"success": True, "results": results})
+
+
+# ---------------------------------------------------------------------------
+# POST /api/slots/generate — auto-create appointment slots for a day
+# ---------------------------------------------------------------------------
+
+@booking_bp.route("/api/slots/generate", methods=["POST"])
+def generate_slots():
+    """
+    Auto-create time slots for a full day from a time range.
+
+    Accepts JSON:
+    {
+        "slot_date": "YYYY-MM-DD",
+        "start_time": "HH:MM" (default "08:00"),
+        "end_time": "HH:MM" (default "16:00"),
+        "duration_minutes": 25 (default),
+        "title_prefix": "Appointment" (default),
+        "client_phone": "+1..." (required),
+        "board_id": "uuid" (optional)
+    }
+
+    Idempotent: skips creating if a slot already exists for this
+    client_phone + slot_date + start_time.
+
+    Example: 8:00–16:00 at 25 min = 19 slots.
+
+    Returns: {"success": true, "created": N, "skipped": N, "slots": [...]}
+    """
+    data = request.get_json(silent=True) or {}
+
+    slot_date = data.get("slot_date")
+    start_time = data.get("start_time", "08:00")
+    end_time = data.get("end_time", "16:00")
+    duration = int(data.get("duration_minutes") or data.get("duration") or 25)
+    title_prefix = data.get("title_prefix") or data.get("title") or "Appointment"
+    client_phone = data.get("client_phone", "")
+    board_id = data.get("board_id")
+
+    if not slot_date:
+        return jsonify({"success": False, "error": "slot_date is required"}), 400
+    if not client_phone:
+        # Try to resolve from session
+        from flask import session as flask_session
+        cid = flask_session.get("client_id")
+        if cid:
+            try:
+                sb = _get_supabase()
+                cr = sb.table("clients").select("phone").eq("id", cid).execute()
+                if cr.data:
+                    client_phone = cr.data[0].get("phone", "")
+            except Exception:
+                pass
+        if not client_phone:
+            return jsonify({"success": False, "error": "client_phone is required"}), 400
+
+    if duration < 5 or duration > 480:
+        return jsonify({"success": False, "error": "duration_minutes must be 5–480"}), 400
+
+    sb = _get_supabase()
+
+    # Parse start/end into minutes from midnight
+    try:
+        start_h, start_m = map(int, start_time.split(":"))
+        end_h, end_m = map(int, end_time.split(":"))
+        start_minutes = start_h * 60 + start_m
+        end_minutes = end_h * 60 + end_m
+    except (ValueError, TypeError):
+        return jsonify({"success": False, "error": "Invalid time format — use HH:MM"}), 400
+
+    if start_minutes >= end_minutes:
+        return jsonify({"success": False, "error": "start_time must be before end_time"}), 400
+
+    # Fetch existing slots for this date to check for duplicates
+    existing_times = set()
+    try:
+        existing = sb.table("class_slots").select("start_time").eq(
+            "client_phone", client_phone
+        ).eq("slot_date", slot_date).execute()
+        for row in (existing.data or []):
+            existing_times.add(row.get("start_time", ""))
+    except Exception as e:
+        print(f"[{timestamp()}] WARN booking: existing slots check failed — {e}")
+
+    # Walk from start to end, creating slots
+    created = 0
+    skipped = 0
+    slots = []
+    current = start_minutes
+
+    while current + duration <= end_minutes:
+        h = current // 60
+        m = current % 60
+        slot_start = f"{h:02d}:{m:02d}"
+        next_m = current + duration
+        nh = next_m // 60
+        nm = next_m % 60
+        slot_end = f"{nh:02d}:{nm:02d}"
+
+        # Idempotent: skip if already exists
+        if slot_start in existing_times:
+            skipped += 1
+            current += duration
+            continue
+
+        title = f"{title_prefix} — {slot_start}"
+        row = {
+            "client_phone": client_phone,
+            "title": title,
+            "slot_date": slot_date,
+            "start_time": slot_start,
+            "end_time": slot_end,
+            "capacity": 1,
+            "enrolled_count": 0,
+            "status": "open",
+        }
+        if board_id:
+            row["board_id"] = board_id
+
+        try:
+            result = sb.table("class_slots").insert(row).execute()
+            if result.data:
+                slots.append({
+                    "id": result.data[0].get("id"),
+                    "start_time": slot_start,
+                    "end_time": slot_end,
+                    "title": title,
+                })
+                created += 1
+        except Exception as e:
+            print(f"[{timestamp()}] WARN booking: slot insert failed for {slot_start} — {e}")
+            skipped += 1
+
+        current += duration
+
+    print(
+        f"[{timestamp()}] INFO booking: Generated slots for {slot_date} — "
+        f"created={created} skipped={skipped} duration={duration}min"
+    )
+
+    return jsonify({
+        "success": True,
+        "created": created,
+        "skipped": skipped,
+        "slots": slots,
+    })
