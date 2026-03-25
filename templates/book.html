@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Book — {{ business_name }}</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, 'Segoe UI', Roboto, sans-serif;
+      background: #F1EFE8;
+      color: #1a1a18;
+      min-height: 100vh;
+    }
+
+    .book-header {
+      background: #1a2e4a;
+      color: #fff;
+      padding: 20px;
+      text-align: center;
+    }
+    .book-header__bolt { color: #f59e0b; }
+    .book-header h1 { font-size: 20px; font-weight: 700; }
+    .book-header p { font-size: 13px; opacity: 0.7; margin-top: 4px; }
+
+    .book-body { max-width: 480px; margin: 0 auto; padding: 16px; }
+
+    /* ── Slot card ──────────────────────────── */
+    .slot {
+      background: #fff;
+      border: 1px solid rgba(0,0,0,0.09);
+      border-radius: 8px;
+      margin-bottom: 10px;
+      overflow: hidden;
+      cursor: pointer;
+      transition: box-shadow 0.12s;
+    }
+    .slot:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+    .slot.selected { border-color: #2563eb; box-shadow: 0 0 0 2px rgba(37,99,235,0.2); }
+    .slot__body { padding: 14px 16px; }
+    .slot__title { font-size: 16px; font-weight: 600; }
+    .slot__meta { font-size: 13px; color: #5F5E5A; margin-top: 3px; }
+    .slot__instructor { font-size: 12px; color: #888780; margin-top: 2px; }
+    .slot__badges { display: flex; gap: 6px; margin-top: 8px; }
+    .sb {
+      font-size: 10px; font-weight: 600; padding: 2px 8px;
+      border-radius: 3px; text-transform: uppercase;
+    }
+    .sb--open { background: #EAF3DE; color: #3B6D11; }
+    .sb--low  { background: #FAEEDA; color: #854F0B; }
+    .sb--full { background: #FCEBEB; color: #A32D2D; }
+    .sb--date { background: #f3f4f6; color: #5F5E5A; }
+
+    /* ── Inline booking form ───────────────── */
+    .book-form {
+      display: none;
+      background: #fff;
+      border: 1px solid rgba(0,0,0,0.09);
+      border-radius: 8px;
+      padding: 16px;
+      margin-bottom: 10px;
+    }
+    .book-form.open { display: block; }
+    .book-form h3 { font-size: 15px; font-weight: 600; margin-bottom: 12px; }
+
+    .bf-group { margin-bottom: 10px; }
+    .bf-label {
+      font-size: 11px; font-weight: 600; text-transform: uppercase;
+      letter-spacing: 0.05em; color: #888780; margin-bottom: 4px; display: block;
+    }
+    .bf-input {
+      width: 100%; font-size: 16px; padding: 10px 12px;
+      border: 1px solid rgba(0,0,0,0.12); border-radius: 6px;
+      background: #fff; color: #1a1a18;
+      -webkit-appearance: none;
+    }
+    .bf-input:focus { outline: none; border-color: #2563eb; }
+
+    .bf-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+
+    .bf-consent {
+      display: flex; align-items: flex-start; gap: 8px;
+      font-size: 12px; color: #5F5E5A; margin: 10px 0;
+    }
+    .bf-consent input { margin-top: 2px; }
+
+    .btn-book {
+      width: 100%; padding: 12px; border: none; border-radius: 6px;
+      font-size: 15px; font-weight: 600; cursor: pointer;
+      transition: background 0.12s;
+    }
+    .btn-book--primary { background: #2563eb; color: #fff; }
+    .btn-book--primary:hover { background: #1d4ed8; }
+    .btn-book--green { background: #639922; color: #fff; }
+    .btn-book--green:hover { background: #4d7a1a; }
+    .btn-book:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .btn-waitlist {
+      width: 100%; padding: 10px; border: 1px solid #BA7517;
+      border-radius: 6px; background: transparent; color: #BA7517;
+      font-size: 14px; font-weight: 600; cursor: pointer; margin-top: 8px;
+    }
+    .btn-waitlist:hover { background: #FAEEDA; }
+
+    .returning-card {
+      background: #EAF3DE; border-radius: 6px; padding: 14px;
+      text-align: center; margin-bottom: 10px;
+    }
+    .returning-card__name { font-size: 16px; font-weight: 600; color: #3B6D11; }
+    .returning-card__sub { font-size: 12px; color: #5F5E5A; margin-top: 2px; }
+
+    .form-msg { font-size: 13px; text-align: center; margin-top: 10px; display: none; }
+    .form-msg--ok { color: #639922; }
+    .form-msg--err { color: #E24B4A; }
+
+    /* ── Confirmation screen ───────────────── */
+    .confirm-screen { display: none; text-align: center; padding: 20px 0; }
+    .confirm-screen.show { display: block; }
+    .confirm-icon { font-size: 48px; margin-bottom: 12px; }
+    .confirm-title { font-size: 20px; font-weight: 700; }
+    .confirm-detail { font-size: 14px; color: #5F5E5A; margin-top: 4px; }
+    .confirm-cal {
+      display: inline-block; margin-top: 16px; padding: 10px 20px;
+      border: 1px solid #2563eb; border-radius: 6px; color: #2563eb;
+      text-decoration: none; font-size: 14px; font-weight: 600;
+    }
+    .confirm-cal:hover { background: #dbeafe; }
+
+    .empty-msg {
+      text-align: center; padding: 40px 16px; color: #888780; font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+
+<div class="book-header">
+  <h1><span class="book-header__bolt">⚡</span> {{ business_name }}</h1>
+  <p>Book your appointment</p>
+</div>
+
+<div class="book-body">
+  <!-- Confirmation screen (hidden until booking succeeds) -->
+  <div class="confirm-screen" id="confirm-screen">
+    <div class="confirm-icon">✅</div>
+    <div class="confirm-title">You're booked!</div>
+    <div class="confirm-detail" id="confirm-detail"></div>
+    <a href="#" class="confirm-cal" id="confirm-cal" target="_blank">Add to Calendar</a>
+  </div>
+
+  <!-- Slot list + form -->
+  <div id="slots-area">
+    {% if slots %}
+    {% for s in slots %}
+    {% set remaining = (s.capacity or 10) - (s.enrolled_count or 0) %}
+    {% set is_full = remaining <= 0 %}
+    <div class="slot {% if is_full %}slot--full{% endif %}"
+         data-slot-id="{{ s.id }}"
+         data-title="{{ s.title or 'Class' }}"
+         data-date="{{ s.slot_date }}"
+         data-time="{{ s.start_time or '' }}"
+         data-full="{{ 'true' if is_full else 'false' }}"
+         onclick="selectSlot(this)">
+      <div class="slot__body">
+        <div class="slot__title">{{ s.title or 'Class' }}</div>
+        <div class="slot__meta">{{ s.slot_date }} · {{ s.start_time or '' }}{% if s.end_time %} – {{ s.end_time }}{% endif %}</div>
+        {% if s.instructor %}<div class="slot__instructor">{{ s.instructor }}</div>{% endif %}
+        <div class="slot__badges">
+          {% if is_full %}
+          <span class="sb sb--full">Full</span>
+          {% elif remaining <= 3 %}
+          <span class="sb sb--low">{{ remaining }} spot{{ 's' if remaining != 1 else '' }} left</span>
+          {% else %}
+          <span class="sb sb--open">{{ remaining }} spots open</span>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+
+    <!-- Inline booking form -->
+    <div class="book-form" id="book-form">
+      <h3 id="form-title">Book this class</h3>
+
+      <!-- Phone step -->
+      <div id="step-phone">
+        <div class="bf-group">
+          <label class="bf-label">Your Phone Number</label>
+          <input type="tel" class="bf-input" id="bf-phone" placeholder="(207) 555-1234"
+                 autocomplete="tel">
+        </div>
+        <button class="btn-book btn-book--primary" onclick="lookupPhone()">Continue</button>
+      </div>
+
+      <!-- Returning customer -->
+      <div id="step-returning" style="display:none">
+        <div class="returning-card">
+          <div class="returning-card__name" id="ret-name"></div>
+          <div class="returning-card__sub">Welcome back! Tap to confirm.</div>
+        </div>
+        <button class="btn-book btn-book--green" onclick="bookReturning()">Confirm Booking</button>
+      </div>
+
+      <!-- New customer -->
+      <div id="step-new" style="display:none">
+        <div class="bf-row">
+          <div class="bf-group">
+            <label class="bf-label">First Name</label>
+            <input type="text" class="bf-input" id="bf-first" autocomplete="given-name">
+          </div>
+          <div class="bf-group">
+            <label class="bf-label">Last Name</label>
+            <input type="text" class="bf-input" id="bf-last" autocomplete="family-name">
+          </div>
+        </div>
+        <div class="bf-consent">
+          <input type="checkbox" id="bf-consent">
+          <span>I agree to receive appointment reminders and updates via text message.
+          Message & data rates may apply. Reply STOP to unsubscribe.</span>
+        </div>
+        <button class="btn-book btn-book--primary" onclick="bookNew()">Book Now</button>
+      </div>
+
+      <!-- Waitlist (shown when full) -->
+      <div id="step-waitlist" style="display:none">
+        <p style="text-align:center;color:#BA7517;font-weight:600;margin-bottom:10px">
+          This class is full.
+        </p>
+        <div class="bf-group">
+          <label class="bf-label">Your Phone</label>
+          <input type="tel" class="bf-input" id="wl-phone" placeholder="(207) 555-1234">
+        </div>
+        <div class="bf-group">
+          <label class="bf-label">Your Name</label>
+          <input type="text" class="bf-input" id="wl-name" placeholder="Optional">
+        </div>
+        <button class="btn-waitlist" onclick="joinWaitlist()">Join Waitlist</button>
+      </div>
+
+      <div class="form-msg form-msg--ok" id="form-ok"></div>
+      <div class="form-msg form-msg--err" id="form-err"></div>
+    </div>
+    {% else %}
+    <div class="empty-msg">No classes available right now. Check back soon!</div>
+    {% endif %}
+  </div>
+</div>
+
+<script>
+var selectedSlot = null;
+var returningCustomerId = null;
+var clientPhone = '{{ client_phone }}';
+
+function selectSlot(el) {
+  document.querySelectorAll('.slot').forEach(function(s) { s.classList.remove('selected'); });
+  el.classList.add('selected');
+  selectedSlot = el.dataset;
+
+  var form = document.getElementById('book-form');
+  form.classList.add('open');
+  document.getElementById('form-title').textContent = 'Book: ' + selectedSlot.title;
+
+  // Reset steps
+  document.getElementById('step-phone').style.display = 'block';
+  document.getElementById('step-returning').style.display = 'none';
+  document.getElementById('step-new').style.display = 'none';
+  document.getElementById('step-waitlist').style.display = 'none';
+  document.getElementById('form-ok').style.display = 'none';
+  document.getElementById('form-err').style.display = 'none';
+  returningCustomerId = null;
+
+  if (selectedSlot.full === 'true') {
+    document.getElementById('step-phone').style.display = 'none';
+    document.getElementById('step-waitlist').style.display = 'block';
+  }
+
+  form.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function lookupPhone() {
+  var phone = document.getElementById('bf-phone').value.trim();
+  if (!phone) { showErr('Please enter your phone number.'); return; }
+
+  fetch('/api/book/lookup-customer', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ phone: phone, client_phone: clientPhone })
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(d) {
+    document.getElementById('step-phone').style.display = 'none';
+    if (d.found) {
+      returningCustomerId = d.customer_id;
+      document.getElementById('ret-name').textContent = d.customer_name || 'Welcome back!';
+      document.getElementById('step-returning').style.display = 'block';
+    } else {
+      document.getElementById('step-new').style.display = 'block';
+    }
+  })
+  .catch(function(e) { showErr('Connection error. Try again.'); });
+}
+
+function bookReturning() {
+  submitBooking({
+    slot_id: selectedSlot.slotId,
+    phone: document.getElementById('bf-phone').value.trim(),
+    customer_id: returningCustomerId,
+    sms_consent: true,
+    client_phone: clientPhone,
+  });
+}
+
+function bookNew() {
+  var consent = document.getElementById('bf-consent').checked;
+  if (!consent) { showErr('Please agree to receive text messages to complete your booking.'); return; }
+
+  submitBooking({
+    slot_id: selectedSlot.slotId,
+    phone: document.getElementById('bf-phone').value.trim(),
+    first_name: document.getElementById('bf-first').value.trim(),
+    last_name: document.getElementById('bf-last').value.trim(),
+    sms_consent: true,
+    client_phone: clientPhone,
+  });
+}
+
+function submitBooking(payload) {
+  fetch('/api/book/create', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(payload)
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(d) {
+    if (d.success) {
+      document.getElementById('slots-area').style.display = 'none';
+      var cs = document.getElementById('confirm-screen');
+      cs.classList.add('show');
+      document.getElementById('confirm-detail').textContent =
+        d.slot_title + ' on ' + d.slot_date + ' at ' + d.slot_time;
+      document.getElementById('confirm-cal').href = d.calendar_url || '#';
+    } else if (d.error === 'full') {
+      document.getElementById('step-returning').style.display = 'none';
+      document.getElementById('step-new').style.display = 'none';
+      document.getElementById('step-waitlist').style.display = 'block';
+      document.getElementById('wl-phone').value = document.getElementById('bf-phone').value;
+    } else {
+      showErr(d.error || 'Booking failed. Please try again.');
+    }
+  })
+  .catch(function(e) { showErr('Connection error. Try again.'); });
+}
+
+function joinWaitlist() {
+  var phone = document.getElementById('wl-phone').value.trim();
+  if (!phone) { showErr('Please enter your phone number.'); return; }
+
+  fetch('/api/book/waitlist', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      slot_id: selectedSlot.slotId,
+      phone: phone,
+      name: document.getElementById('wl-name').value.trim(),
+    })
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(d) {
+    if (d.success) {
+      showOk("You're on the waitlist! We'll text you if a spot opens up.");
+    } else {
+      showErr(d.error || 'Failed to join waitlist.');
+    }
+  })
+  .catch(function(e) { showErr('Connection error.'); });
+}
+
+function showErr(msg) {
+  var el = document.getElementById('form-err');
+  el.textContent = msg;
+  el.style.display = 'block';
+  document.getElementById('form-ok').style.display = 'none';
+}
+function showOk(msg) {
+  var el = document.getElementById('form-ok');
+  el.textContent = msg;
+  el.style.display = 'block';
+  document.getElementById('form-err').style.display = 'none';
+}
+</script>
+</body>
+</html>
