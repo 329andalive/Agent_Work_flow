@@ -1,14 +1,20 @@
 """
-db_scheduling.py — Core scheduling DB helpers with full multi-tenancy
+db_scheduling.py — Scheduling DB helpers using the unified jobs table (Option A)
 
-Every function filters by client_phone (HARD RULE: multi-tenancy).
-Works with the scheduled_jobs, workers, route_assignments, and
-dispatch_log tables. Calls geocode_address on new job creation.
+Option A: queries the existing `jobs` table instead of a separate `scheduled_jobs`
+table. The jobs table gets dispatch columns added via SQL migration:
+  geo_lat, geo_lng, zone_cluster, requested_time, dispatch_status,
+  assigned_worker_id, wave_id, sort_order, incomplete_reason
+
+Every function filters by client_id (HARD RULE: multi-tenancy — never return
+data from one client to another).
+
+Also queries: employees (as workers), route_assignments, dispatch_log.
 
 Usage:
     from execution.db_scheduling import (
         get_todays_jobs, get_workers, save_dispatch_session,
-        get_carry_forward_jobs, get_held_jobs, update_job_status,
+        get_carry_forward_jobs, get_held_jobs, update_dispatch_status,
         create_scheduled_job,
     )
 """
@@ -28,17 +34,21 @@ def timestamp():
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
-def get_todays_jobs(client_phone: str, target_date: str = None) -> list:
+# ---------------------------------------------------------------------------
+# get_todays_jobs — jobs for a date, ordered by zone then time
+# ---------------------------------------------------------------------------
+
+def get_todays_jobs(client_id: str, target_date: str = None) -> list:
     """
-    Get all scheduled jobs for a given date, ordered by zone_cluster
-    then requested_time (nulls last).
+    Get all jobs for a given date that are not dispatch-cancelled.
+    Ordered by zone_cluster ASC then requested_time ASC (nulls last).
 
     Args:
-        client_phone: E.164 phone (tenant identifier)
+        client_id:    UUID of the client (tenant identifier)
         target_date:  ISO date string (YYYY-MM-DD). Defaults to today.
 
     Returns:
-        List of scheduled_jobs dicts, or empty list on error.
+        List of job dicts, or empty list on error.
     """
     if not target_date:
         target_date = date.today().isoformat()
@@ -46,52 +56,84 @@ def get_todays_jobs(client_phone: str, target_date: str = None) -> list:
     try:
         sb = get_supabase()
         result = (
-            sb.table("scheduled_jobs")
-            .select("*")
-            .eq("client_phone", client_phone)
+            sb.table("jobs")
+            .select(
+                "id, job_type, job_description, status, scheduled_date, "
+                "estimated_amount, customer_id, raw_input, job_notes, "
+                "geo_lat, geo_lng, zone_cluster, requested_time, "
+                "dispatch_status, assigned_worker_id, wave_id, sort_order"
+            )
+            .eq("client_id", client_id)
             .eq("scheduled_date", target_date)
+            .neq("dispatch_status", "cancelled")
             .order("zone_cluster")
             .order("requested_time", nullsfirst=False)
             .execute()
         )
         jobs = result.data or []
-        print(f"[{timestamp()}] INFO db_scheduling: get_todays_jobs({target_date}) → {len(jobs)} jobs for {client_phone}")
+        print(f"[{timestamp()}] INFO db_scheduling: get_todays_jobs({target_date}) → {len(jobs)} jobs")
         return jobs
     except Exception as e:
+        # If dispatch columns don't exist yet, fall back to basic query
+        if "column" in str(e).lower() and ("dispatch_status" in str(e).lower() or "zone_cluster" in str(e).lower()):
+            print(f"[{timestamp()}] WARN db_scheduling: Dispatch columns not yet added to jobs table — falling back to basic query")
+            try:
+                sb = get_supabase()
+                result = (
+                    sb.table("jobs")
+                    .select("id, job_type, job_description, status, scheduled_date, estimated_amount, customer_id")
+                    .eq("client_id", client_id)
+                    .eq("scheduled_date", target_date)
+                    .order("created_at")
+                    .execute()
+                )
+                return result.data or []
+            except Exception as e2:
+                print(f"[{timestamp()}] ERROR db_scheduling: fallback query also failed — {e2}")
+                return []
         print(f"[{timestamp()}] ERROR db_scheduling: get_todays_jobs failed — {e}")
         return []
 
 
-def get_workers(client_phone: str) -> list:
+# ---------------------------------------------------------------------------
+# get_workers — active employees for client (employees table = workers)
+# ---------------------------------------------------------------------------
+
+def get_workers(client_id: str) -> list:
     """
-    Get all active workers for a client.
+    Get all active employees for a client. Uses the existing employees
+    table — no separate workers table needed.
 
     Args:
-        client_phone: E.164 phone (tenant identifier)
+        client_id: UUID of the client (tenant identifier)
 
     Returns:
-        List of worker dicts, or empty list on error.
+        List of employee dicts, or empty list on error.
     """
     try:
         sb = get_supabase()
         result = (
-            sb.table("workers")
-            .select("*")
-            .eq("client_phone", client_phone)
+            sb.table("employees")
+            .select("id, name, phone, role, active")
+            .eq("client_id", client_id)
             .eq("active", True)
             .order("name")
             .execute()
         )
         workers = result.data or []
-        print(f"[{timestamp()}] INFO db_scheduling: get_workers → {len(workers)} active for {client_phone}")
+        print(f"[{timestamp()}] INFO db_scheduling: get_workers → {len(workers)} active for client {client_id[:8]}")
         return workers
     except Exception as e:
         print(f"[{timestamp()}] ERROR db_scheduling: get_workers failed — {e}")
         return []
 
 
+# ---------------------------------------------------------------------------
+# save_dispatch_session — write assignments + dispatch log
+# ---------------------------------------------------------------------------
+
 def save_dispatch_session(
-    client_phone: str,
+    client_id: str,
     assignments: list,
     session_id: str = None,
 ) -> str | None:
@@ -99,7 +141,7 @@ def save_dispatch_session(
     Write route assignments and dispatch log in one pass.
 
     Args:
-        client_phone: E.164 phone (tenant identifier)
+        client_id:    UUID of the client (tenant identifier)
         assignments:  List of dicts: {job_id, worker_id, wave_id, sort_order}
         session_id:   Optional UUID. Auto-generated if not provided.
 
@@ -117,7 +159,7 @@ def save_dispatch_session(
         rows = []
         for a in assignments:
             rows.append({
-                "client_phone": client_phone,
+                "client_id": client_id,
                 "session_id": session_id,
                 "job_id": a["job_id"],
                 "worker_id": a["worker_id"],
@@ -130,9 +172,24 @@ def save_dispatch_session(
             sb.table("route_assignments").insert(rows).execute()
             print(f"[{timestamp()}] INFO db_scheduling: Saved {len(rows)} route assignments (session={session_id[:8]})")
 
+        # Also update each job's dispatch columns
+        for a in assignments:
+            try:
+                update = {
+                    "assigned_worker_id": a["worker_id"],
+                    "dispatch_status": "assigned",
+                }
+                if a.get("wave_id"):
+                    update["wave_id"] = a["wave_id"]
+                if a.get("sort_order") is not None:
+                    update["sort_order"] = a["sort_order"]
+                sb.table("jobs").update(update).eq("id", a["job_id"]).execute()
+            except Exception:
+                pass  # Non-fatal — column may not exist yet
+
         # Write dispatch_log entry
         sb.table("dispatch_log").insert({
-            "client_phone": client_phone,
+            "client_id": client_id,
             "session_id": session_id,
             "job_count": len(assignments),
             "worker_count": len(set(a["worker_id"] for a in assignments)),
@@ -147,110 +204,134 @@ def save_dispatch_session(
         return None
 
 
-def get_carry_forward_jobs(client_phone: str) -> list:
+# ---------------------------------------------------------------------------
+# get_carry_forward_jobs — yesterday's incomplete jobs
+# ---------------------------------------------------------------------------
+
+def get_carry_forward_jobs(client_id: str) -> list:
     """
-    Get jobs with status='carry_forward' and scheduled_date < today.
-    These are yesterday's incomplete jobs that need to be rescheduled.
+    Get jobs with dispatch_status='carry_forward' and scheduled_date < today.
+
+    Falls back to status-based query if dispatch columns don't exist yet.
 
     Args:
-        client_phone: E.164 phone (tenant identifier)
+        client_id: UUID of the client (tenant identifier)
 
     Returns:
-        List of scheduled_jobs dicts, or empty list on error.
+        List of job dicts, or empty list on error.
     """
     try:
         sb = get_supabase()
         today = date.today().isoformat()
         result = (
-            sb.table("scheduled_jobs")
-            .select("*")
-            .eq("client_phone", client_phone)
-            .eq("status", "carry_forward")
+            sb.table("jobs")
+            .select("id, job_type, job_description, status, scheduled_date, "
+                    "estimated_amount, customer_id, dispatch_status, zone_cluster")
+            .eq("client_id", client_id)
+            .eq("dispatch_status", "carry_forward")
             .lt("scheduled_date", today)
             .order("scheduled_date")
             .execute()
         )
         jobs = result.data or []
         if jobs:
-            print(f"[{timestamp()}] INFO db_scheduling: {len(jobs)} carry-forward jobs for {client_phone}")
+            print(f"[{timestamp()}] INFO db_scheduling: {len(jobs)} carry-forward jobs")
         return jobs
     except Exception as e:
+        if "column" in str(e).lower():
+            print(f"[{timestamp()}] WARN db_scheduling: dispatch_status column not yet added — no carry-forward jobs")
+            return []
         print(f"[{timestamp()}] ERROR db_scheduling: get_carry_forward_jobs failed — {e}")
         return []
 
 
-def get_held_jobs(client_phone: str) -> list:
+# ---------------------------------------------------------------------------
+# get_held_jobs — parts_pending + scope_review
+# ---------------------------------------------------------------------------
+
+def get_held_jobs(client_id: str) -> list:
     """
-    Get jobs with status in ('parts_pending', 'scope_review').
-    These are on hold and need manual attention before scheduling.
+    Get jobs with dispatch_status in ('parts_pending', 'scope_review').
 
     Args:
-        client_phone: E.164 phone (tenant identifier)
+        client_id: UUID of the client (tenant identifier)
 
     Returns:
-        List of scheduled_jobs dicts, or empty list on error.
+        List of job dicts, or empty list on error.
     """
     try:
         sb = get_supabase()
         result = (
-            sb.table("scheduled_jobs")
-            .select("*")
-            .eq("client_phone", client_phone)
-            .in_("status", ["parts_pending", "scope_review"])
+            sb.table("jobs")
+            .select("id, job_type, job_description, status, scheduled_date, "
+                    "customer_id, dispatch_status")
+            .eq("client_id", client_id)
+            .in_("dispatch_status", ["parts_pending", "scope_review"])
             .order("created_at")
             .execute()
         )
         jobs = result.data or []
         if jobs:
-            print(f"[{timestamp()}] INFO db_scheduling: {len(jobs)} held jobs for {client_phone}")
+            print(f"[{timestamp()}] INFO db_scheduling: {len(jobs)} held jobs")
         return jobs
     except Exception as e:
+        if "column" in str(e).lower():
+            return []
         print(f"[{timestamp()}] ERROR db_scheduling: get_held_jobs failed — {e}")
         return []
 
 
-def update_job_status(
+# ---------------------------------------------------------------------------
+# update_dispatch_status — update a job's dispatch status
+# ---------------------------------------------------------------------------
+
+def update_dispatch_status(
     job_id: str,
-    status: str,
+    dispatch_status: str,
     incomplete_reason: str = None,
 ) -> bool:
     """
-    Update the status of a scheduled job.
+    Update the dispatch_status of a job.
 
     Args:
-        job_id:            UUID of the scheduled job
-        status:            New status string
-        incomplete_reason: Optional reason when status is carry_forward or held
+        job_id:            UUID of the job
+        dispatch_status:   New status: assigned, completed, carry_forward,
+                           parts_pending, scope_review, no_show, cancelled
+        incomplete_reason: Optional reason for carry_forward/held
 
     Returns:
         True on success, False on failure.
     """
     try:
         sb = get_supabase()
-        update = {"status": status}
+        update = {"dispatch_status": dispatch_status}
         if incomplete_reason:
             update["incomplete_reason"] = incomplete_reason
-        if status == "completed":
-            update["completed_at"] = datetime.now(timezone.utc).isoformat()
+        if dispatch_status == "completed":
+            update["status"] = "completed"  # Also update the main status
 
-        sb.table("scheduled_jobs").update(update).eq("id", job_id).execute()
-        print(f"[{timestamp()}] INFO db_scheduling: Job {job_id[:8]} → status={status}")
+        sb.table("jobs").update(update).eq("id", job_id).execute()
+        print(f"[{timestamp()}] INFO db_scheduling: Job {job_id[:8]} → dispatch_status={dispatch_status}")
         return True
     except Exception as e:
-        print(f"[{timestamp()}] ERROR db_scheduling: update_job_status failed — {e}")
+        print(f"[{timestamp()}] ERROR db_scheduling: update_dispatch_status failed — {e}")
         return False
 
 
-def create_scheduled_job(client_phone: str, job_data: dict) -> str | None:
+# ---------------------------------------------------------------------------
+# create_scheduled_job — insert job with geocoding
+# ---------------------------------------------------------------------------
+
+def create_scheduled_job(client_id: str, job_data: dict) -> str | None:
     """
-    Insert a new scheduled job. Calls geocode_address to populate
-    geo_lat, geo_lng, and zone_cluster from the address field.
+    Insert a new job with geocoded coordinates and zone cluster.
+    Uses the existing jobs table with dispatch columns.
 
     Args:
-        client_phone: E.164 phone (tenant identifier)
-        job_data:     Dict with keys: customer_name, address, job_type,
-                      scheduled_date, requested_time (optional),
-                      notes (optional), customer_phone (optional)
+        client_id:  UUID of the client (tenant identifier)
+        job_data:   Dict with keys: customer_id, job_type, job_description,
+                    scheduled_date, requested_time (optional),
+                    job_notes (optional), address (for geocoding)
 
     Returns:
         New job UUID as a string, or None on failure.
@@ -276,32 +357,65 @@ def create_scheduled_job(client_phone: str, job_data: dict) -> str | None:
                 print(f"[{timestamp()}] WARN db_scheduling: Geocode failed for '{address}' — {e}")
 
         record = {
-            "client_phone": client_phone,
-            "customer_name": job_data.get("customer_name", ""),
-            "customer_phone": job_data.get("customer_phone"),
-            "address": address,
+            "client_id": client_id,
+            "customer_id": job_data.get("customer_id"),
             "job_type": job_data.get("job_type", ""),
+            "job_description": job_data.get("job_description") or address or "",
             "scheduled_date": job_data.get("scheduled_date", date.today().isoformat()),
-            "requested_time": job_data.get("requested_time"),
-            "notes": job_data.get("notes"),
+            "raw_input": job_data.get("raw_input", "Created via dispatch"),
             "status": "scheduled",
+            "dispatch_status": "unassigned",
+        }
+
+        # Add dispatch columns if provided — these may not exist yet
+        optional_cols = {
+            "requested_time": job_data.get("requested_time"),
+            "job_notes": job_data.get("job_notes"),
             "geo_lat": geo["lat"],
             "geo_lng": geo["lng"],
             "zone_cluster": geo["zone_cluster"],
         }
+        for k, v in optional_cols.items():
+            if v is not None:
+                record[k] = v
 
-        result = sb.table("scheduled_jobs").insert(record).execute()
+        result = sb.table("jobs").insert(record).execute()
         if not result.data:
             print(f"[{timestamp()}] ERROR db_scheduling: create_scheduled_job insert returned no data")
             return None
 
         job_id = result.data[0]["id"]
         print(
-            f"[{timestamp()}] INFO db_scheduling: Created scheduled job {job_id[:8]} "
-            f"type={record['job_type']} zone={record['zone_cluster']} date={record['scheduled_date']}"
+            f"[{timestamp()}] INFO db_scheduling: Created job {job_id[:8]} "
+            f"type={record['job_type']} zone={geo['zone_cluster']} date={record['scheduled_date']}"
         )
         return job_id
 
     except Exception as e:
         print(f"[{timestamp()}] ERROR db_scheduling: create_scheduled_job failed — {e}")
         return None
+
+
+# ---------------------------------------------------------------------------
+# Standalone test
+# ---------------------------------------------------------------------------
+if __name__ == "__main__":
+    from dotenv import load_dotenv
+    load_dotenv()
+
+    # Test with Holt Sewer & Drain client_id
+    test_client_id = "8aafcd73-b41c-4f1a-bd01-3e7955798367"
+
+    print("--- get_workers ---")
+    workers = get_workers(test_client_id)
+    for w in workers:
+        print(f"  {w.get('name')} ({w.get('role')})")
+    if not workers:
+        print("  (no workers found)")
+
+    print("\n--- get_todays_jobs ---")
+    jobs = get_todays_jobs(test_client_id)
+    for j in jobs:
+        print(f"  {j.get('job_type')} — {j.get('job_description', '')[:40]} [{j.get('status')}]")
+    if not jobs:
+        print("  (no jobs for today)")
