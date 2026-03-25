@@ -151,6 +151,11 @@ TELNYX_PHONE_NUMBER=+12074190986
 SUPABASE_URL=https://wczzlvhpryufohjwmxwd.supabase.co
 SUPABASE_SERVICE_KEY=
 BOLTS11_BASE_URL=https://bolts11.com
+SQUARE_ACCESS_TOKEN=
+SQUARE_ENVIRONMENT=sandbox
+SQUARE_LOCATION_ID=
+SQUARE_WEBHOOK_SIGNATURE_KEY=
+GOOGLE_MAPS_API_KEY=
 ```
 
 Never hardcode credentials. Always load from `.env` using
