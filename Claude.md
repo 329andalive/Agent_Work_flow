@@ -92,52 +92,65 @@ Each agent has a directive in `directives/agents/{agent_name}.md`
 ```
 /
 ├── CLAUDE.md                          # This file
+├── HANDOFF.md                         # Session log — read for current status
 ├── .env                               # All API keys — never commit
+├── .python-version                    # Pins Python 3.12.9 — DO NOT DELETE
+├── requirements.txt                   # 66 pinned packages — regenerate with pip freeze
 ├── execution/                         # Python scripts (deterministic)
-│   ├── sms_receive.py                 # Inbound SMS webhook handler + Flask routes
-│   ├── sms_send.py                    # Outbound SMS via Telnyx
-│   ├── call_claude.py                 # Claude API wrapper
-│   ├── token_generator.py             # Signed token URLs for proposals/invoices
-│   ├── document_html.py              # Builds edit/view HTML for proposals & invoices
-│   ├── db_document.py                # DB ops for document edit/learn system
-│   ├── document_storage.py           # Upload document HTML to Supabase Storage
-│   ├── clarification_agent.py        # Claude-powered intent classification + on-site approval
-│   ├── db_clarification.py           # DB ops for pending_clarifications + customer_approvals
-│   ├── db_get_client.py               # Fetch client from Supabase
-│   ├── db_save_job.py                 # Save job record to Supabase
-│   ├── load_personality.py            # Load client personality doc
-│   ├── onboarding_templates.py       # DEPRECATED fallback — pricing now in DB
-│   └── db_pricing.py                 # Pricing benchmarks + adjustment logging
+│   ├── sms_receive.py                 # Flask app entry point + blueprint registration
+│   ├── sms_send.py                    # Outbound SMS via Telnyx + sms_message_log
+│   ├── sms_router.py                  # SMS routing + worker reply handler (DONE/BACK/etc)
+│   ├── call_claude.py                 # Claude API wrapper (Haiku/Sonnet/Opus)
+│   ├── context_loader.py             # Stateful context assembly for commands
+│   ├── proposal_agent.py             # Structured JSON proposals + Haiku summarization
+│   ├── invoice_agent.py              # Invoice generation + Square Step 8b
+│   ├── geocode.py                    # Google Maps geocoding + zone clustering
+│   ├── db_scheduling.py             # Scheduling DB helpers (7 functions, multi-tenant)
+│   ├── dispatch_suggestion.py       # AI dispatch suggestions (Phase 2, 30+ sessions)
+│   ├── scheduled_sms.py            # Nudges, reminders, no-show marking
+│   ├── token_generator.py           # Signed token URLs + mark_invoice_paid() fallback
+│   ├── square_agent.py              # Square Payment Links API (v44)
+│   ├── job_cost_agent.py            # Job cost tracking (defensive)
+│   ├── clarification_agent.py       # Claude-powered intent classification
+│   ├── db_clarification.py          # DB ops for clarifications + approvals
+│   ├── db_customer.py               # Customer table queries
+│   ├── db_client.py                 # Client table queries
+│   ├── db_jobs.py                   # Job table queries
+│   ├── db_proposals.py              # Proposal table queries
+│   ├── db_messages.py               # Message logging
+│   ├── document_html.py             # Build edit/view HTML for documents
+│   ├── db_document.py               # DB ops for edit/learn system
+│   └── db_pricing.py                # Pricing benchmarks + adjustment logging
 ├── routes/                            # Flask Blueprints
-│   ├── document_routes.py            # /doc/edit, /doc/save, /doc/send
-│   ├── invoice_routes.py            # /webhooks/square (Square payment webhook)
-│   ├── command_routes.py            # /api/command, /api/activity, /api/stats
-│   ├── onboarding_routes.py        # /api/onboarding/*, /onboard/<token>
-│   └── routes_debug.py              # /debug (dev-only debug dashboard)
-├── directives/                        # SOPs and context docs
-│   ├── agents/                        # One .md per agent
-│   │   ├── proposal_agent.md
-│   │   ├── invoice_agent.md
-│   │   ├── followup_agent.md
-│   │   ├── review_agent.md
-│   │   ├── content_agent.md
-│   │   ├── safety_agent.md
-│   │   └── voice_controller.md
-│   └── clients/                       # One folder per client
-│       └── {client_phone}/
-│           └── personality.md         # The master context document
-├── dashboard/                         # Browser-based UI (static HTML)
-│   ├── index.html                    # Dispatch Board
-│   ├── office.html                   # Office Dashboard
-│   ├── command.html                  # Command Center (chat + override panel)
-│   ├── onboarding.html              # Client onboarding admin dashboard
-│   ├── onboard_wizard.html          # Client-facing 6-step setup wizard
-│   └── book.html                     # Customer booking form
+│   ├── dashboard_routes.py           # All dashboard pages (20+ templates)
+│   ├── dispatch_routes.py           # /api/dispatch/* + /r/<token> worker route
+│   ├── booking_routes.py            # /book/<token> + /api/book/* + /api/slots/*
+│   ├── command_routes.py            # /api/command + context loader wiring
+│   ├── auth_routes.py               # /login, /logout, /set-pin + super admin
+│   ├── invoice_routes.py            # /webhooks/square payment webhook
+│   ├── document_routes.py           # /doc/edit, /doc/save, /doc/send
+│   ├── onboarding_routes.py         # /api/onboarding/*, /onboard/<token>
+│   └── routes_debug.py              # /debug (dev-only)
 ├── templates/                         # Jinja2 HTML templates
+│   ├── base.html                      # Shared sidebar + layout (navy/amber)
+│   ├── book.html                      # Public booking page (mobile-first)
+│   ├── worker_route.html             # Worker route page (mobile, no login)
 │   ├── proposal.html                  # Mobile-first proposal view
 │   ├── invoice.html                   # Mobile-first invoice view (PAY NOW)
-│   └── error.html                     # Branded error/expired pages
-├── .tmp/                              # Temp files — never commit
+│   ├── error.html                     # Branded error/expired pages
+│   └── dashboard/                     # Dashboard templates (extend base.html)
+│       ├── control.html              # Control Board
+│       ├── dispatch.html             # Dispatch board (drag-drop)
+│       ├── classes.html              # Class slot management
+│       ├── schedule.html             # Appointment timeline
+│       ├── admin.html                # Super admin heartbeat
+│       └── ... (20+ templates)       # See HANDOFF.md for full list
+├── sql/                               # SQL migrations (run in Supabase)
+│   ├── square_payment_writeback.sql
+│   └── scheduling_migration.sql
+├── directives/                        # SOPs and context docs
+│   ├── agents/proposal_agent.md      # Proposal architecture + line item rules
+│   └── clients/personality.md        # Holt Sewer & Drain voice + pricing
 └── tests/                             # Test scripts
 ```
 
@@ -163,38 +176,19 @@ Never hardcode credentials. Always load from `.env` using
 
 ---
 
-## Routes (Flask — sms_receive.py)
+## Routes (Flask Blueprints)
 
-```
-POST /webhooks/telnyx          — Primary Telnyx inbound webhook (Ed25519 verified)
-POST /webhooks/telnyx/failover — Telnyx failover webhook
-POST /webhook/inbound          — Legacy inbound webhook (deprecated)
-POST /book/submit              — Customer booking form submission
-GET  /p/<token>                — Serve proposal via signed token (72hr expiry)
-GET  /i/<token>                — Serve invoice via signed token (72hr expiry)
-GET  /dashboard/               — Dispatch board
-GET  /dashboard/office.html    — Office dashboard
-GET  /book                     — Customer booking form
-GET  /health                   — Health check
-GET  /dashboard/command.html   — Command Center dashboard
-GET  /command                  — Command Center (short alias)
-POST /api/command              — Execute agent action from dashboard
-GET  /api/activity             — Recent agent activity for live feed
-GET  /api/stats                — Sidebar stats (open jobs, SMS status)
-GET  /dashboard/onboarding.html — Client onboarding admin dashboard
-POST /api/onboarding/create    — Create client + onboarding session
-GET  /onboard/<token>          — Public client setup wizard
-POST /api/onboarding/<token>/save     — Save wizard step progress
-POST /api/onboarding/<token>/complete — Mark wizard complete + generate personality
-GET  /api/onboarding/list      — List all onboarding sessions (admin)
-POST /api/onboarding/<token>/approve  — Approve + activate client
-GET  /api/onboarding/pricing-template/<v> — Pricing benchmarks from DB (fallback to hardcode)
-GET  /api/onboarding/specialties/<v>  — Specialties from DB (fallback to hardcode)
-GET  /api/verticals                   — All active trade verticals from DB
-GET  /doc/edit/<edit_token>    — Editable document page (Blueprint: document_bp)
-POST /doc/save                 — Save edited line items/notes + trigger learning
-POST /doc/send                 — Send document to customer via SMS
-```
+See HANDOFF.md URL Map for the complete list (50+ routes).
+Key route groups:
+
+**dashboard_bp** — All dashboard pages (20+ templates)
+**dispatch_bp** — `/api/dispatch/*` + `/r/<token>` worker route
+**booking_bp** — `/book/<token>` + `/api/book/*` + `/api/slots/*`
+**command_bp** — `/api/command` + context loader wiring
+**auth_bp** — `/login`, `/logout`, `/set-pin` + super admin flag
+**invoice_bp** — `/webhooks/square` payment webhook
+**document_bp** — `/doc/edit`, `/doc/save`, `/doc/send`
+**onboarding_bp** — `/api/onboarding/*`, `/onboard/<token>`
 
 Token routes (`/p/` and `/i/`) handle:
 - Invalid tokens → branded error page
