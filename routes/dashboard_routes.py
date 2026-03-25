@@ -1331,6 +1331,39 @@ def customer_detail(customer_id):
 
 
 # ---------------------------------------------------------------------------
+# GET /dashboard/dispatch — Dispatch Board
+# ---------------------------------------------------------------------------
+
+@dashboard_bp.route("/dashboard/dispatch")
+def dispatch_board():
+    client_id = _resolve_client_id()
+    if not client_id:
+        return redirect("/login")
+
+    ctx = _base_context("dispatch", client_id)
+    client = ctx["_client"]
+    client_phone = client.get("phone", "")
+
+    # Load scheduling data
+    from execution.db_scheduling import get_todays_jobs, get_workers, get_carry_forward_jobs
+
+    today_str = date.today().isoformat()
+    jobs = get_todays_jobs(client_phone, today_str)
+    workers = get_workers(client_phone)
+    carry_forward = get_carry_forward_jobs(client_phone)
+
+    ctx.update({
+        "jobs": jobs,
+        "workers": workers,
+        "carry_forward": carry_forward,
+        "dispatch_date": today_str,
+        "jobs_json": json.dumps(jobs + carry_forward, default=str),
+        "workers_json": json.dumps(workers, default=str),
+    })
+    return render_template("dashboard/dispatch.html", **ctx)
+
+
+# ---------------------------------------------------------------------------
 # Stub routes — coming soon pages
 # ---------------------------------------------------------------------------
 

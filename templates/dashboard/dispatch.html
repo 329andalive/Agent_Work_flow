@@ -1,0 +1,595 @@
+{% extends "base.html" %}
+
+{% block title %}Dispatch Board{% endblock %}
+{% block page_title %}Dispatch Board{% endblock %}
+{% block topbar_meta %}{{ today }}{% endblock %}
+
+{% block extra_css %}
+/* ── Dispatch layout ──────────────────────────────── */
+.dispatch-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.dispatch-date {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 22px;
+  font-weight: 700;
+}
+.dispatch-stats {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.dispatch-stat {
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+.dispatch-stat strong {
+  color: var(--text-primary);
+  font-size: 14px;
+}
+.btn-send-routes {
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+  font-weight: 500;
+  padding: 6px 16px;
+  border-radius: 4px;
+  border: none;
+  background: var(--green);
+  color: #fff;
+  cursor: pointer;
+  transition: opacity 0.12s;
+}
+.btn-send-routes:hover { opacity: 0.85; }
+.btn-send-routes:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  background: var(--text-tertiary);
+}
+
+/* ── Board grid ───────────────────────────────────── */
+.dispatch-board {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  overflow-x: auto;
+  min-height: calc(100vh - 200px);
+}
+
+/* ── Queue column (unassigned) ────────────────────── */
+.queue-col {
+  width: 280px;
+  min-width: 280px;
+  flex-shrink: 0;
+}
+.queue-header {
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-tertiary);
+  padding: 8px 12px;
+  border-bottom: 2px solid var(--text-tertiary);
+  margin-bottom: 6px;
+  display: flex;
+  justify-content: space-between;
+}
+.queue-list {
+  max-height: calc(100vh - 260px);
+  overflow-y: auto;
+  min-height: 80px;
+  padding: 4px 0;
+}
+.queue-list.drag-over {
+  background: rgba(37,99,235,0.06);
+  border-radius: 6px;
+}
+
+/* ── Worker columns ───────────────────────────────── */
+.worker-col {
+  width: 240px;
+  min-width: 240px;
+  flex-shrink: 0;
+}
+.worker-header {
+  padding: 8px 12px;
+  border-bottom: 3px solid;
+  margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.worker-name {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 14px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+.worker-count {
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  color: var(--text-tertiary);
+  background: var(--bg-page);
+  padding: 1px 6px;
+  border-radius: 3px;
+}
+.worker-list {
+  min-height: 80px;
+  padding: 4px 0;
+}
+.worker-list.drag-over {
+  background: rgba(37,99,235,0.06);
+  border-radius: 6px;
+}
+
+/* Worker color palette */
+.worker-col:nth-child(2) .worker-header { border-color: #2563eb; }
+.worker-col:nth-child(3) .worker-header { border-color: #16a34a; }
+.worker-col:nth-child(4) .worker-header { border-color: #d97706; }
+.worker-col:nth-child(5) .worker-header { border-color: #dc2626; }
+.worker-col:nth-child(6) .worker-header { border-color: #7c3aed; }
+.worker-col:nth-child(7) .worker-header { border-color: #0891b2; }
+
+/* ── Slip card (full, in queue) ───────────────────── */
+.slip-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin-bottom: 6px;
+  cursor: grab;
+  transition: box-shadow 0.12s, opacity 0.12s;
+  position: relative;
+}
+.slip-card:active { cursor: grabbing; }
+.slip-card.dragging { opacity: 0.4; }
+.slip-card.carry-forward {
+  border-left: 3px solid var(--amber);
+}
+.slip-card__cf-label {
+  font-family: 'DM Mono', monospace;
+  font-size: 9px;
+  color: var(--amber);
+  margin-bottom: 4px;
+}
+.slip-card__name {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary);
+  margin-bottom: 3px;
+}
+.slip-card__desc {
+  font-size: 12px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 240px;
+  margin-bottom: 6px;
+}
+.slip-card__badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.slip-badge {
+  font-family: 'DM Mono', monospace;
+  font-size: 9px;
+  font-weight: 500;
+  padding: 1px 6px;
+  border-radius: 3px;
+  display: inline-block;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.slip-badge--north   { background: #dbeafe; color: #1d4ed8; }
+.slip-badge--central { background: #EAF3DE; color: #3B6D11; }
+.slip-badge--south   { background: #FAEEDA; color: #854F0B; }
+.slip-badge--unknown { background: #f3f4f6; color: #6b7280; }
+.slip-badge--time    { background: #FAEEDA; color: #854F0B; }
+.slip-badge--price   { background: #EAF3DE; color: #3B6D11; }
+.slip-badge--asap    { background: #FCEBEB; color: #A32D2D; }
+
+/* ── Compact tab (assigned, in worker column) ─────── */
+.slip-tab {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 6px 10px;
+  margin-bottom: 4px;
+  cursor: grab;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+  transition: opacity 0.12s;
+}
+.slip-tab:active { cursor: grabbing; }
+.slip-tab.dragging { opacity: 0.4; }
+.slip-tab__name { font-weight: 500; color: var(--text-primary); }
+.slip-tab__price {
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+  color: var(--green);
+}
+
+/* ── Wave assignment UI ───────────────────────────── */
+.wave-ui {
+  display: none;
+  padding: 8px 0 4px;
+  border-top: 1px solid var(--border);
+  margin-top: 6px;
+}
+.wave-ui.open { display: block; }
+.wave-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  color: var(--text-secondary);
+}
+.wave-row input {
+  width: 70px;
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  padding: 2px 6px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--bg-card);
+  color: var(--text-primary);
+}
+.wave-toggle {
+  font-family: 'DM Mono', monospace;
+  font-size: 9px;
+  color: var(--blue);
+  cursor: pointer;
+  margin-top: 4px;
+  display: inline-block;
+}
+.wave-toggle:hover { text-decoration: underline; }
+
+/* ── Preview panel (bottom strip) ─────────────────── */
+.preview-panel {
+  position: fixed;
+  bottom: 0;
+  left: var(--sidebar-w);
+  right: 0;
+  height: 0;
+  background: var(--bg-card);
+  border-top: 1px solid var(--border);
+  transition: height 0.2s ease;
+  overflow: hidden;
+  z-index: 30;
+  padding: 0 20px;
+}
+.preview-panel.open {
+  height: 140px;
+  padding: 14px 20px;
+}
+.preview-close {
+  position: absolute;
+  top: 8px;
+  right: 16px;
+  font-size: 16px;
+  cursor: pointer;
+  color: var(--text-tertiary);
+  background: none;
+  border: none;
+}
+.preview-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr 1fr;
+  gap: 16px;
+}
+.preview-label {
+  font-family: 'DM Mono', monospace;
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-tertiary);
+  margin-bottom: 2px;
+}
+.preview-value {
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+/* ── Empty state ──────────────────────────────────── */
+.dispatch-empty {
+  text-align: center;
+  padding: 40px 20px;
+  color: var(--text-tertiary);
+  font-size: 13px;
+}
+{% endblock %}
+
+{% block content %}
+<!-- Header -->
+<div class="dispatch-header">
+  <div style="display:flex;align-items:baseline;gap:12px">
+    <span class="dispatch-date">{{ today }}</span>
+    <div class="dispatch-stats">
+      <span class="dispatch-stat"><strong id="total-count">{{ (jobs|length) + (carry_forward|length) }}</strong> slips</span>
+      <span class="dispatch-stat"><strong>{{ workers|length }}</strong> workers</span>
+    </div>
+  </div>
+  <button class="btn-send-routes" id="btn-send" disabled>Send Routes</button>
+</div>
+
+{% if jobs or carry_forward or workers %}
+<div class="dispatch-board" id="dispatch-board">
+  <!-- Unassigned queue -->
+  <div class="queue-col">
+    <div class="queue-header">
+      <span>Unassigned</span>
+      <span id="queue-count">{{ (jobs|length) + (carry_forward|length) }}</span>
+    </div>
+    <div class="queue-list" id="queue" data-worker="">
+      {% for cf in carry_forward %}
+      <div class="slip-card carry-forward" draggable="true"
+           data-job-id="{{ cf.id }}"
+           data-name="{{ cf.customer_name or '' }}"
+           data-desc="{{ (cf.notes or cf.job_type or '')[:40] }}"
+           data-zone="{{ cf.zone_cluster or 'Unknown' }}"
+           data-time="{{ cf.requested_time or '' }}"
+           data-price=""
+           data-type="{{ cf.job_type or '' }}"
+           data-phone="{{ cf.customer_phone or '' }}"
+           data-address="{{ cf.address or '' }}"
+           onclick="previewSlip(this)">
+        <div class="slip-card__cf-label">&#8617; from {{ cf.scheduled_date }}</div>
+        <div class="slip-card__name">{{ cf.customer_name or 'Customer' }}</div>
+        <div class="slip-card__desc">{{ (cf.notes or cf.job_type or 'No description')[:40] }}</div>
+        <div class="slip-card__badges">
+          {% set zc = (cf.zone_cluster or 'unknown')|lower %}
+          <span class="slip-badge slip-badge--{{ zc }}">{{ cf.zone_cluster or '?' }}</span>
+          {% if cf.requested_time %}<span class="slip-badge slip-badge--time">{{ cf.requested_time }}</span>{% endif %}
+          {% if cf.job_type and 'emergency' in (cf.job_type|lower) %}<span class="slip-badge slip-badge--asap">ASAP</span>{% endif %}
+        </div>
+        <span class="wave-toggle" onclick="event.stopPropagation();toggleWave(this)">multi-crew ▾</span>
+        <div class="wave-ui">
+          <div class="wave-row">Wave 1 <input type="time" value="08:00"></div>
+          <div class="wave-row">Wave 2 <input type="time" value="10:00"></div>
+          <div class="wave-row">Wave 3 <input type="time" value="13:00"></div>
+        </div>
+      </div>
+      {% endfor %}
+
+      {% for j in jobs %}
+      <div class="slip-card" draggable="true"
+           data-job-id="{{ j.id }}"
+           data-name="{{ j.customer_name or '' }}"
+           data-desc="{{ (j.notes or j.job_type or '')[:40] }}"
+           data-zone="{{ j.zone_cluster or 'Unknown' }}"
+           data-time="{{ j.requested_time or '' }}"
+           data-price=""
+           data-type="{{ j.job_type or '' }}"
+           data-phone="{{ j.customer_phone or '' }}"
+           data-address="{{ j.address or '' }}"
+           onclick="previewSlip(this)">
+        <div class="slip-card__name">{{ j.customer_name or 'Customer' }}</div>
+        <div class="slip-card__desc">{{ (j.notes or j.job_type or 'No description')[:40] }}</div>
+        <div class="slip-card__badges">
+          {% set zc = (j.zone_cluster or 'unknown')|lower %}
+          <span class="slip-badge slip-badge--{{ zc }}">{{ j.zone_cluster or '?' }}</span>
+          {% if j.requested_time %}<span class="slip-badge slip-badge--time">{{ j.requested_time }}</span>{% endif %}
+          {% if j.job_type and 'emergency' in (j.job_type|lower) %}<span class="slip-badge slip-badge--asap">ASAP</span>{% endif %}
+        </div>
+        <span class="wave-toggle" onclick="event.stopPropagation();toggleWave(this)">multi-crew ▾</span>
+        <div class="wave-ui">
+          <div class="wave-row">Wave 1 <input type="time" value="08:00"></div>
+          <div class="wave-row">Wave 2 <input type="time" value="10:00"></div>
+          <div class="wave-row">Wave 3 <input type="time" value="13:00"></div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- Worker columns -->
+  {% for w in workers %}
+  <div class="worker-col">
+    <div class="worker-header">
+      <span class="worker-name">{{ w.name or 'Worker' }}</span>
+      <span class="worker-count" id="count-{{ w.id }}">0</span>
+    </div>
+    <div class="worker-list" id="worker-{{ w.id }}" data-worker="{{ w.id }}">
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="dispatch-empty">
+  No jobs or workers for today. Add jobs from the Control Board and workers from the team panel.
+</div>
+{% endif %}
+
+<!-- Preview panel -->
+<div class="preview-panel" id="preview-panel">
+  <button class="preview-close" onclick="closePreview()">&times;</button>
+  <div class="preview-grid">
+    <div><div class="preview-label">Customer</div><div class="preview-value" id="pv-name">—</div></div>
+    <div><div class="preview-label">Phone</div><div class="preview-value" id="pv-phone">—</div></div>
+    <div><div class="preview-label">Address</div><div class="preview-value" id="pv-address">—</div></div>
+    <div><div class="preview-label">Time</div><div class="preview-value" id="pv-time">—</div></div>
+  </div>
+  <div style="margin-top:8px">
+    <div class="preview-label">Description</div>
+    <div class="preview-value" id="pv-desc">—</div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function() {
+  var draggedEl = null;
+
+  // ── Drag start ─────────────────────────────────
+  document.querySelectorAll('.slip-card, .slip-tab').forEach(function(card) {
+    card.addEventListener('dragstart', function(e) {
+      draggedEl = this;
+      this.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', this.dataset.jobId);
+    });
+    card.addEventListener('dragend', function() {
+      this.classList.remove('dragging');
+      draggedEl = null;
+      document.querySelectorAll('.drag-over').forEach(function(el) { el.classList.remove('drag-over'); });
+    });
+  });
+
+  // ── Drop zones ─────────────────────────────────
+  document.querySelectorAll('.queue-list, .worker-list').forEach(function(zone) {
+    zone.addEventListener('dragover', function(e) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      this.classList.add('drag-over');
+    });
+    zone.addEventListener('dragleave', function() {
+      this.classList.remove('drag-over');
+    });
+    zone.addEventListener('drop', function(e) {
+      e.preventDefault();
+      this.classList.remove('drag-over');
+      if (!draggedEl) return;
+
+      var targetWorker = this.dataset.worker;
+      var sourceWorker = draggedEl.closest('.queue-list, .worker-list').dataset.worker;
+      if (targetWorker === sourceWorker) return;
+
+      var jobId = draggedEl.dataset.jobId;
+
+      if (targetWorker === '') {
+        // Moving back to queue — convert tab to full card
+        var card = makeCard(draggedEl);
+        this.appendChild(card);
+        draggedEl.remove();
+      } else {
+        // Moving to worker column — convert to compact tab
+        var tab = makeTab(draggedEl);
+        this.appendChild(tab);
+        draggedEl.remove();
+      }
+
+      updateCounts();
+      updateSendButton();
+
+      // Stub POST — wired in Prompt 5
+      // fetch('/api/dispatch/assign', { method:'POST', ... })
+    });
+  });
+
+  // ── Convert card → compact tab ─────────────────
+  function makeTab(el) {
+    var tab = document.createElement('div');
+    tab.className = 'slip-tab';
+    tab.draggable = true;
+    tab.dataset.jobId = el.dataset.jobId;
+    tab.dataset.name = el.dataset.name;
+    tab.dataset.desc = el.dataset.desc;
+    tab.dataset.zone = el.dataset.zone;
+    tab.dataset.time = el.dataset.time;
+    tab.dataset.price = el.dataset.price;
+    tab.dataset.type = el.dataset.type;
+    tab.dataset.phone = el.dataset.phone;
+    tab.dataset.address = el.dataset.address;
+    tab.innerHTML = '<span class="slip-tab__name">' + (el.dataset.name || 'Customer') + '</span>'
+      + '<span class="slip-tab__price">' + (el.dataset.price || el.dataset.type || '') + '</span>';
+    tab.onclick = function() { previewSlipData(this.dataset); };
+    bindDrag(tab);
+    return tab;
+  }
+
+  // ── Convert tab → full card ────────────────────
+  function makeCard(el) {
+    var d = el.dataset;
+    var zc = (d.zone || 'unknown').toLowerCase();
+    var card = document.createElement('div');
+    card.className = 'slip-card';
+    card.draggable = true;
+    Object.keys(d).forEach(function(k) { card.dataset[k] = d[k]; });
+    card.innerHTML =
+      '<div class="slip-card__name">' + (d.name || 'Customer') + '</div>'
+      + '<div class="slip-card__desc">' + (d.desc || 'No description') + '</div>'
+      + '<div class="slip-card__badges">'
+      + '<span class="slip-badge slip-badge--' + zc + '">' + (d.zone || '?') + '</span>'
+      + (d.time ? '<span class="slip-badge slip-badge--time">' + d.time + '</span>' : '')
+      + '</div>';
+    card.onclick = function() { previewSlip(this); };
+    bindDrag(card);
+    return card;
+  }
+
+  function bindDrag(el) {
+    el.addEventListener('dragstart', function(e) {
+      draggedEl = this;
+      this.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', this.dataset.jobId);
+    });
+    el.addEventListener('dragend', function() {
+      this.classList.remove('dragging');
+      draggedEl = null;
+    });
+  }
+
+  // ── Counts ─────────────────────────────────────
+  function updateCounts() {
+    var q = document.getElementById('queue');
+    if (q) document.getElementById('queue-count').textContent = q.children.length;
+    document.querySelectorAll('.worker-list').forEach(function(wl) {
+      var wid = wl.dataset.worker;
+      var badge = document.getElementById('count-' + wid);
+      if (badge) badge.textContent = wl.children.length;
+    });
+    var total = 0;
+    document.querySelectorAll('.queue-list, .worker-list').forEach(function(l) { total += l.children.length; });
+    var tc = document.getElementById('total-count');
+    if (tc) tc.textContent = total;
+  }
+
+  function updateSendButton() {
+    var hasAssignments = false;
+    document.querySelectorAll('.worker-list').forEach(function(wl) {
+      if (wl.children.length > 0) hasAssignments = true;
+    });
+    document.getElementById('btn-send').disabled = !hasAssignments;
+  }
+
+  // ── Preview ────────────────────────────────────
+  window.previewSlip = function(el) {
+    previewSlipData(el.dataset);
+  };
+  function previewSlipData(d) {
+    document.getElementById('pv-name').textContent = d.name || '—';
+    document.getElementById('pv-phone').textContent = d.phone || '—';
+    document.getElementById('pv-address').textContent = d.address || '—';
+    document.getElementById('pv-time').textContent = d.time || 'Anytime';
+    document.getElementById('pv-desc').textContent = d.desc || '—';
+    document.getElementById('preview-panel').classList.add('open');
+  }
+  window.closePreview = function() {
+    document.getElementById('preview-panel').classList.remove('open');
+  };
+
+  // ── Wave toggle ────────────────────────────────
+  window.toggleWave = function(el) {
+    var ui = el.nextElementSibling;
+    if (ui) ui.classList.toggle('open');
+  };
+
+  // Init
+  updateCounts();
+})();
+</script>
+{% endblock %}
