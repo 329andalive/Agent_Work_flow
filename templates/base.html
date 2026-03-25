@@ -550,6 +550,30 @@
       </div>
     </div>
 
+    <!-- Dispatch -->
+    <a href="/dashboard/dispatch"
+       class="nav-single-link {{ 'active' if active_page == 'dispatch' else '' }}">
+      <span style="display:flex;align-items:center;gap:10px;">
+        <span class="nav-section-icon">🚛</span> Dispatch
+      </span>
+    </a>
+
+    <!-- Classes -->
+    <a href="/dashboard/classes"
+       class="nav-single-link {{ 'active' if active_page == 'classes' else '' }}">
+      <span style="display:flex;align-items:center;gap:10px;">
+        <span class="nav-section-icon">📋</span> Classes
+      </span>
+    </a>
+
+    <!-- Schedule -->
+    <a href="/dashboard/schedule"
+       class="nav-single-link {{ 'active' if active_page == 'schedule' else '' }}">
+      <span style="display:flex;align-items:center;gap:10px;">
+        <span class="nav-section-icon">📅</span> Schedule
+      </span>
+    </a>
+
     <!-- Banking (coming soon) -->
     <a href="#" class="nav-single-link disabled">
       <span style="display:flex;align-items:center;gap:10px;">
@@ -562,14 +586,6 @@
     <a href="#" class="nav-single-link disabled">
       <span style="display:flex;align-items:center;gap:10px;">
         <span class="nav-section-icon">👥</span> Payroll
-      </span>
-      <span class="nav-coming-soon">soon</span>
-    </a>
-
-    <!-- Schedule (coming soon — our differentiator) -->
-    <a href="#" class="nav-single-link disabled">
-      <span style="display:flex;align-items:center;gap:10px;">
-        <span class="nav-section-icon">📅</span> Schedule
       </span>
       <span class="nav-coming-soon">soon</span>
     </a>

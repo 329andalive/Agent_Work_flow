@@ -461,9 +461,21 @@ def api_stats():
         )
         open_jobs = jobs.count if hasattr(jobs, 'count') else len(jobs.data or [])
 
+        # Count unassigned dispatch jobs for today
+        open_dispatch = 0
+        try:
+            today_str = date.today().isoformat()
+            dispatch_q = sb.table("jobs").select("id").eq(
+                "dispatch_status", "unassigned"
+            ).eq("scheduled_date", today_str).execute()
+            open_dispatch = len(dispatch_q.data or [])
+        except Exception:
+            pass  # dispatch_status column may not exist yet
+
         return jsonify({
             "success": True,
             "open_jobs": open_jobs,
+            "open_dispatch_jobs": open_dispatch,
             "sms_active": bool(os.environ.get("SMS_10DLC_ACTIVE", "")),
             "square_env": os.environ.get("SQUARE_ENVIRONMENT", "sandbox"),
         })
