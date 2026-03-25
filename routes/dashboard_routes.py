@@ -1364,6 +1364,187 @@ def dispatch_board():
 
 
 # ---------------------------------------------------------------------------
+# GET /dashboard/classes — Class/Slot management
+# ---------------------------------------------------------------------------
+
+@dashboard_bp.route("/dashboard/classes")
+def classes_page():
+    client_id = _resolve_client_id()
+    if not client_id:
+        return redirect("/login")
+
+    ctx = _base_context("classes", client_id)
+    sb = _get_supabase()
+    client = ctx["_client"]
+    client_phone = client.get("phone", "")
+    today_str = date.today().isoformat()
+    future_14 = (date.today() + timedelta(days=14)).isoformat()
+    past_7 = (date.today() - timedelta(days=7)).isoformat()
+
+    # Load class board for this client
+    board = None
+    try:
+        result = sb.table("class_boards").select("*").eq("client_phone", client_phone).limit(1).execute()
+        if result.data:
+            board = result.data[0]
+    except Exception as e:
+        print(f"[{_ts()}] WARN dashboard_routes: class_boards query — {e}")
+
+    # Load upcoming slots (next 14 days)
+    upcoming_slots = []
+    try:
+        result = sb.table("class_slots").select(
+            "id, title, slot_date, start_time, end_time, capacity, enrolled_count, "
+            "instructor, description, status"
+        ).eq("client_phone", client_phone).gte("slot_date", today_str).lte(
+            "slot_date", future_14
+        ).neq("status", "cancelled").order("slot_date").order("start_time").execute()
+        upcoming_slots = result.data or []
+    except Exception as e:
+        print(f"[{_ts()}] WARN dashboard_routes: upcoming slots query — {e}")
+
+    # Load past slots (last 7 days)
+    past_slots = []
+    try:
+        result = sb.table("class_slots").select(
+            "id, title, slot_date, start_time, end_time, capacity, enrolled_count, "
+            "instructor, description, status"
+        ).eq("client_phone", client_phone).lt("slot_date", today_str).gte(
+            "slot_date", past_7
+        ).order("slot_date", desc=True).order("start_time").execute()
+        past_slots = result.data or []
+    except Exception as e:
+        print(f"[{_ts()}] WARN dashboard_routes: past slots query — {e}")
+
+    # Load enrollments for upcoming slots
+    slot_ids = [s["id"] for s in upcoming_slots]
+    enrollments = {}
+    if slot_ids:
+        try:
+            for sid in slot_ids[:50]:
+                enr = sb.table("class_enrollments").select(
+                    "customer_name, customer_phone"
+                ).eq("slot_id", sid).eq("status", "enrolled").execute()
+                enrollments[sid] = enr.data or []
+        except Exception as e:
+            print(f"[{_ts()}] WARN dashboard_routes: enrollments query — {e}")
+
+    # Group slots by date
+    from collections import defaultdict
+    upcoming_by_date = defaultdict(list)
+    for s in upcoming_slots:
+        upcoming_by_date[s.get("slot_date", "")].append(s)
+
+    past_by_date = defaultdict(list)
+    for s in past_slots:
+        past_by_date[s.get("slot_date", "")].append(s)
+
+    base_url = os.environ.get("BOLTS11_BASE_URL", "https://bolts11.com")
+    board_token = board.get("token", "") if board else ""
+    booking_url = f"{base_url}/book/{board_token}" if board_token else ""
+
+    ctx.update({
+        "board": board,
+        "upcoming_slots": upcoming_slots,
+        "past_slots": past_slots,
+        "upcoming_by_date": dict(upcoming_by_date),
+        "past_by_date": dict(past_by_date),
+        "enrollments": enrollments,
+        "booking_url": booking_url,
+        "slots_json": json.dumps(upcoming_slots, default=str),
+        "fmt_short_date": fmt_short_date,
+    })
+    return render_template("dashboard/classes.html", **ctx)
+
+
+# ---------------------------------------------------------------------------
+# POST /api/slots/create — Create a new class slot
+# ---------------------------------------------------------------------------
+
+@dashboard_bp.route("/api/slots/create", methods=["POST"])
+def api_create_slot():
+    client_id = _resolve_client_id()
+    if not client_id:
+        return jsonify({"success": False, "error": "Not authenticated"}), 401
+
+    data = request.get_json(silent=True)
+    if not data:
+        return jsonify({"success": False, "error": "Invalid JSON body"}), 400
+
+    title = (data.get("title") or "").strip()
+    slot_date = data.get("slot_date")
+    start_time = data.get("start_time")
+
+    if not title:
+        return jsonify({"success": False, "error": "Title is required"}), 400
+    if not slot_date:
+        return jsonify({"success": False, "error": "Date is required"}), 400
+    if not start_time:
+        return jsonify({"success": False, "error": "Start time is required"}), 400
+
+    client = _load_client(client_id)
+    client_phone = client.get("phone", "")
+
+    row = {
+        "client_phone": client_phone,
+        "title": title,
+        "slot_date": slot_date,
+        "start_time": start_time,
+        "end_time": data.get("end_time") or None,
+        "capacity": int(data.get("capacity", 10)),
+        "enrolled_count": 0,
+        "instructor": (data.get("instructor") or "").strip() or None,
+        "description": (data.get("description") or "").strip() or None,
+        "status": "open",
+    }
+
+    try:
+        sb = _get_supabase()
+        result = sb.table("class_slots").insert(row).execute()
+        if not result.data:
+            return jsonify({"success": False, "error": "Insert failed"}), 500
+        slot_id = result.data[0]["id"]
+        print(f"[{_ts()}] INFO dashboard_routes: Created slot {slot_id[:8]} — {title} on {slot_date}")
+        return jsonify({"success": True, "slot_id": slot_id})
+    except Exception as e:
+        print(f"[{_ts()}] ERROR dashboard_routes: slot create failed — {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+# ---------------------------------------------------------------------------
+# POST /api/slots/cancel — Cancel a class slot
+# ---------------------------------------------------------------------------
+
+@dashboard_bp.route("/api/slots/cancel", methods=["POST"])
+def api_cancel_slot():
+    client_id = _resolve_client_id()
+    if not client_id:
+        return jsonify({"success": False, "error": "Not authenticated"}), 401
+
+    data = request.get_json(silent=True)
+    slot_id = (data or {}).get("slot_id")
+    if not slot_id:
+        return jsonify({"success": False, "error": "slot_id required"}), 400
+
+    client = _load_client(client_id)
+    client_phone = client.get("phone", "")
+
+    try:
+        sb = _get_supabase()
+        # Verify slot belongs to this client
+        check = sb.table("class_slots").select("id").eq("id", slot_id).eq("client_phone", client_phone).execute()
+        if not check.data:
+            return jsonify({"success": False, "error": "Slot not found"}), 404
+
+        sb.table("class_slots").update({"status": "cancelled"}).eq("id", slot_id).execute()
+        print(f"[{_ts()}] INFO dashboard_routes: Cancelled slot {slot_id[:8]}")
+        return jsonify({"success": True})
+    except Exception as e:
+        print(f"[{_ts()}] ERROR dashboard_routes: slot cancel failed — {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+# ---------------------------------------------------------------------------
 # Stub routes — coming soon pages
 # ---------------------------------------------------------------------------
 
