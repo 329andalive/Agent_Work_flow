@@ -3,10 +3,13 @@ booking_routes.py — Flask Blueprint for public class booking
 
 Blueprint: booking_bp
 Routes:
-    GET  /book/<board_token>       — Public booking page (no login)
-    POST /api/book/lookup-customer — Phone → returning customer check
-    POST /api/book/create          — Book a slot (capacity check, SMS confirm)
-    POST /api/book/waitlist        — Join waitlist for full slot
+    GET  /book/<board_token>            — Public booking page (no login)
+    POST /api/book/lookup-customer      — Phone → returning customer check
+    POST /api/book/create               — Book a slot (capacity check, SMS confirm)
+    POST /api/book/waitlist             — Join waitlist for full slot
+    POST /api/slots/cancel              — Instructor cancels a class
+    POST /api/book/cancel               — Customer cancels their booking
+    POST /api/admin/run-scheduled-sms   — Trigger scheduled SMS jobs manually
 """
 
 import os
@@ -640,3 +643,45 @@ def cancel_booking():
         "success": True,
         "waitlist_promoted": waitlist_promoted,
     })
+
+
+# ---------------------------------------------------------------------------
+# POST /api/admin/run-scheduled-sms — manual trigger for testing
+# ---------------------------------------------------------------------------
+
+@booking_bp.route("/api/admin/run-scheduled-sms", methods=["POST"])
+def run_scheduled_sms():
+    """
+    Admin-only endpoint to manually trigger scheduled SMS jobs.
+    Accepts JSON: {"job": "nudges|reminders|no_shows", "client_phone": "..."}
+    """
+    from flask import session as flask_session
+
+    # Basic auth: must have session or be in dev mode
+    client_id = flask_session.get("client_id")
+    if not client_id and os.environ.get("FLASK_ENV") != "development":
+        return jsonify({"success": False, "error": "Not authenticated"}), 401
+
+    data = request.get_json(silent=True) or {}
+    job = data.get("job", "all")
+    client_phone = data.get("client_phone", "")
+
+    from execution.scheduled_sms import (
+        send_class_nudges,
+        send_appointment_reminders,
+        mark_no_shows,
+    )
+
+    results = {}
+
+    if job in ("nudges", "all") and client_phone:
+        results["nudges"] = send_class_nudges(client_phone)
+
+    if job in ("reminders", "all"):
+        results["reminders"] = send_appointment_reminders()
+
+    if job in ("no_shows", "all"):
+        results["no_shows"] = mark_no_shows()
+
+    print(f"[{timestamp()}] INFO admin: run-scheduled-sms job={job} results={results}")
+    return jsonify({"success": True, "results": results})
