@@ -1341,21 +1341,57 @@ def dispatch_board():
         return redirect("/login")
 
     ctx = _base_context("dispatch", client_id)
-    client = ctx["_client"]
-    client_phone = client.get("phone", "")
+    sb = _get_supabase()
 
-    # Load scheduling data
-    from execution.db_scheduling import get_todays_jobs, get_workers, get_carry_forward_jobs
+    # Load scheduling data via Option A (unified jobs table)
+    from execution.db_scheduling import (
+        get_todays_jobs, get_workers, get_carry_forward_jobs, get_held_jobs,
+    )
 
     today_str = date.today().isoformat()
-    jobs = get_todays_jobs(client_phone, today_str)
-    workers = get_workers(client_phone)
-    carry_forward = get_carry_forward_jobs(client_phone)
+    jobs = get_todays_jobs(client_id, today_str)
+    workers = get_workers(client_id)
+    carry_forward = get_carry_forward_jobs(client_id)
+    held = get_held_jobs(client_id)
+
+    # Enrich jobs with customer names
+    all_jobs = jobs + carry_forward + held
+    cust_ids = list(set(j.get("customer_id") for j in all_jobs if j.get("customer_id")))
+    cust_map = {}
+    if cust_ids:
+        try:
+            custs = sb.table("customers").select("id, customer_name, customer_phone, customer_address").in_("id", cust_ids).execute().data or []
+            cust_map = {c["id"]: c for c in custs}
+        except Exception as e:
+            print(f"[{_ts()}] WARN dashboard_routes: dispatch customer map — {e}")
+
+    for j in all_jobs:
+        cid = j.get("customer_id")
+        if cid and cid in cust_map:
+            j["customer_name"] = cust_map[cid].get("customer_name", "")
+            j["customer_phone"] = cust_map[cid].get("customer_phone", "")
+            j["address"] = cust_map[cid].get("customer_address", "") or j.get("job_description", "")
+        else:
+            j["customer_name"] = ""
+            j["customer_phone"] = ""
+            j["address"] = j.get("job_description", "")
+
+    # Phase 2 AI suggestions (returns [] if < 30 sessions)
+    suggestions = []
+    try:
+        from execution.dispatch_suggestion import get_suggestions
+        client = ctx["_client"]
+        client_phone = client.get("phone", "")
+        suggestions = get_suggestions(client_phone, jobs, workers)
+    except Exception as e:
+        print(f"[{_ts()}] WARN dashboard_routes: dispatch suggestions — {e}")
 
     ctx.update({
         "jobs": jobs,
         "workers": workers,
         "carry_forward": carry_forward,
+        "held": held,
+        "suggestions": suggestions,
         "dispatch_date": today_str,
         "jobs_json": json.dumps(jobs + carry_forward, default=str),
         "workers_json": json.dumps(workers, default=str),

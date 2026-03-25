@@ -5,6 +5,7 @@ Blueprint: dispatch_bp
 Routes:
     POST /api/dispatch/assign — assign a single job to a worker
     POST /api/dispatch/send   — snapshot all assignments, generate tokens, SMS workers
+    GET  /r/<token>           — worker route page (mobile, no login)
 """
 
 import os
@@ -39,7 +40,7 @@ def _resolve_client_id():
             return cid
         try:
             sb = _get_supabase()
-            r = sb.table("clients").select("id, phone, business_name").eq("active", True).order("created_at").limit(1).execute()
+            r = sb.table("clients").select("id").eq("active", True).order("created_at").limit(1).execute()
             if r.data:
                 return r.data[0]["id"]
         except Exception:
@@ -73,8 +74,8 @@ def _generate_route_token() -> str:
 @dispatch_bp.route("/api/dispatch/assign", methods=["POST"])
 def dispatch_assign():
     """
-    Assign a single job to a worker. Updates route_assignments and
-    logs to dispatch_log.
+    Assign a single job to a worker. Calls db_scheduling.save_dispatch_session
+    for the assignment and updates the job's dispatch columns.
     """
     client_id = _resolve_client_id()
     if not client_id:
@@ -92,39 +93,23 @@ def dispatch_assign():
     wave_id = data.get("wave_id")
     sort_order = data.get("sort_order", 0)
 
-    client = _load_client(client_id)
-    client_phone = client.get("phone", "")
-    now = datetime.now(timezone.utc).isoformat()
-    session_id = str(uuid.uuid4())
-
     try:
-        sb = _get_supabase()
-        result = sb.table("route_assignments").insert({
-            "client_phone": client_phone,
-            "session_id": session_id,
-            "job_id": job_id,
-            "worker_id": worker_id,
-            "wave_id": wave_id,
-            "sort_order": sort_order,
-            "assigned_at": now,
-        }).execute()
+        from execution.db_scheduling import save_dispatch_session
+        session_id = save_dispatch_session(
+            client_id=client_id,
+            assignments=[{
+                "job_id": job_id,
+                "worker_id": worker_id,
+                "wave_id": wave_id,
+                "sort_order": sort_order,
+            }],
+        )
 
-        assignment_id = result.data[0]["id"] if result.data else None
-
-        # Log to dispatch_log
-        try:
-            sb.table("dispatch_log").insert({
-                "client_phone": client_phone,
-                "session_id": session_id,
-                "job_count": 1,
-                "worker_count": 1,
-                "created_at": now,
-            }).execute()
-        except Exception as e:
-            print(f"[{timestamp()}] WARN dispatch: dispatch_log insert failed — {e}")
-
-        print(f"[{timestamp()}] INFO dispatch: Assigned job {job_id[:8]} → worker {worker_id[:8]}")
-        return jsonify({"success": True, "assignment_id": assignment_id})
+        if session_id:
+            print(f"[{timestamp()}] INFO dispatch: Assigned job {job_id[:8]} → worker {worker_id[:8]}")
+            return jsonify({"success": True, "assignment_id": session_id})
+        else:
+            return jsonify({"success": False, "error": "Assignment failed"}), 500
 
     except Exception as e:
         print(f"[{timestamp()}] ERROR dispatch: assign failed — {e}")
@@ -140,22 +125,6 @@ def dispatch_send():
     """
     Snapshot all assignments for the day, generate route tokens,
     and SMS each worker their route.
-
-    Expects JSON:
-    {
-        "date": "YYYY-MM-DD",
-        "session_id": "uuid (optional)",
-        "assignments": [
-            {
-                "worker_id": "uuid",
-                "jobs": [
-                    {"job_id": "uuid", "wave_id": "optional", "sort_order": 0},
-                    ...
-                ]
-            },
-            ...
-        ]
-    }
     """
     client_id = _resolve_client_id()
     if not client_id:
@@ -178,7 +147,6 @@ def dispatch_send():
     client_phone = client.get("phone", "")
     business_name = client.get("business_name", "Bolts11")
     base_url = os.environ.get("BOLTS11_BASE_URL", "https://bolts11.com")
-    now = datetime.now(timezone.utc).isoformat()
     expires_at = (datetime.now(timezone.utc) + timedelta(hours=72)).isoformat()
 
     sb = _get_supabase()
@@ -196,38 +164,39 @@ def dispatch_send():
         total_jobs += len(jobs)
         has_waves = any(j.get("wave_id") for j in jobs)
 
-        # Look up worker phone + name
+        # Look up worker from employees table
         worker_phone = None
         worker_name = "Worker"
         try:
-            w = sb.table("workers").select("name, phone").eq("id", worker_id).execute()
+            w = sb.table("employees").select("name, phone").eq("id", worker_id).execute()
             if w.data:
                 worker_phone = w.data[0].get("phone")
                 worker_name = w.data[0].get("name", "Worker")
         except Exception as e:
-            print(f"[{timestamp()}] WARN dispatch: worker lookup failed for {worker_id[:8]} — {e}")
+            print(f"[{timestamp()}] WARN dispatch: employee lookup failed for {worker_id[:8]} — {e}")
 
-        # Insert route_assignments rows
-        for j in jobs:
-            try:
-                sb.table("route_assignments").insert({
-                    "client_phone": client_phone,
-                    "session_id": session_id,
+        # Save assignments via db_scheduling
+        try:
+            from execution.db_scheduling import save_dispatch_session
+            save_dispatch_session(
+                client_id=client_id,
+                assignments=[{
                     "job_id": j["job_id"],
                     "worker_id": worker_id,
                     "wave_id": j.get("wave_id"),
                     "sort_order": j.get("sort_order", 0),
-                    "assigned_at": now,
-                }).execute()
-            except Exception as e:
-                print(f"[{timestamp()}] WARN dispatch: assignment insert failed — {e}")
+                } for j in jobs],
+                session_id=session_id,
+            )
+        except Exception as e:
+            print(f"[{timestamp()}] WARN dispatch: save_dispatch_session failed — {e}")
 
         # Generate route token
         route_token = _generate_route_token()
         try:
             sb.table("route_tokens").insert({
                 "token": route_token,
-                "client_phone": client_phone,
+                "client_id": client_id,
                 "worker_id": worker_id,
                 "session_id": session_id,
                 "dispatch_date": dispatch_date,
@@ -241,8 +210,8 @@ def dispatch_send():
         msg_type = "wave_assignment" if has_waves else "route"
 
         sms_body = (
-            f"{business_name} routes for {dispatch_date}:\n"
-            f"{len(jobs)} job{'s' if len(jobs) != 1 else ''}.\n"
+            f"{business_name} jobs for {dispatch_date}:\n"
+            f"{len(jobs)} stop{'s' if len(jobs) != 1 else ''}.\n"
             f"Your route: {route_url}"
         )
 
@@ -270,7 +239,7 @@ def dispatch_send():
                     print(f"[{timestamp()}] INFO dispatch: SMS sent to {worker_name} ({worker_phone})")
                 else:
                     sms_failed.append({"worker": worker_name, "error": result.get("error", "unknown")})
-                    workers_notified += 1  # attempted
+                    workers_notified += 1
                     print(f"[{timestamp()}] WARN dispatch: SMS failed for {worker_name} — {result.get('error')}")
             except Exception as e:
                 sms_failed.append({"worker": worker_name, "error": str(e)})
@@ -278,18 +247,6 @@ def dispatch_send():
         else:
             sms_failed.append({"worker": worker_name, "error": "No phone number"})
             print(f"[{timestamp()}] WARN dispatch: No phone for worker {worker_name}")
-
-    # Write dispatch_log session summary
-    try:
-        sb.table("dispatch_log").insert({
-            "client_phone": client_phone,
-            "session_id": session_id,
-            "job_count": total_jobs,
-            "worker_count": len(assignments),
-            "created_at": now,
-        }).execute()
-    except Exception as e:
-        print(f"[{timestamp()}] WARN dispatch: dispatch_log insert failed — {e}")
 
     print(
         f"[{timestamp()}] INFO dispatch: Send complete — "
@@ -315,8 +272,7 @@ def dispatch_send():
 def worker_route(token):
     """
     Public worker route page. No login required — token is the auth.
-    Shows the worker's job list for the day with Maps links and
-    status reply instructions.
+    Reads from jobs table (Option A) and employees table.
     """
     sb = _get_supabase()
 
@@ -343,17 +299,15 @@ def worker_route(token):
     dispatch_date_str = route.get("dispatch_date", "")
     try:
         from datetime import date as date_cls
-        dispatch_date = date_cls.fromisoformat(dispatch_date_str)
-        today = date_cls.today()
-        if today > dispatch_date:
-            print(f"[{timestamp()}] INFO dispatch: Route token expired — {token} (date={dispatch_date_str})")
+        dispatch_dt = date_cls.fromisoformat(dispatch_date_str)
+        if date_cls.today() > dispatch_dt:
             return render_template("error.html",
                 title="Route Expired",
                 message=f"This route was for {dispatch_date_str}.",
                 sub="Contact your dispatcher for today's route.",
             ), 410
     except (ValueError, TypeError):
-        pass  # If date can't be parsed, allow access
+        pass
 
     # Update viewed_at
     try:
@@ -361,29 +315,29 @@ def worker_route(token):
             "viewed_at": datetime.now(timezone.utc).isoformat(),
         }).eq("token", token).execute()
     except Exception:
-        pass  # Non-fatal
+        pass
 
-    # Load worker info
+    # Load worker info from employees table
     worker_id = route.get("worker_id", "")
     worker_name = "Worker"
     try:
-        w = sb.table("workers").select("name").eq("id", worker_id).execute()
+        w = sb.table("employees").select("name").eq("id", worker_id).execute()
         if w.data:
             worker_name = w.data[0].get("name", "Worker")
     except Exception:
         pass
 
     # Load client info
-    client_phone = route.get("client_phone", "")
+    client_id = route.get("client_id", "")
     business_name = "Bolts11"
     try:
-        c = sb.table("clients").select("business_name").eq("phone", client_phone).execute()
+        c = sb.table("clients").select("business_name").eq("id", client_id).execute()
         if c.data:
             business_name = c.data[0].get("business_name", "Bolts11")
     except Exception:
         pass
 
-    # Load all assignments for this worker + session, ordered by sort_order
+    # Load assigned jobs from route_assignments → jobs table
     session_id = route.get("session_id", "")
     jobs = []
     try:
@@ -395,16 +349,34 @@ def worker_route(token):
         wave_map = {a["job_id"]: a.get("wave_id") for a in (assignments.data or [])}
 
         if job_ids:
-            job_rows = sb.table("scheduled_jobs").select(
-                "id, customer_name, customer_phone, address, job_type, notes, "
-                "requested_time, zone_cluster, status"
+            # Query jobs table (Option A) + customer data
+            job_rows = sb.table("jobs").select(
+                "id, job_type, job_description, job_notes, status, "
+                "scheduled_date, customer_id, zone_cluster, requested_time"
             ).in_("id", job_ids).execute()
             job_dict = {j["id"]: j for j in (job_rows.data or [])}
 
-            # Rebuild in sort_order
+            # Batch-fetch customer names + addresses
+            cust_ids = list(set(j.get("customer_id") for j in (job_rows.data or []) if j.get("customer_id")))
+            cust_map = {}
+            if cust_ids:
+                try:
+                    custs = sb.table("customers").select(
+                        "id, customer_name, customer_phone, customer_address"
+                    ).in_("id", cust_ids).execute().data or []
+                    cust_map = {c["id"]: c for c in custs}
+                except Exception:
+                    pass
+
+            # Rebuild in sort_order with customer data
             for jid in job_ids:
                 if jid in job_dict:
                     j = job_dict[jid]
+                    cust = cust_map.get(j.get("customer_id"), {})
+                    j["customer_name"] = cust.get("customer_name", "")
+                    j["customer_phone"] = cust.get("customer_phone", "")
+                    j["address"] = cust.get("customer_address", "") or j.get("job_description", "")
+                    j["notes"] = j.get("job_notes", "") or j.get("job_description", "")
                     j["wave_id"] = wave_map.get(jid)
                     jobs.append(j)
     except Exception as e:

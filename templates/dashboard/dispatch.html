@@ -302,6 +302,53 @@
   color: var(--text-primary);
 }
 
+/* ── Remove button on assigned tabs ───────────────── */
+.slip-tab__remove {
+  font-size: 14px;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  margin-left: 6px;
+  line-height: 1;
+}
+.slip-tab__remove:hover { color: var(--red); }
+
+/* ── Held section ─────────────────────────────────── */
+.held-section {
+  margin-top: 16px;
+}
+.held-header {
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-tertiary);
+  padding: 8px 0;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.held-header:hover { color: var(--text-secondary); }
+.held-list { display: none; }
+.held-list.open { display: block; }
+.held-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--red);
+  border-radius: 6px;
+  padding: 8px 12px;
+  margin-bottom: 6px;
+  font-size: 12px;
+}
+.held-card__name { font-weight: 500; }
+.held-card__reason {
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  color: var(--text-tertiary);
+  margin-top: 2px;
+}
+
 /* ── Empty state ──────────────────────────────────── */
 .dispatch-empty {
   text-align: center;
@@ -337,7 +384,7 @@
       <div class="slip-card carry-forward" draggable="true"
            data-job-id="{{ cf.id }}"
            data-name="{{ cf.customer_name or '' }}"
-           data-desc="{{ (cf.notes or cf.job_type or '')[:40] }}"
+           data-desc="{{ (cf.job_notes or cf.job_description or cf.job_type or '')[:40] }}"
            data-zone="{{ cf.zone_cluster or 'Unknown' }}"
            data-time="{{ cf.requested_time or '' }}"
            data-price=""
@@ -347,7 +394,7 @@
            onclick="previewSlip(this)">
         <div class="slip-card__cf-label">&#8617; from {{ cf.scheduled_date }}</div>
         <div class="slip-card__name">{{ cf.customer_name or 'Customer' }}</div>
-        <div class="slip-card__desc">{{ (cf.notes or cf.job_type or 'No description')[:40] }}</div>
+        <div class="slip-card__desc">{{ (cf.job_notes or cf.job_description or cf.job_type or 'No description')[:40] }}</div>
         <div class="slip-card__badges">
           {% set zc = (cf.zone_cluster or 'unknown')|lower %}
           <span class="slip-badge slip-badge--{{ zc }}">{{ cf.zone_cluster or '?' }}</span>
@@ -367,16 +414,16 @@
       <div class="slip-card" draggable="true"
            data-job-id="{{ j.id }}"
            data-name="{{ j.customer_name or '' }}"
-           data-desc="{{ (j.notes or j.job_type or '')[:40] }}"
+           data-desc="{{ (j.job_notes or j.job_description or j.job_type or '')[:40] }}"
            data-zone="{{ j.zone_cluster or 'Unknown' }}"
            data-time="{{ j.requested_time or '' }}"
-           data-price=""
+           data-price="{{ '$%.0f'|format(j.estimated_amount|float) if j.estimated_amount else '' }}"
            data-type="{{ j.job_type or '' }}"
            data-phone="{{ j.customer_phone or '' }}"
            data-address="{{ j.address or '' }}"
            onclick="previewSlip(this)">
         <div class="slip-card__name">{{ j.customer_name or 'Customer' }}</div>
-        <div class="slip-card__desc">{{ (j.notes or j.job_type or 'No description')[:40] }}</div>
+        <div class="slip-card__desc">{{ (j.job_notes or j.job_description or j.job_type or 'No description')[:40] }}</div>
         <div class="slip-card__badges">
           {% set zc = (j.zone_cluster or 'unknown')|lower %}
           <span class="slip-badge slip-badge--{{ zc }}">{{ j.zone_cluster or '?' }}</span>
@@ -406,6 +453,23 @@
   </div>
   {% endfor %}
 </div>
+{% if held %}
+<!-- Held jobs section (collapsed by default) -->
+<div class="held-section">
+  <div class="held-header" onclick="document.getElementById('held-list').classList.toggle('open')">
+    ▸ Held Jobs ({{ held|length }}) — parts pending / scope review
+  </div>
+  <div class="held-list" id="held-list">
+    {% for h in held %}
+    <div class="held-card">
+      <div class="held-card__name">{{ h.customer_name or h.job_type or 'Job' }}</div>
+      <div class="held-card__reason">{{ h.dispatch_status or h.status }} — {{ h.job_description[:40] if h.job_description else 'No description' }}</div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
 {% else %}
 <div class="dispatch-empty">
   No jobs or workers for today. Add jobs from the Control Board and workers from the team panel.
@@ -484,8 +548,14 @@
       updateCounts();
       updateSendButton();
 
-      // Stub POST — wired in Prompt 5
-      // fetch('/api/dispatch/assign', { method:'POST', ... })
+      // POST assignment to backend
+      if (targetWorker) {
+        fetch('/api/dispatch/assign', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({job_id: jobId, worker_id: targetWorker})
+        }).catch(function(e) { console.warn('assign failed:', e); });
+      }
     });
   });
 
@@ -504,7 +574,16 @@
     tab.dataset.phone = el.dataset.phone;
     tab.dataset.address = el.dataset.address;
     tab.innerHTML = '<span class="slip-tab__name">' + (el.dataset.name || 'Customer') + '</span>'
-      + '<span class="slip-tab__price">' + (el.dataset.price || el.dataset.type || '') + '</span>';
+      + '<span class="slip-tab__price">' + (el.dataset.price || el.dataset.type || '') + '</span>'
+      + '<span class="slip-tab__remove" title="Remove">&times;</span>';
+    tab.querySelector('.slip-tab__remove').addEventListener('click', function(e) {
+      e.stopPropagation();
+      var card = makeCard(tab);
+      document.getElementById('queue').appendChild(card);
+      tab.remove();
+      updateCounts();
+      updateSendButton();
+    });
     tab.onclick = function() { previewSlipData(this.dataset); };
     bindDrag(tab);
     return tab;
@@ -587,6 +666,63 @@
     var ui = el.nextElementSibling;
     if (ui) ui.classList.toggle('open');
   };
+
+  // ── Send Routes button ────────────────────────
+  document.getElementById('btn-send').addEventListener('click', function() {
+    var btn = this;
+    btn.disabled = true;
+    btn.textContent = 'Sending…';
+
+    // Build assignments payload from worker columns
+    var assignments = [];
+    document.querySelectorAll('.worker-list').forEach(function(wl) {
+      var wid = wl.dataset.worker;
+      if (!wid) return;
+      var jobs = [];
+      wl.querySelectorAll('.slip-tab').forEach(function(tab, idx) {
+        jobs.push({job_id: tab.dataset.jobId, sort_order: idx});
+      });
+      if (jobs.length > 0) {
+        assignments.push({worker_id: wid, jobs: jobs});
+      }
+    });
+
+    if (assignments.length === 0) {
+      btn.disabled = false;
+      btn.textContent = 'Send Routes';
+      return;
+    }
+
+    fetch('/api/dispatch/send', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        date: '{{ dispatch_date }}',
+        assignments: assignments
+      })
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (d.success) {
+        btn.textContent = 'Sent! (' + d.sms_sent + ' SMS)';
+        btn.style.background = '#639922';
+        setTimeout(function() { window.location.reload(); }, 2000);
+      } else {
+        btn.textContent = 'Failed — ' + (d.error || 'try again');
+        btn.style.background = '#E24B4A';
+        btn.disabled = false;
+        setTimeout(function() {
+          btn.textContent = 'Send Routes';
+          btn.style.background = '';
+        }, 3000);
+      }
+    })
+    .catch(function(e) {
+      btn.textContent = 'Error';
+      btn.disabled = false;
+      setTimeout(function() { btn.textContent = 'Send Routes'; btn.style.background = ''; }, 3000);
+    });
+  });
 
   // Init
   updateCounts();
