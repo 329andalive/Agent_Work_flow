@@ -349,3 +349,294 @@ def join_waitlist():
     except Exception as e:
         print(f"[{timestamp()}] ERROR booking: waitlist insert failed — {e}")
         return jsonify({"success": False, "error": str(e)}), 500
+
+
+# ---------------------------------------------------------------------------
+# POST /api/slots/cancel — instructor/admin cancels a class
+# ---------------------------------------------------------------------------
+
+@booking_bp.route("/api/slots/cancel", methods=["POST"])
+def cancel_slot():
+    """
+    Cancel a class slot. Notifies all enrolled customers via SMS,
+    cancels their bookings, and logs to agent_activity.
+    """
+    data = request.get_json(silent=True) or {}
+    slot_id = data.get("slot_id")
+    cancel_reason = (data.get("reason") or "").strip()
+    client_phone = (data.get("client_phone") or "").strip()
+
+    if not slot_id:
+        return jsonify({"success": False, "error": "slot_id required"}), 400
+
+    sb = _get_supabase()
+
+    # Load slot
+    try:
+        result = sb.table("class_slots").select("*").eq("id", slot_id).execute()
+        if not result.data:
+            return jsonify({"success": False, "error": "Slot not found"}), 404
+        slot = result.data[0]
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+    slot_client_phone = slot.get("client_phone", client_phone)
+    slot_title = slot.get("title", "Class")
+    slot_date = slot.get("slot_date", "")
+    slot_time = slot.get("start_time", "")
+
+    # 1. Set slot status='cancelled'
+    try:
+        update = {"status": "cancelled"}
+        if cancel_reason:
+            update["cancel_reason"] = cancel_reason
+        sb.table("class_slots").update(update).eq("id", slot_id).execute()
+        print(f"[{timestamp()}] INFO booking: Slot {slot_id[:8]} cancelled — {slot_title} on {slot_date}")
+    except Exception as e:
+        print(f"[{timestamp()}] ERROR booking: slot cancel update failed — {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+    # 2. Get all confirmed enrollments
+    enrollments = []
+    try:
+        result = sb.table("class_enrollments").select(
+            "id, customer_phone, customer_name, customer_id"
+        ).eq("slot_id", slot_id).eq("status", "enrolled").execute()
+        enrollments = result.data or []
+    except Exception as e:
+        print(f"[{timestamp()}] WARN booking: enrollment query failed — {e}")
+
+    # Load business name for SMS
+    business_name = "Your service provider"
+    try:
+        c = sb.table("clients").select("business_name").eq("phone", slot_client_phone).execute()
+        if c.data:
+            business_name = c.data[0].get("business_name", business_name)
+    except Exception:
+        pass
+
+    # Build booking URL for rebook link
+    board_token = ""
+    try:
+        board = sb.table("class_boards").select("token").eq("client_phone", slot_client_phone).limit(1).execute()
+        if board.data:
+            board_token = board.data[0].get("token", "")
+    except Exception:
+        pass
+    base_url = os.environ.get("BOLTS11_BASE_URL", "https://bolts11.com")
+    booking_url = f"{base_url}/book/{board_token}" if board_token else ""
+
+    # 3. Send cancellation SMS to each enrolled customer with consent
+    sms_sent = 0
+    from execution.sms_send import send_sms
+    for enr in enrollments:
+        cust_phone = enr.get("customer_phone")
+        if not cust_phone:
+            continue
+
+        # Check sms_consent
+        has_consent = False
+        if enr.get("customer_id"):
+            try:
+                cust = sb.table("customers").select("sms_consent").eq("id", enr["customer_id"]).execute()
+                if cust.data and cust.data[0].get("sms_consent"):
+                    has_consent = True
+            except Exception:
+                pass
+
+        if has_consent:
+            rebook_line = f" Visit {booking_url} to rebook." if booking_url else ""
+            try:
+                send_sms(
+                    to_number=cust_phone,
+                    message_body=(
+                        f"{business_name}: {slot_title} on {slot_date} at {slot_time} "
+                        f"has been cancelled. Sorry for the inconvenience.{rebook_line}"
+                    ),
+                    from_number=slot_client_phone,
+                    message_type="cancellation",
+                )
+                sms_sent += 1
+            except Exception as e:
+                print(f"[{timestamp()}] WARN booking: cancellation SMS failed for {cust_phone} — {e}")
+
+    # 4. Update all enrollment statuses to 'cancelled'
+    try:
+        sb.table("class_enrollments").update({
+            "status": "cancelled",
+        }).eq("slot_id", slot_id).eq("status", "enrolled").execute()
+    except Exception as e:
+        print(f"[{timestamp()}] WARN booking: enrollment cancel update failed — {e}")
+
+    # 5. Log to agent_activity
+    try:
+        from execution.db_agent_activity import log_activity
+        log_activity(
+            client_phone=slot_client_phone,
+            agent_name="booking_system",
+            action_taken="slot_cancelled",
+            input_summary=f"{slot_title} on {slot_date}",
+            output_summary=f"Cancelled — {len(enrollments)} enrolled, {sms_sent} notified",
+            sms_sent=sms_sent > 0,
+        )
+    except Exception:
+        pass
+
+    print(f"[{timestamp()}] INFO booking: Slot cancellation complete — {len(enrollments)} enrolled, {sms_sent} SMS sent")
+
+    return jsonify({
+        "success": True,
+        "enrollments_cancelled": len(enrollments),
+        "sms_sent": sms_sent,
+    })
+
+
+# ---------------------------------------------------------------------------
+# POST /api/book/cancel — customer cancels their own booking
+# ---------------------------------------------------------------------------
+
+@booking_bp.route("/api/book/cancel", methods=["POST"])
+def cancel_booking():
+    """
+    Customer cancels their booking. Decrements slot count, checks
+    waitlist, promotes position 1 if available.
+    """
+    data = request.get_json(silent=True) or {}
+    booking_id = data.get("booking_id")
+    booking_token = data.get("booking_token")
+
+    if not booking_id and not booking_token:
+        return jsonify({"success": False, "error": "booking_id or booking_token required"}), 400
+
+    sb = _get_supabase()
+
+    # 1. Look up booking
+    try:
+        if booking_token:
+            result = sb.table("class_enrollments").select("*").eq("booking_token", booking_token).execute()
+        else:
+            result = sb.table("class_enrollments").select("*").eq("id", booking_id).execute()
+
+        if not result.data:
+            return jsonify({"success": False, "error": "Booking not found"}), 404
+        booking = result.data[0]
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+    if booking.get("status") == "cancelled":
+        return jsonify({"success": True, "message": "Already cancelled"})
+
+    slot_id = booking.get("slot_id")
+    customer_phone = booking.get("customer_phone")
+    customer_name = booking.get("customer_name", "Customer")
+
+    # 2. Set booking status='cancelled'
+    try:
+        sb.table("class_enrollments").update({
+            "status": "cancelled",
+        }).eq("id", booking["id"]).execute()
+    except Exception as e:
+        print(f"[{timestamp()}] ERROR booking: booking cancel failed — {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+    # 3. Decrement slot.enrolled_count
+    try:
+        slot_result = sb.table("class_slots").select("enrolled_count, client_phone, title, slot_date, start_time").eq("id", slot_id).execute()
+        if slot_result.data:
+            slot = slot_result.data[0]
+            new_count = max(0, (slot.get("enrolled_count", 1)) - 1)
+            sb.table("class_slots").update({"enrolled_count": new_count}).eq("id", slot_id).execute()
+            slot_client_phone = slot.get("client_phone", "")
+            slot_title = slot.get("title", "Class")
+            slot_date = slot.get("slot_date", "")
+            slot_time = slot.get("start_time", "")
+        else:
+            slot_client_phone = ""
+            slot_title = "Class"
+            slot_date = ""
+            slot_time = ""
+    except Exception as e:
+        print(f"[{timestamp()}] WARN booking: enrolled_count decrement failed — {e}")
+        slot_client_phone = ""
+        slot_title = "Class"
+        slot_date = ""
+        slot_time = ""
+
+    # Load business name
+    business_name = "Your service provider"
+    try:
+        c = sb.table("clients").select("business_name").eq("phone", slot_client_phone).execute()
+        if c.data:
+            business_name = c.data[0].get("business_name", business_name)
+    except Exception:
+        pass
+
+    # 4. Check waitlist for this slot
+    from execution.sms_send import send_sms
+    waitlist_promoted = False
+    try:
+        wl = sb.table("class_waitlist").select(
+            "id, customer_name, customer_phone"
+        ).eq("slot_id", slot_id).eq("status", "waiting").order("added_at").limit(1).execute()
+
+        if wl.data:
+            wl_entry = wl.data[0]
+            wl_phone = wl_entry.get("customer_phone")
+            wl_name = wl_entry.get("customer_name", "there")
+
+            # Build booking URL
+            board_token = ""
+            try:
+                board = sb.table("class_boards").select("token").eq("client_phone", slot_client_phone).limit(1).execute()
+                if board.data:
+                    board_token = board.data[0].get("token", "")
+            except Exception:
+                pass
+            base_url = os.environ.get("BOLTS11_BASE_URL", "https://bolts11.com")
+            claim_url = f"{base_url}/book/{board_token}" if board_token else ""
+
+            # 5. Notify waitlist position 1
+            if wl_phone and claim_url:
+                try:
+                    send_sms(
+                        to_number=wl_phone,
+                        message_body=(
+                            f"{business_name}: A spot opened in {slot_title} on {slot_date}! "
+                            f"Tap to claim it within 2 hours: {claim_url}"
+                        ),
+                        from_number=slot_client_phone,
+                        message_type="waitlist_notify",
+                    )
+                    waitlist_promoted = True
+                    print(f"[{timestamp()}] INFO booking: Waitlist notify sent to {wl_name} ({wl_phone})")
+                except Exception as e:
+                    print(f"[{timestamp()}] WARN booking: waitlist notify SMS failed — {e}")
+
+            # Update waitlist status
+            try:
+                sb.table("class_waitlist").update({
+                    "status": "notified",
+                }).eq("id", wl_entry["id"]).execute()
+            except Exception:
+                pass
+    except Exception as e:
+        print(f"[{timestamp()}] WARN booking: waitlist check failed — {e}")
+
+    # 6. Send cancellation confirm to customer who cancelled
+    if customer_phone:
+        try:
+            send_sms(
+                to_number=customer_phone,
+                message_body=f"Your booking for {slot_title} on {slot_date} has been cancelled.",
+                from_number=slot_client_phone,
+                message_type="cancellation",
+            )
+        except Exception as e:
+            print(f"[{timestamp()}] WARN booking: cancel confirm SMS failed — {e}")
+
+    print(f"[{timestamp()}] INFO booking: {customer_name} cancelled booking for {slot_title} — waitlist promoted: {waitlist_promoted}")
+
+    return jsonify({
+        "success": True,
+        "waitlist_promoted": waitlist_promoted,
+    })
