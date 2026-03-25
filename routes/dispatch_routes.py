@@ -352,7 +352,7 @@ def worker_route(token):
             # Query jobs table (Option A) + customer data
             job_rows = sb.table("jobs").select(
                 "id, job_type, job_description, job_notes, status, "
-                "scheduled_date, customer_id, zone_cluster, requested_time"
+                "scheduled_date, customer_id, zone_cluster, requested_time, estimated_amount"
             ).in_("id", job_ids).execute()
             job_dict = {j["id"]: j for j in (job_rows.data or [])}
 
