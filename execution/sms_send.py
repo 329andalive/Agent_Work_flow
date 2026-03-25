@@ -44,14 +44,42 @@ def split_message(text, max_length=MAX_SMS_LENGTH):
     return chunks
 
 
-def send_sms(to_number: str, message_body: str, from_number: str = None) -> dict:
+def _log_sms(client_phone: str, recipient_phone: str, message_type: str,
+             body: str, telnyx_message_id: str = None, status: str = "sent") -> None:
     """
-    Send an outbound SMS via Telnyx.
+    Log an outbound SMS to the sms_message_log table.
+    Never raises — a failed log must never block SMS delivery.
+    """
+    try:
+        from execution.db_connection import get_client as get_supabase
+        sb = get_supabase()
+        sb.table("sms_message_log").insert({
+            "client_phone": client_phone,
+            "recipient_phone": recipient_phone,
+            "message_type": message_type,
+            "body": (body or "")[:4000],
+            "telnyx_message_id": telnyx_message_id,
+            "status": status,
+        }).execute()
+    except Exception as e:
+        # Log but never block — SMS delivery is more important than the audit log
+        print(f"[{timestamp()}] WARN sms_send: sms_message_log insert failed — {e}")
+
+
+def send_sms(to_number: str, message_body: str, from_number: str = None,
+             message_type: str = "invoice") -> dict:
+    """
+    Send an outbound SMS via Telnyx and log to sms_message_log.
 
     Args:
         to_number:    Recipient phone number in E.164 format (e.g. "+15555555555")
         message_body: Text content of the message
         from_number:  Sender number. Defaults to TELNYX_PHONE_NUMBER from .env
+        message_type: Category for logging. Valid values: route, schedule_nudge,
+                      booking_confirm, appt_reminder, cancellation, invoice,
+                      review_ask, waitlist_notify, no_show_followup,
+                      carry_forward_notify, wave_assignment.
+                      Defaults to 'invoice' for backward compatibility.
 
     Returns:
         dict with keys:
@@ -81,9 +109,12 @@ def send_sms(to_number: str, message_body: str, from_number: str = None) -> dict
         part_label = f"(part {i+1}/{len(chunks)})" if len(chunks) > 1 else ""
         result = _send_single(to_number, chunk, sender, part_label)
         results.append(result)
-        # If any chunk fails, stop and return the failure
+        # If any chunk fails, log failure and stop
         if not result["success"]:
+            _log_sms(sender, to_number, message_type, chunk, None, "failed")
             return result
+        # Log successful send — never block on log failure
+        _log_sms(sender, to_number, message_type, chunk, result.get("message_id"), "sent")
 
     # Return the last (or only) result — all chunks succeeded
     return results[-1]
