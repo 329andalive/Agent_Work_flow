@@ -1545,6 +1545,163 @@ def api_cancel_slot():
 
 
 # ---------------------------------------------------------------------------
+# GET /dashboard/schedule — Appointment schedule (vertical timeline)
+# ---------------------------------------------------------------------------
+
+@dashboard_bp.route("/dashboard/schedule")
+def schedule_page():
+    client_id = _resolve_client_id()
+    if not client_id:
+        return redirect("/login")
+
+    ctx = _base_context("schedule", client_id)
+    sb = _get_supabase()
+    client = ctx["_client"]
+    client_phone = client.get("phone", "")
+    today_d = date.today()
+
+    # Load appointment board
+    board = None
+    try:
+        result = sb.table("class_boards").select("*").eq(
+            "client_phone", client_phone
+        ).eq("board_type", "appointment").limit(1).execute()
+        if result.data:
+            board = result.data[0]
+    except Exception as e:
+        print(f"[{_ts()}] WARN dashboard_routes: appointment board query — {e}")
+
+    # Parse settings
+    settings = {}
+    if board and board.get("settings_json"):
+        raw = board["settings_json"]
+        if isinstance(raw, str):
+            try:
+                settings = json.loads(raw)
+            except Exception:
+                settings = {}
+        elif isinstance(raw, dict):
+            settings = raw
+
+    slot_duration = settings.get("slot_duration_minutes", 25)
+
+    # Load slots for next 2 weeks
+    end_date = (today_d + timedelta(days=14)).isoformat()
+    slots = []
+    try:
+        result = sb.table("class_slots").select(
+            "id, title, slot_date, start_time, end_time, capacity, "
+            "enrolled_count, status, description"
+        ).eq("client_phone", client_phone).gte(
+            "slot_date", today_d.isoformat()
+        ).lte("slot_date", end_date).order("slot_date").order("start_time").execute()
+        slots = result.data or []
+    except Exception as e:
+        print(f"[{_ts()}] WARN dashboard_routes: schedule slots query — {e}")
+
+    # Load enrollments for booked slots
+    slot_ids = [s["id"] for s in slots if (s.get("enrolled_count") or 0) > 0]
+    enrollments = {}
+    if slot_ids:
+        try:
+            for sid in slot_ids[:100]:
+                enr = sb.table("class_enrollments").select(
+                    "customer_name, customer_phone, customer_id"
+                ).eq("slot_id", sid).eq("status", "enrolled").execute()
+                enrollments[sid] = enr.data or []
+        except Exception as e:
+            print(f"[{_ts()}] WARN dashboard_routes: schedule enrollments query — {e}")
+
+    # Group by date
+    from collections import defaultdict
+    week_slots = defaultdict(list)
+    for s in slots:
+        week_slots[s.get("slot_date", "")].append(s)
+
+    base_url = os.environ.get("BOLTS11_BASE_URL", "https://bolts11.com")
+    board_token = board.get("token", "") if board else ""
+    booking_url = f"{base_url}/book/{board_token}" if board_token else ""
+
+    ctx.update({
+        "board": board,
+        "week_slots": dict(week_slots),
+        "enrollments": enrollments,
+        "slot_duration": slot_duration,
+        "settings": settings,
+        "booking_url": booking_url,
+        "fmt_short_date": fmt_short_date,
+    })
+    return render_template("dashboard/schedule.html", **ctx)
+
+
+# ---------------------------------------------------------------------------
+# POST /api/slots/generate — auto-create slots for a day
+# ---------------------------------------------------------------------------
+
+@dashboard_bp.route("/api/slots/generate", methods=["POST"])
+def api_generate_slots():
+    client_id = _resolve_client_id()
+    if not client_id:
+        return jsonify({"success": False, "error": "Not authenticated"}), 401
+
+    data = request.get_json(silent=True)
+    if not data:
+        return jsonify({"success": False, "error": "Invalid JSON"}), 400
+
+    slot_date = data.get("slot_date")
+    start_time = data.get("start_time", "08:00")
+    end_time = data.get("end_time", "17:00")
+    duration = int(data.get("duration", 25))
+    title = data.get("title", "Appointment")
+
+    if not slot_date:
+        return jsonify({"success": False, "error": "Date required"}), 400
+
+    client = _load_client(client_id)
+    client_phone = client.get("phone", "")
+
+    # Parse start/end times and generate slots
+    try:
+        start_h, start_m = map(int, start_time.split(":"))
+        end_h, end_m = map(int, end_time.split(":"))
+        start_minutes = start_h * 60 + start_m
+        end_minutes = end_h * 60 + end_m
+
+        sb = _get_supabase()
+        created = 0
+        current = start_minutes
+
+        while current + duration <= end_minutes:
+            h = current // 60
+            m = current % 60
+            slot_start = f"{h:02d}:{m:02d}"
+            next_m = current + duration
+            nh = next_m // 60
+            nm = next_m % 60
+            slot_end = f"{nh:02d}:{nm:02d}"
+
+            sb.table("class_slots").insert({
+                "client_phone": client_phone,
+                "title": title,
+                "slot_date": slot_date,
+                "start_time": slot_start,
+                "end_time": slot_end,
+                "capacity": 1,
+                "enrolled_count": 0,
+                "status": "open",
+            }).execute()
+            created += 1
+            current += duration
+
+        print(f"[{_ts()}] INFO dashboard_routes: Generated {created} slots for {slot_date} ({duration}min each)")
+        return jsonify({"success": True, "created": created})
+
+    except Exception as e:
+        print(f"[{_ts()}] ERROR dashboard_routes: slot generation failed — {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+# ---------------------------------------------------------------------------
 # Stub routes — coming soon pages
 # ---------------------------------------------------------------------------
 

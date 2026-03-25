@@ -1,0 +1,447 @@
+{% extends "base.html" %}
+
+{% block title %}Schedule{% endblock %}
+{% block page_title %}Schedule{% endblock %}
+{% block topbar_meta %}{{ today }}{% endblock %}
+
+{% block extra_css %}
+/* ── Schedule header ─────────────────────────── */
+.sched-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.sched-actions { display: flex; gap: 8px; }
+.sched-btn {
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  font-weight: 500;
+  padding: 5px 12px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.sched-btn:hover { background: var(--bg-page); }
+.sched-btn--primary {
+  background: var(--blue);
+  color: #fff;
+  border-color: var(--blue);
+}
+.sched-btn--primary:hover { opacity: 0.85; }
+
+/* ── Day column ──────────────────────────────── */
+.day-section {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-bottom: 16px;
+  overflow: hidden;
+}
+.day-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-page);
+}
+.day-label {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 16px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+.day-count {
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  color: var(--text-tertiary);
+}
+
+/* ── Time slot row ───────────────────────────── */
+.time-row {
+  display: flex;
+  align-items: stretch;
+  border-bottom: 1px solid var(--border);
+  min-height: 42px;
+}
+.time-row:last-child { border-bottom: none; }
+
+.time-label {
+  width: 70px;
+  min-width: 70px;
+  padding: 8px 12px;
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+  color: var(--text-tertiary);
+  border-right: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+}
+
+.slot-cell {
+  flex: 1;
+  padding: 6px 12px;
+  display: flex;
+  align-items: center;
+  transition: background 0.1s;
+}
+.slot-cell:hover { background: #f8fafc; }
+
+/* ── Slot states ─────────────────────────────── */
+.slot-open {
+  border: 1px dashed var(--green);
+  border-radius: 4px;
+  padding: 4px 10px;
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  color: var(--green);
+  cursor: pointer;
+}
+.slot-open:hover { background: #EAF3DE; }
+
+.slot-booked {
+  background: #f3f4f6;
+  border-radius: 4px;
+  padding: 4px 10px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+  cursor: pointer;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.slot-booked:hover { background: #e5e7eb; }
+.slot-booked__name { }
+.slot-booked__badge {
+  font-family: 'DM Mono', monospace;
+  font-size: 9px;
+  background: #dbeafe;
+  color: #1d4ed8;
+  padding: 1px 6px;
+  border-radius: 3px;
+}
+
+.slot-blocked {
+  background: repeating-linear-gradient(
+    45deg,
+    transparent,
+    transparent 4px,
+    rgba(0,0,0,0.04) 4px,
+    rgba(0,0,0,0.04) 8px
+  );
+  border-radius: 4px;
+  padding: 4px 10px;
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  color: var(--text-tertiary);
+}
+
+/* ── Detail panel ────────────────────────────── */
+.detail-panel {
+  position: fixed;
+  top: 0;
+  right: -360px;
+  width: 360px;
+  height: 100vh;
+  background: var(--bg-card);
+  border-left: 1px solid var(--border);
+  z-index: 40;
+  transition: right 0.25s ease;
+  overflow-y: auto;
+  padding: 20px;
+}
+.detail-panel.open { right: 0; }
+.detail-close {
+  font-size: 18px;
+  cursor: pointer;
+  color: var(--text-tertiary);
+  background: none;
+  border: none;
+  float: right;
+}
+.detail-name {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 22px;
+  font-weight: 700;
+  margin-top: 8px;
+}
+.detail-field {
+  margin-top: 12px;
+}
+.detail-label {
+  font-family: 'DM Mono', monospace;
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-tertiary);
+}
+.detail-value {
+  font-size: 14px;
+  color: var(--text-primary);
+  margin-top: 2px;
+}
+
+/* ── Generate modal ──────────────────────────── */
+.gen-overlay {
+  display: none;
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.3);
+  z-index: 50;
+  align-items: center;
+  justify-content: center;
+}
+.gen-overlay.open { display: flex; }
+.gen-modal {
+  background: var(--bg-card);
+  border-radius: 8px;
+  padding: 24px;
+  width: 360px;
+  max-width: 90vw;
+}
+.gen-modal h3 {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 18px;
+  font-weight: 700;
+  margin-bottom: 14px;
+}
+.gen-group { margin-bottom: 10px; }
+.gen-label {
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-tertiary);
+  margin-bottom: 4px;
+  display: block;
+}
+.gen-input {
+  width: 100%;
+  font-family: 'Barlow', sans-serif;
+  font-size: 13px;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-card);
+  color: var(--text-primary);
+  outline: none;
+}
+.gen-input:focus { border-color: var(--blue); }
+.gen-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.gen-actions { display: flex; gap: 8px; margin-top: 14px; }
+
+/* ── Empty ───────────────────────────────────── */
+.sched-empty {
+  text-align: center;
+  padding: 40px 20px;
+  color: var(--text-tertiary);
+  font-size: 13px;
+}
+{% endblock %}
+
+{% block content %}
+<div class="sched-header">
+  <div>
+    <span style="font-family:'Barlow Condensed',sans-serif;font-size:20px;font-weight:700">
+      Appointment Schedule
+    </span>
+    <span style="font-family:'DM Mono',monospace;font-size:11px;color:var(--text-tertiary);margin-left:10px">
+      {{ slot_duration }}min slots
+    </span>
+  </div>
+  <div class="sched-actions">
+    <button class="sched-btn" onclick="document.getElementById('gen-overlay').classList.add('open')">
+      Generate Slots
+    </button>
+    <button class="sched-btn" onclick="document.getElementById('gen-overlay').classList.add('open');document.getElementById('gen-title').value='Ad-hoc Day'">
+      + Add a Day
+    </button>
+    {% if booking_url %}
+    <button class="sched-btn" onclick="navigator.clipboard.writeText('{{ booking_url }}');this.textContent='Copied!';var b=this;setTimeout(function(){b.textContent='Copy Booking Link'},1500)">
+      Copy Booking Link
+    </button>
+    {% endif %}
+  </div>
+</div>
+
+{% if week_slots %}
+{% for dt, slots in week_slots|dictsort %}
+<div class="day-section">
+  <div class="day-header">
+    <span class="day-label">{{ fmt_short_date(dt) }}</span>
+    <span class="day-count">{{ slots|length }} slots</span>
+  </div>
+  {% for s in slots %}
+  {% set enr_list = enrollments.get(s.id, []) %}
+  {% set is_booked = (s.enrolled_count or 0) > 0 %}
+  {% set is_blocked = s.status == 'blocked' %}
+  {% set is_cancelled = s.status == 'cancelled' %}
+  <div class="time-row">
+    <div class="time-label">{{ s.start_time or '—' }}</div>
+    <div class="slot-cell">
+      {% if is_cancelled %}
+        <span class="slot-blocked">Cancelled</span>
+      {% elif is_blocked %}
+        <span class="slot-blocked">Blocked</span>
+      {% elif is_booked and enr_list %}
+        {% set patient = enr_list[0] %}
+        {% set pname = patient.customer_name or 'Patient' %}
+        {% set parts = pname.split() %}
+        {% set display_name = parts[0] ~ (' ' ~ parts[-1][:1] ~ '.' if parts|length > 1 else '') %}
+        <div class="slot-booked" onclick="showDetail('{{ pname }}','{{ patient.customer_phone or '' }}','{{ s.start_time or '' }}','{{ s.title or '' }}','{{ s.description or '' }}','{{ dt }}')">
+          <span class="slot-booked__name">{{ display_name }}</span>
+          <span class="slot-booked__badge">{{ s.start_time }}–{{ s.end_time or '' }}</span>
+        </div>
+      {% elif is_booked %}
+        <div class="slot-booked">
+          <span class="slot-booked__name">Booked</span>
+          <span class="slot-booked__badge">{{ s.start_time }}–{{ s.end_time or '' }}</span>
+        </div>
+      {% else %}
+        <span class="slot-open" onclick="blockSlot('{{ s.id }}',this)">Open</span>
+      {% endif %}
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endfor %}
+{% else %}
+<div class="sched-empty">
+  No slots generated yet. Click "Generate Slots" to create your schedule.
+</div>
+{% endif %}
+
+<!-- Detail side panel -->
+<div class="detail-panel" id="detail-panel">
+  <button class="detail-close" onclick="document.getElementById('detail-panel').classList.remove('open')">&times;</button>
+  <div class="detail-name" id="dp-name"></div>
+  <div class="detail-field">
+    <div class="detail-label">Phone</div>
+    <div class="detail-value" id="dp-phone"></div>
+  </div>
+  <div class="detail-field">
+    <div class="detail-label">Time</div>
+    <div class="detail-value" id="dp-time"></div>
+  </div>
+  <div class="detail-field">
+    <div class="detail-label">Date</div>
+    <div class="detail-value" id="dp-date"></div>
+  </div>
+  <div class="detail-field">
+    <div class="detail-label">Service</div>
+    <div class="detail-value" id="dp-service"></div>
+  </div>
+  <div class="detail-field">
+    <div class="detail-label">Notes</div>
+    <div class="detail-value" id="dp-notes"></div>
+  </div>
+</div>
+
+<!-- Generate slots modal -->
+<div class="gen-overlay" id="gen-overlay">
+  <div class="gen-modal">
+    <h3>Generate Slots</h3>
+    <div class="gen-group">
+      <label class="gen-label">Title</label>
+      <input type="text" class="gen-input" id="gen-title" value="Appointment">
+    </div>
+    <div class="gen-group">
+      <label class="gen-label">Date</label>
+      <input type="date" class="gen-input" id="gen-date">
+    </div>
+    <div class="gen-row">
+      <div class="gen-group">
+        <label class="gen-label">Start Time</label>
+        <input type="time" class="gen-input" id="gen-start" value="08:00">
+      </div>
+      <div class="gen-group">
+        <label class="gen-label">End Time</label>
+        <input type="time" class="gen-input" id="gen-end" value="17:00">
+      </div>
+    </div>
+    <div class="gen-group">
+      <label class="gen-label">Slot Duration (minutes)</label>
+      <input type="number" class="gen-input" id="gen-duration" value="{{ slot_duration }}" min="5">
+    </div>
+    <div class="gen-actions">
+      <button class="sched-btn sched-btn--primary" onclick="generateSlots()">Generate</button>
+      <button class="sched-btn" onclick="document.getElementById('gen-overlay').classList.remove('open')">Cancel</button>
+    </div>
+    <div class="form-msg" id="gen-msg" style="font-size:12px;margin-top:8px;display:none"></div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function showDetail(name, phone, time, title, notes, dt) {
+  document.getElementById('dp-name').textContent = name;
+  document.getElementById('dp-phone').textContent = phone || '—';
+  document.getElementById('dp-time').textContent = time || '—';
+  document.getElementById('dp-date').textContent = dt || '—';
+  document.getElementById('dp-service').textContent = title || '—';
+  document.getElementById('dp-notes').textContent = notes || '—';
+  document.getElementById('detail-panel').classList.add('open');
+}
+
+function blockSlot(slotId, el) {
+  if (!confirm('Block this time slot?')) return;
+  fetch('/api/slots/cancel', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({slot_id: slotId})
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(d) {
+    if (d.success) {
+      el.className = 'slot-blocked';
+      el.textContent = 'Blocked';
+      el.onclick = null;
+    }
+  });
+}
+
+function generateSlots() {
+  var msg = document.getElementById('gen-msg');
+  msg.style.display = 'none';
+
+  fetch('/api/slots/generate', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      slot_date: document.getElementById('gen-date').value,
+      start_time: document.getElementById('gen-start').value,
+      end_time: document.getElementById('gen-end').value,
+      duration: parseInt(document.getElementById('gen-duration').value),
+      title: document.getElementById('gen-title').value,
+    })
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(d) {
+    if (d.success) {
+      msg.textContent = d.created + ' slots created.';
+      msg.style.color = 'var(--green)';
+      msg.style.display = 'block';
+      setTimeout(function() { window.location.reload(); }, 1200);
+    } else {
+      msg.textContent = d.error || 'Failed.';
+      msg.style.color = 'var(--red)';
+      msg.style.display = 'block';
+    }
+  })
+  .catch(function(e) {
+    msg.textContent = 'Error: ' + e.message;
+    msg.style.color = 'var(--red)';
+    msg.style.display = 'block';
+  });
+}
+</script>
+{% endblock %}
