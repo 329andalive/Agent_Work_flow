@@ -16,7 +16,7 @@ from datetime import datetime, timezone, timedelta
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from flask import Blueprint, request, jsonify, session
+from flask import Blueprint, request, jsonify, session, render_template
 
 dispatch_bp = Blueprint("dispatch_bp", __name__)
 
@@ -305,3 +305,117 @@ def dispatch_send():
         "sms_failed": sms_failed,
         "total_jobs": total_jobs,
     })
+
+
+# ---------------------------------------------------------------------------
+# GET /r/<token> — Worker route page (mobile, no login)
+# ---------------------------------------------------------------------------
+
+@dispatch_bp.route("/r/<token>")
+def worker_route(token):
+    """
+    Public worker route page. No login required — token is the auth.
+    Shows the worker's job list for the day with Maps links and
+    status reply instructions.
+    """
+    sb = _get_supabase()
+
+    # Look up route token
+    try:
+        result = sb.table("route_tokens").select("*").eq("token", token).execute()
+        if not result.data:
+            print(f"[{timestamp()}] INFO dispatch: Route token not found — {token}")
+            return render_template("error.html",
+                title="Route Not Found",
+                message="This route link is not valid.",
+                sub="Check with your dispatcher for the correct link.",
+            ), 404
+        route = result.data[0]
+    except Exception as e:
+        print(f"[{timestamp()}] ERROR dispatch: Route token lookup failed — {e}")
+        return render_template("error.html",
+            title="Error",
+            message="Something went wrong loading this route.",
+            sub="Try again or contact your dispatcher.",
+        ), 500
+
+    # Check expiry — past midnight of dispatch_date
+    dispatch_date_str = route.get("dispatch_date", "")
+    try:
+        from datetime import date as date_cls
+        dispatch_date = date_cls.fromisoformat(dispatch_date_str)
+        today = date_cls.today()
+        if today > dispatch_date:
+            print(f"[{timestamp()}] INFO dispatch: Route token expired — {token} (date={dispatch_date_str})")
+            return render_template("error.html",
+                title="Route Expired",
+                message=f"This route was for {dispatch_date_str}.",
+                sub="Contact your dispatcher for today's route.",
+            ), 410
+    except (ValueError, TypeError):
+        pass  # If date can't be parsed, allow access
+
+    # Update viewed_at
+    try:
+        sb.table("route_tokens").update({
+            "viewed_at": datetime.now(timezone.utc).isoformat(),
+        }).eq("token", token).execute()
+    except Exception:
+        pass  # Non-fatal
+
+    # Load worker info
+    worker_id = route.get("worker_id", "")
+    worker_name = "Worker"
+    try:
+        w = sb.table("workers").select("name").eq("id", worker_id).execute()
+        if w.data:
+            worker_name = w.data[0].get("name", "Worker")
+    except Exception:
+        pass
+
+    # Load client info
+    client_phone = route.get("client_phone", "")
+    business_name = "Bolts11"
+    try:
+        c = sb.table("clients").select("business_name").eq("phone", client_phone).execute()
+        if c.data:
+            business_name = c.data[0].get("business_name", "Bolts11")
+    except Exception:
+        pass
+
+    # Load all assignments for this worker + session, ordered by sort_order
+    session_id = route.get("session_id", "")
+    jobs = []
+    try:
+        assignments = sb.table("route_assignments").select(
+            "job_id, wave_id, sort_order"
+        ).eq("session_id", session_id).eq("worker_id", worker_id).order("sort_order").execute()
+
+        job_ids = [a["job_id"] for a in (assignments.data or [])]
+        wave_map = {a["job_id"]: a.get("wave_id") for a in (assignments.data or [])}
+
+        if job_ids:
+            job_rows = sb.table("scheduled_jobs").select(
+                "id, customer_name, customer_phone, address, job_type, notes, "
+                "requested_time, zone_cluster, status"
+            ).in_("id", job_ids).execute()
+            job_dict = {j["id"]: j for j in (job_rows.data or [])}
+
+            # Rebuild in sort_order
+            for jid in job_ids:
+                if jid in job_dict:
+                    j = job_dict[jid]
+                    j["wave_id"] = wave_map.get(jid)
+                    jobs.append(j)
+    except Exception as e:
+        print(f"[{timestamp()}] ERROR dispatch: Failed to load route jobs — {e}")
+
+    print(f"[{timestamp()}] INFO dispatch: Route {token} viewed by {worker_name} — {len(jobs)} jobs")
+
+    return render_template("worker_route.html",
+        business_name=business_name,
+        worker_name=worker_name,
+        dispatch_date=dispatch_date_str,
+        jobs=jobs,
+        token=token,
+    )
