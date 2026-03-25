@@ -1111,6 +1111,7 @@ def api_create_job():
         "customer_id": customer_id,
         "job_type": job_type,
         "status": "scheduled",
+        "dispatch_status": "unassigned",
         "scheduled_date": scheduled_dt,
         "job_notes": notes,
         "raw_input": "Created via dashboard New Job form",

@@ -55,6 +55,10 @@ def get_todays_jobs(client_id: str, target_date: str = None) -> list:
 
     try:
         sb = get_supabase()
+        # Query all jobs for this date. We cannot use .neq("dispatch_status", "cancelled")
+        # because PostgreSQL treats NULL != 'cancelled' as NULL (not TRUE), which
+        # would exclude jobs created without dispatch_status set. Instead, fetch all
+        # and filter in Python.
         result = (
             sb.table("jobs")
             .select(
@@ -65,11 +69,13 @@ def get_todays_jobs(client_id: str, target_date: str = None) -> list:
             )
             .eq("client_id", client_id)
             .eq("scheduled_date", target_date)
-            .neq("dispatch_status", "cancelled")
             .order("zone_cluster")
             .order("requested_time", nullsfirst=False)
             .execute()
         )
+        # Filter out cancelled — keep NULL (unset), unassigned, assigned, etc.
+        all_jobs = result.data or []
+        jobs = [j for j in all_jobs if j.get("dispatch_status") != "cancelled"]
         jobs = result.data or []
         print(f"[{timestamp()}] INFO db_scheduling: get_todays_jobs({target_date}) → {len(jobs)} jobs")
         return jobs
