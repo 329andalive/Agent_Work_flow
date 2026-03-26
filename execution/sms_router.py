@@ -586,7 +586,8 @@ def _handle_worker_status_reply(
             except Exception:
                 pass
 
-        # Auto-invoice on DONE
+       
+      # ── Auto-invoice on DONE ────────────────────────────────────────
         if command == "DONE":
             try:
                 if customer_id and estimated_amount > 0:
@@ -610,11 +611,63 @@ def _handle_worker_status_reply(
             except Exception as e:
                 print(f"[{timestamp()}] WARN sms_router: Auto-invoice failed — {e}")
 
-        # Update dispatch_decisions with outcome (feeds AI learning loop)
+        # ── SCOPE hold — flag job, notify owner, block auto-invoice ─────
+        elif command == "SCOPE":
+            try:
+                sb.table("jobs").update({
+                    "scope_hold": True,
+                    "job_notes":  f"Scope change reported by {worker_name}. Pending owner review.",
+                }).eq("id", job_id).execute()
+
+                base_url     = os.environ.get("BOLTS11_BASE_URL", "https://web-production-043dc.up.railway.app")
+                review_url   = f"{base_url}/dashboard/job/{job_id}"
+                owner_mobile = client.get("owner_mobile") or client_phone
+                cust_label   = job_name if job_name != "Job" else "a job"
+
+                send_sms(
+                    to_number=owner_mobile,
+                    message_body=(
+                        f"\u26a0\ufe0f Scope change \u2014 {cust_label}\n"
+                        f"{worker_name} flagged a change on site. "
+                        f"Review and approve before the invoice sends:\n"
+                        f"{review_url}"
+                    ),
+                    from_number=client_phone,
+                    message_type="scope_hold",
+                )
+                print(f"[{timestamp()}] INFO sms_router: SCOPE hold set on job {job_id[:8]} — owner notified at {owner_mobile}")
+                job_name = f"{job_name} — scope hold, owner review required"
+            except Exception as e:
+                print(f"[{timestamp()}] WARN sms_router: SCOPE hold failed — {e}")
+
+        # ── NOSHOW — queue follow-up SMS to customer ─────────────────────
+        elif command == "NOSHOW" and customer_phone:
+            try:
+                cust = sb.table("customers").select("sms_consent").eq(
+                    "customer_phone", customer_phone
+                ).eq("client_id", client_id).limit(1).execute()
+                if cust.data and cust.data[0].get("sms_consent"):
+                    biz_name = client.get("business_name", "your service provider")
+                    send_sms(
+                        to_number=customer_phone,
+                        message_body=(
+                            f"Hi, {biz_name} arrived for your appointment "
+                            f"but no one was available. Please call to reschedule."
+                        ),
+                        from_number=client_phone,
+                        message_type="no_show_followup",
+                    )
+                    print(f"[{timestamp()}] INFO sms_router: No-show follow-up SMS sent to {customer_phone}")
+                else:
+                    print(f"[{timestamp()}] INFO sms_router: No-show follow-up skipped — no SMS consent")
+            except Exception as e:
+                print(f"[{timestamp()}] WARN sms_router: No-show follow-up failed — {e}")
+
+        # ── Update dispatch_decisions (feeds AI learning loop) ───────────
         try:
             sb.table("dispatch_decisions").update({
                 "outcome_status": new_status,
-                "outcome_at": datetime.now(timezone.utc).isoformat(),
+                "outcome_at":     datetime.now(timezone.utc).isoformat(),
             }).eq("job_id", job_id).execute()
         except Exception:
             pass
