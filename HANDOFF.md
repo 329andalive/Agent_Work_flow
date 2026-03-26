@@ -23,6 +23,38 @@
 3. Control board — completed jobs count today
 4. Dispatch board patches from dispatch_patches.py still need applying
 
+### call_claude.py — Technical Debt Notes
+
+**Risk 1 — Model IDs will go stale (medium)**
+MODEL_MAP in call_claude.py has hardcoded model IDs (claude-haiku-4-5-20251001,
+claude-sonnet-4-6, claude-opus-4-6). When Anthropic releases new versions, agents
+silently keep calling old models. A client onboarding in 6 months gets the March
+2026 model unless someone manually updates this file.
+Fix: Move MODEL_MAP to .env or a config table in Supabase so updates don't need a deploy.
+
+**Risk 2 — 1024 tokens will truncate invoices (high)**
+DEFAULT_MAX_TOKENS = 1024. Invoice prompts generate itemized invoices with addresses,
+line items, payment terms — pushing 800-900 tokens. A large job with 6+ line items
+will get cut off mid-sentence. parse_invoice_total() returns 0.0 and final_amount
+falls back to actual_amount — math survives but the invoice text sent to the owner
+is broken.
+Fix: Invoices and proposals should call with max_tokens=2048. Haiku classification
+calls can stay at 512. Pass explicitly at call site, not as global default.
+
+**Risk 3 — No cost logging (low now, high at scale)**
+Token usage is printed to logs but never written to the database. One client is fine.
+At 10 clients running 50 jobs/day, no way to know which client costs most or catch
+a runaway agent burning tokens in a loop.
+Fix: Add claude_usage_log table — client_id, agent_name, model, input_tokens,
+output_tokens, created_at. Write on every call.
+
+**Risk 4 — Single-turn only (low now)**
+Every call is stateless — one system + one user message. Correct for current agents.
+Risk is if voice controller or multi-turn clarification gets built, someone will
+stuff conversation history into the user prompt as a wall of text.
+Fix: Nothing now. Know that call_claude.py will need a messages list variant for
+voice/multi-turn. Don't hack around it with string concatenation.
+
 ---
 
 ## Current Production Status
