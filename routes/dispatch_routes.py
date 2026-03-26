@@ -191,6 +191,36 @@ def dispatch_send():
         except Exception as e:
             print(f"[{timestamp()}] WARN dispatch: save_dispatch_session failed — {e}")
 
+        # Log each assignment to dispatch_decisions for AI learning
+        for j in jobs:
+            try:
+                # Look up job details for the learning record
+                job_detail = {}
+                try:
+                    jr = sb.table("jobs").select("job_type, zone_cluster, requested_time").eq("id", j["job_id"]).execute()
+                    if jr.data:
+                        job_detail = jr.data[0]
+                except Exception:
+                    pass
+
+                sb.table("dispatch_decisions").insert({
+                    "client_id": client_id,
+                    "session_id": session_id,
+                    "dispatch_date": dispatch_date,
+                    "job_id": j["job_id"],
+                    "worker_id": worker_id,
+                    "job_type": job_detail.get("job_type"),
+                    "zone_cluster": job_detail.get("zone_cluster"),
+                    "requested_time": job_detail.get("requested_time"),
+                    "sort_order": j.get("sort_order", 0),
+                    "was_suggested": j.get("was_suggested", False),
+                    "was_accepted": j.get("was_accepted", False),
+                    "was_overridden": j.get("was_overridden", False),
+                    "override_reason": j.get("override_reason"),
+                }).execute()
+            except Exception as e:
+                print(f"[{timestamp()}] WARN dispatch: dispatch_decisions insert failed — {e}")
+
         # Generate route token
         route_token = _generate_route_token()
         try:

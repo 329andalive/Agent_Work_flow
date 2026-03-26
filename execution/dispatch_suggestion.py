@@ -1,18 +1,28 @@
 """
-dispatch_suggestion.py — Phase 2 AI learning for dispatch suggestions
+dispatch_suggestion.py — Dispatch apprentice: learns from human patterns
 
-Analyzes past dispatch patterns and suggests worker assignments for today's
-jobs using Claude Haiku. Only activates after 30+ dispatch sessions exist
-in dispatch_log — before that, returns [] silently.
+Reads dispatch_decisions table to learn which workers get assigned which
+jobs, zones, and types. After 30+ sessions, calls Claude Haiku with
+the pattern summary to suggest assignments for today.
 
-Phase 1: session count < 30 → return [], log silently
-Phase 2: session count >= 30 → call Haiku, return suggestions
+Phase 1: < 30 sessions → return [], log silently
+Phase 2: >= 30 sessions → call Haiku, return suggestions with confidence
 Phase 3: autonomous (future) → requires explicit owner opt-in flag
+
+The learning loop:
+  1. Human dispatches jobs on the drag-drop board
+  2. POST /api/dispatch/send writes dispatch_decisions rows:
+     job_id, worker_id, zone, type, was_suggested, was_overridden
+  3. This module reads those rows and builds frequency patterns
+  4. Claude Haiku reasons about patterns + today's jobs → suggestions
+  5. Human sees suggestions as faded cards on the board
+  6. Accepted suggestions → was_accepted=true (positive signal)
+  7. Overridden suggestions → was_overridden=true (negative signal)
+  8. Both feed back into step 3 for the next session
 
 Usage:
     from execution.dispatch_suggestion import get_suggestions
-    suggestions = get_suggestions(client_phone, todays_jobs, workers)
-    # → [{"job_id": "...", "worker_id": "...", "confidence": 0.85, "reason": "..."}, ...]
+    suggestions = get_suggestions(client_id, todays_jobs, workers)
 """
 
 import os
@@ -37,7 +47,7 @@ def timestamp():
 
 
 def get_suggestions(
-    client_phone: str,
+    client_id: str,
     todays_jobs: list,
     workers: list,
 ) -> list:
@@ -45,9 +55,9 @@ def get_suggestions(
     Analyze past dispatch patterns and suggest worker assignments.
 
     Args:
-        client_phone: E.164 phone (tenant identifier)
-        todays_jobs:  List of scheduled_jobs dicts for today
-        workers:      List of active worker dicts
+        client_id:    UUID of the client (tenant identifier)
+        todays_jobs:  List of job dicts for today (from get_todays_jobs)
+        workers:      List of employee dicts (from get_workers)
 
     Returns:
         List of dicts: [{job_id, worker_id, confidence, reason}, ...]
@@ -58,12 +68,14 @@ def get_suggestions(
 
     sb = get_supabase()
 
-    # ── Check session count ─────────────────────────────────────────
+    # ── Check session count from dispatch_decisions ─────────────────
     try:
-        count_result = sb.table("dispatch_log").select(
-            "id", count="exact"
-        ).eq("client_phone", client_phone).execute()
-        session_count = count_result.count if hasattr(count_result, 'count') else len(count_result.data or [])
+        # Count distinct sessions
+        sessions = sb.table("dispatch_decisions").select(
+            "session_id"
+        ).eq("client_id", client_id).execute()
+        unique_sessions = set(d.get("session_id") for d in (sessions.data or []))
+        session_count = len(unique_sessions)
     except Exception as e:
         print(f"[{timestamp()}] WARN dispatch_suggestion: session count query failed — {e}")
         return []
@@ -77,45 +89,34 @@ def get_suggestions(
 
     print(f"[{timestamp()}] INFO dispatch_suggestion: Phase 2 active — {session_count} sessions. Building patterns.")
 
-    # ── Build pattern data from past assignments ────────────────────
+    # ── Build pattern data from dispatch_decisions ──────────────────
     lookback = (datetime.now(timezone.utc) - timedelta(days=LOOKBACK_DAYS)).isoformat()
 
-    zone_worker_freq = Counter()   # (zone, worker_id) → count
-    type_worker_freq = Counter()   # (job_type, worker_id) → count
+    zone_worker_freq = Counter()    # (zone, worker_id) → count
+    type_worker_freq = Counter()    # (job_type, worker_id) → count
+    override_count = 0
+    accepted_count = 0
 
     try:
-        assignments = sb.table("route_assignments").select(
-            "job_id, worker_id"
-        ).eq("client_phone", client_phone).gte("assigned_at", lookback).execute()
+        decisions = sb.table("dispatch_decisions").select(
+            "worker_id, job_type, zone_cluster, was_suggested, was_accepted, was_overridden"
+        ).eq("client_id", client_id).gte("created_at", lookback).execute()
 
-        if assignments.data:
-            job_ids = list(set(a["job_id"] for a in assignments.data))
+        for d in (decisions.data or []):
+            wid = d.get("worker_id", "")
+            zone = d.get("zone_cluster", "Unknown")
+            jtype = d.get("job_type", "unknown")
 
-            # Batch-fetch job details
-            job_details = {}
-            # Supabase .in_() has limits, batch in chunks of 50
-            for i in range(0, len(job_ids), 50):
-                chunk = job_ids[i:i+50]
-                try:
-                    rows = sb.table("scheduled_jobs").select(
-                        "id, zone_cluster, job_type"
-                    ).in_("id", chunk).execute()
-                    for j in (rows.data or []):
-                        job_details[j["id"]] = j
-                except Exception:
-                    pass
+            zone_worker_freq[(zone, wid)] += 1
+            type_worker_freq[(jtype, wid)] += 1
 
-            for a in assignments.data:
-                jid = a["job_id"]
-                wid = a["worker_id"]
-                if jid in job_details:
-                    zone = job_details[jid].get("zone_cluster", "Unknown")
-                    jtype = job_details[jid].get("job_type", "unknown")
-                    zone_worker_freq[(zone, wid)] += 1
-                    type_worker_freq[(jtype, wid)] += 1
+            if d.get("was_overridden"):
+                override_count += 1
+            if d.get("was_accepted"):
+                accepted_count += 1
 
     except Exception as e:
-        print(f"[{timestamp()}] WARN dispatch_suggestion: pattern query failed — {e}")
+        print(f"[{timestamp()}] WARN dispatch_suggestion: decisions query failed — {e}")
         return []
 
     # ── Build pattern summary for Claude ────────────────────────────
@@ -131,11 +132,18 @@ def get_suggestions(
         wname = worker_map.get(wid, wid[:8])
         type_lines.append(f"  {jtype} → {wname}: {count} jobs")
 
+    accuracy_note = ""
+    total_suggested = accepted_count + override_count
+    if total_suggested > 0:
+        accuracy = round(accepted_count / total_suggested * 100)
+        accuracy_note = f"\nSuggestion accuracy: {accuracy}% ({accepted_count} accepted, {override_count} overridden)"
+
     pattern_summary = (
         f"Zone preferences (last {LOOKBACK_DAYS} days, {session_count} sessions):\n"
         + "\n".join(zone_lines[:15]) + "\n\n"
         f"Job type preferences:\n"
         + "\n".join(type_lines[:15])
+        + accuracy_note
     )
 
     # ── Build today's job list for Claude ───────────────────────────
@@ -158,26 +166,27 @@ def get_suggestions(
 
     # ── Call Claude Haiku ───────────────────────────────────────────
     system_prompt = (
-        "You are a dispatch assistant for a trade services business. "
-        "You analyze past dispatch patterns to suggest optimal worker assignments. "
-        "You must return ONLY a JSON array — no explanation, no markdown."
+        "You are a dispatch apprentice for a trade services business. "
+        "You analyze the human dispatcher's past decisions to suggest "
+        "optimal worker assignments. Match the human's patterns — don't "
+        "invent new ones. Return ONLY a JSON array — no explanation."
     )
 
     user_prompt = (
-        f"Based on these historical patterns:\n{pattern_summary}\n\n"
+        f"Based on the dispatcher's historical patterns:\n{pattern_summary}\n\n"
         f"Today's jobs:\n" + "\n".join(job_lines) + "\n\n"
         f"Available workers:\n" + "\n".join(worker_lines) + "\n\n"
-        f"Suggest the best worker assignment for each job. "
-        f"Return a JSON array of objects, each with:\n"
+        f"Suggest the best worker for each job based on the patterns above.\n"
+        f"Return a JSON array of objects:\n"
         f'  "job_id": "<uuid>", "worker_id": "<uuid>", '
-        f'"confidence": 0.0-1.0, "reason": "short string"\n\n'
+        f'"confidence": 0.0-1.0, "reason": "short explanation"\n\n'
         f"Rules:\n"
-        f"- Match zone preferences when possible\n"
-        f"- Match job type expertise when possible\n"
-        f"- Balance workload across workers\n"
-        f"- If a job has a requested time, prioritize workers near that zone\n"
-        f"- confidence should reflect how strong the pattern match is\n"
-        f"- Return ONLY the JSON array, nothing else"
+        f"- Match zone preferences — if Dad always gets North, suggest Dad for North jobs\n"
+        f"- Match job type expertise — if Jesse always gets repairs, suggest Jesse for repairs\n"
+        f"- Balance workload — don't overload one worker\n"
+        f"- Higher confidence when the pattern is strong and consistent\n"
+        f"- Lower confidence when you're guessing\n"
+        f"- Return ONLY the JSON array"
     )
 
     print(f"[{timestamp()}] INFO dispatch_suggestion: Calling Haiku for {len(todays_jobs)} jobs, {len(workers)} workers")
@@ -198,7 +207,7 @@ def get_suggestions(
             print(f"[{timestamp()}] WARN dispatch_suggestion: Response is not a list")
             return []
 
-        # Validate each suggestion has required keys
+        # Validate each suggestion
         valid = []
         for s in suggestions:
             if isinstance(s, dict) and s.get("job_id") and s.get("worker_id"):
@@ -209,7 +218,7 @@ def get_suggestions(
                     "reason": str(s.get("reason", ""))[:100],
                 })
 
-        print(f"[{timestamp()}] INFO dispatch_suggestion: {len(valid)} suggestions generated")
+        print(f"[{timestamp()}] INFO dispatch_suggestion: {len(valid)} suggestions generated (accuracy context: {accuracy_note.strip() or 'no prior suggestions'})")
         return valid
 
     except (json.JSONDecodeError, ValueError) as e:

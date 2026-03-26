@@ -465,7 +465,7 @@ def _handle_worker_status_reply(
     Looks up today's route assignments for this worker, applies the status
     update, replies with confirmation, and logs to agent_activity.
     """
-    from datetime import date as date_cls
+    from datetime import date as date_cls, datetime, timezone
     from execution.sms_send import send_sms
 
     worker_name = employee.get("name", "Worker")
@@ -561,6 +561,15 @@ def _handle_worker_status_reply(
             incomplete_reason = f"{command.lower()} reported by {worker_name}"
 
         update_job_status(job_id, new_status, incomplete_reason=incomplete_reason)
+
+        # Update dispatch_decisions with outcome (feeds AI learning loop)
+        try:
+            sb.table("dispatch_decisions").update({
+                "outcome_status": new_status,
+                "outcome_at": datetime.now(timezone.utc).isoformat(),
+            }).eq("job_id", job_id).execute()
+        except Exception:
+            pass  # Non-fatal — table or row may not exist
 
         # NOSHOW: queue follow-up SMS to customer (if consent)
         if command == "NOSHOW" and customer_phone:
