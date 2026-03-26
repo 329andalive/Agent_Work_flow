@@ -191,21 +191,16 @@
     </div>
 
     <div class="job-card__status">
-      <a class="status-btn status-btn--done"
-         href="sms:{{ business_phone }}?body=DONE%20{{ num }}"
-         onclick="tap(this, 'Job {{ num }} marked DONE')">✅ DONE</a>
-      <a class="status-btn status-btn--back"
-         href="sms:{{ business_phone }}?body=BACK%20{{ num }}"
-         onclick="tap(this, 'BACK sent for job {{ num }}')">🔁 COME BACK</a>
-      <a class="status-btn status-btn--parts"
-         href="sms:{{ business_phone }}?body=PARTS%20{{ num }}"
-         onclick="tap(this, 'PARTS request sent')">🔧 PARTS</a>
-      <a class="status-btn status-btn--noshow"
-         href="sms:{{ business_phone }}?body=NOSHOW%20{{ num }}"
-         onclick="tap(this, 'No-show reported')">🚫 NO SHOW</a>
-      <a class="status-btn status-btn--scope"
-         href="sms:{{ business_phone }}?body=SCOPE%20{{ num }}"
-         onclick="tap(this, 'Scope change flagged')">📋 SCOPE</a>
+      <button class="status-btn status-btn--done"
+              onclick="workerAction('{{ j.id }}', 'DONE', this)">✅ DONE</button>
+      <button class="status-btn status-btn--back"
+              onclick="workerAction('{{ j.id }}', 'BACK', this)">🔁 COME BACK</button>
+      <button class="status-btn status-btn--parts"
+              onclick="workerAction('{{ j.id }}', 'PARTS', this)">🔧 PARTS</button>
+      <button class="status-btn status-btn--noshow"
+              onclick="workerAction('{{ j.id }}', 'NOSHOW', this)">🚫 NO SHOW</button>
+      <button class="status-btn status-btn--scope"
+              onclick="workerAction('{{ j.id }}', 'SCOPE', this)">📋 SCOPE</button>
       <button class="status-btn status-btn--reschedule"
               onclick="reschedule('{{ j.id }}', {{ num }}, this)">📅 RESCHEDULE</button>
     </div>
@@ -227,10 +222,39 @@
 
 <script>
 var TOKEN = '{{ token }}';
-function tap(el, msg) {
-  showToast(msg);
-  setTimeout(function() { el.classList.add('tapped'); }, 300);
+
+function workerAction(jobId, command, btn) {
+  var origText = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '⏳ Sending…';
+  fetch('/api/dispatch/worker-action', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({job_id: jobId, token: TOKEN, command: command})
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(d) {
+    if (d.success) {
+      btn.classList.add('tapped');
+      btn.textContent = origText;
+      showToast(d.message || command + ' recorded');
+      if (command === 'DONE') {
+        var card = btn.closest('.job-card');
+        if (card) setTimeout(function() { card.style.transition='opacity 0.4s'; card.style.opacity='0.35'; }, 800);
+      }
+    } else {
+      btn.disabled = false;
+      btn.textContent = origText;
+      showToast('Failed — ' + (d.error || 'try again'));
+    }
+  })
+  .catch(function() {
+    btn.disabled = false;
+    btn.textContent = origText;
+    showToast('Network error');
+  });
 }
+
 function showToast(msg) {
   var t = document.getElementById('toast');
   t.textContent = msg;

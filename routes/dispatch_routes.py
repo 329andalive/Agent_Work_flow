@@ -372,6 +372,208 @@ def dispatch_unassign():
 
 
 # ---------------------------------------------------------------------------
+# POST /api/dispatch/worker-action — direct tap handler (no SMS needed)
+# ---------------------------------------------------------------------------
+
+@dispatch_bp.route("/api/dispatch/worker-action", methods=["POST"])
+def worker_action():
+    """
+    Direct API handler for worker status buttons on the route page.
+    Works without SMS — tapping DONE/BACK/etc calls this endpoint directly.
+    Token-validated (same as unassign).
+
+    Replicates the same logic as _handle_worker_status_reply in sms_router.py
+    so both paths (SMS and tap) produce the same result.
+    """
+    data = request.get_json(silent=True) or {}
+    job_id = data.get("job_id")
+    token = data.get("token")
+    command = (data.get("command") or "").upper()
+
+    if not job_id or not token or not command:
+        return jsonify({"success": False, "error": "job_id, token, and command required"}), 400
+
+    if command not in ("DONE", "BACK", "PARTS", "NOSHOW", "SCOPE"):
+        return jsonify({"success": False, "error": f"Unknown command: {command}"}), 400
+
+    sb = _get_supabase()
+
+    # Validate token
+    try:
+        tok = sb.table("route_tokens").select("client_id, worker_id, expires_at").eq("token", token).execute()
+        if not tok.data:
+            return jsonify({"success": False, "error": "Invalid token"}), 403
+        expires = tok.data[0].get("expires_at", "")
+        if expires:
+            expires_dt = datetime.fromisoformat(expires.replace("Z", "+00:00"))
+            if datetime.now(timezone.utc) > expires_dt:
+                return jsonify({"success": False, "error": "Token expired"}), 403
+        client_id = tok.data[0].get("client_id")
+        worker_id = tok.data[0].get("worker_id")
+    except Exception as e:
+        print(f"[{timestamp()}] ERROR dispatch: worker-action token check failed — {e}")
+        return jsonify({"success": False, "error": "Token validation failed"}), 500
+
+    # Map command to status
+    STATUS_MAP = {
+        "DONE": "completed",
+        "BACK": "carry_forward",
+        "PARTS": "parts_pending",
+        "NOSHOW": "no_show",
+        "SCOPE": "scope_review",
+    }
+    new_status = STATUS_MAP[command]
+
+    # Load job details
+    job_name = "Job"
+    customer_id = None
+    customer_phone = None
+    estimated_amount = 0
+    job_type_val = "Service"
+    try:
+        job_row = sb.table("jobs").select(
+            "customer_id, job_type, estimated_amount, job_description, customer_id"
+        ).eq("id", job_id).execute()
+        if job_row.data:
+            jd = job_row.data[0]
+            customer_id = jd.get("customer_id")
+            estimated_amount = float(jd.get("estimated_amount") or 0)
+            job_type_val = jd.get("job_type") or "Service"
+            job_name = jd.get("job_description") or job_type_val
+    except Exception:
+        pass
+
+    # Get customer name
+    if customer_id:
+        try:
+            cust = sb.table("customers").select("customer_name, customer_phone").eq("id", customer_id).execute()
+            if cust.data:
+                job_name = cust.data[0].get("customer_name") or job_name
+                customer_phone = cust.data[0].get("customer_phone")
+        except Exception:
+            pass
+
+    # Get worker name
+    worker_name = "Worker"
+    try:
+        w = sb.table("employees").select("name").eq("id", worker_id).execute()
+        if w.data:
+            worker_name = w.data[0].get("name", "Worker")
+    except Exception:
+        pass
+
+    # Update job status
+    try:
+        from execution.db_jobs import update_job_status
+        update_job_status(job_id, new_status)
+    except Exception as e:
+        print(f"[{timestamp()}] WARN dispatch: worker-action status update failed — {e}")
+
+    result_msg = f"{job_name} marked {new_status.replace('_', ' ')}"
+
+    # ── DONE: auto-create draft invoice ──────────────────────────
+    if command == "DONE" and customer_id and estimated_amount > 0:
+        try:
+            invoice_desc = f"{job_type_val} — completed by {worker_name}"
+            inv_result = sb.table("invoices").insert({
+                "client_id": client_id,
+                "customer_id": customer_id,
+                "job_id": job_id,
+                "invoice_text": invoice_desc,
+                "amount_due": estimated_amount,
+                "status": "draft",
+            }).execute()
+            if inv_result.data:
+                inv_id = inv_result.data[0]["id"]
+                print(f"[{timestamp()}] INFO dispatch: Auto-invoice created id={inv_id[:8]} amount=${estimated_amount:.0f}")
+                result_msg += f" — invoice ${estimated_amount:.0f} created"
+        except Exception as e:
+            print(f"[{timestamp()}] WARN dispatch: Auto-invoice failed — {e}")
+
+    # ── SCOPE: set scope_hold, notify owner ──────────────────────
+    elif command == "SCOPE":
+        try:
+            import os as _os
+            sb.table("jobs").update({
+                "scope_hold": True,
+                "job_notes": f"Scope change reported by {worker_name}. Pending owner review.",
+            }).eq("id", job_id).execute()
+
+            base_url = _os.environ.get("BOLTS11_BASE_URL", "https://web-production-043dc.up.railway.app")
+            review_url = f"{base_url}/dashboard/job/{job_id}"
+
+            # Notify owner
+            try:
+                client_row = sb.table("clients").select("owner_mobile, phone").eq("id", client_id).execute()
+                if client_row.data:
+                    owner_mobile = client_row.data[0].get("owner_mobile") or client_row.data[0].get("phone", "")
+                    client_phone = client_row.data[0].get("phone", "")
+                    if owner_mobile:
+                        from execution.sms_send import send_sms
+                        send_sms(
+                            to_number=owner_mobile,
+                            message_body=f"\u26a0\ufe0f Scope change — {job_name}\n{worker_name} flagged a change on site. Review:\n{review_url}",
+                            from_number=client_phone,
+                            message_type="scope_hold",
+                        )
+            except Exception:
+                pass
+
+            result_msg = f"{job_name} — scope hold, owner review required"
+            print(f"[{timestamp()}] INFO dispatch: SCOPE hold set on job {job_id[:8]}")
+        except Exception as e:
+            print(f"[{timestamp()}] WARN dispatch: SCOPE hold failed — {e}")
+
+    # ── NOSHOW: follow-up SMS to customer ────────────────────────
+    elif command == "NOSHOW" and customer_phone:
+        try:
+            cust_consent = sb.table("customers").select("sms_consent").eq(
+                "customer_phone", customer_phone
+            ).eq("client_id", client_id).limit(1).execute()
+            if cust_consent.data and cust_consent.data[0].get("sms_consent"):
+                client_row = sb.table("clients").select("business_name, phone").eq("id", client_id).execute()
+                biz_name = client_row.data[0].get("business_name", "your provider") if client_row.data else "your provider"
+                client_phone = client_row.data[0].get("phone", "") if client_row.data else ""
+                from execution.sms_send import send_sms
+                send_sms(
+                    to_number=customer_phone,
+                    message_body=f"Hi, {biz_name} arrived for your appointment but no one was available. Please call to reschedule.",
+                    from_number=client_phone,
+                    message_type="no_show_followup",
+                )
+        except Exception as e:
+            print(f"[{timestamp()}] WARN dispatch: NOSHOW follow-up failed — {e}")
+
+    # Update dispatch_decisions (AI learning loop)
+    try:
+        sb.table("dispatch_decisions").update({
+            "outcome_status": new_status,
+            "outcome_at": datetime.now(timezone.utc).isoformat(),
+        }).eq("job_id", job_id).execute()
+    except Exception:
+        pass
+
+    # Log to agent_activity
+    try:
+        from execution.db_agent_activity import log_activity
+        client_row = sb.table("clients").select("phone").eq("id", client_id).execute()
+        client_phone = client_row.data[0].get("phone", "") if client_row.data else ""
+        log_activity(
+            client_phone=client_phone,
+            agent_name="worker_route_tap",
+            action_taken=f"{command.lower()}_job",
+            input_summary=f"{worker_name}: {command} (tap)",
+            output_summary=result_msg[:120],
+            sms_sent=False,
+        )
+    except Exception:
+        pass
+
+    print(f"[{timestamp()}] INFO dispatch: Worker tap {command} on job {job_id[:8]} by {worker_name}")
+    return jsonify({"success": True, "message": result_msg})
+
+
+# ---------------------------------------------------------------------------
 # GET /r/<token> — Worker route page (mobile, no login)
 # ---------------------------------------------------------------------------
 
