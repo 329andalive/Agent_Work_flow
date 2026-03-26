@@ -553,7 +553,7 @@ def _handle_worker_status_reply(
             pass
 
         # Update job status
-        from execution.db_scheduling import update_job_status
+        from execution.db_jobs import update_job_status  # RIGHT
         incomplete_reason = None
         if command == "BACK":
             incomplete_reason = f"carry_forward_from={today_str}"
