@@ -88,10 +88,13 @@ def booking_page(board_token):
     future_14 = (date.today() + timedelta(days=14)).isoformat()
     slots = []
     try:
+        board_type = board.get("board_type", "class")
         result = sb.table("class_slots").select(
             "id, title, slot_date, start_time, end_time, capacity, "
             "enrolled_count, instructor, description, status"
-        ).eq("client_phone", client_phone).gte(
+        ).eq("client_phone", client_phone).eq(
+            "board_type", board_type
+        ).gte(
             "slot_date", today_str
         ).lte("slot_date", future_14).eq("status", "open").order(
             "slot_date"
