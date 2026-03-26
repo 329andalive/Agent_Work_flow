@@ -1392,6 +1392,19 @@ def dispatch_board():
     except Exception as e:
         print(f"[{_ts()}] WARN dashboard_routes: dispatch suggestions — {e}")
 
+    # Load existing assignments for this date from route_assignments
+    # This restores board state after page reload or Send Routes
+    assignments = {}  # {job_id: worker_id}
+    try:
+        asgn_rows = sb.table("route_assignments").select(
+            "job_id, worker_id, sort_order"
+        ).eq("client_id", client_id).execute()
+        for row in (asgn_rows.data or []):
+            if row.get("job_id") and row.get("worker_id"):
+                assignments[row["job_id"]] = row["worker_id"]
+    except Exception as e:
+        print(f"[{_ts()}] WARN dashboard_routes: dispatch assignments query — {e}")
+
     ctx.update({
         "jobs": jobs,
         "workers": workers,
@@ -1399,8 +1412,11 @@ def dispatch_board():
         "held": held,
         "suggestions": suggestions,
         "dispatch_date": selected_date,
-        "jobs_json": json.dumps(jobs + carry_forward, default=str),
+        "today_iso": date.today().isoformat(),
+        "jobs_json": json.dumps(jobs, default=str),
+        "carry_forward_json": json.dumps(carry_forward, default=str),
         "workers_json": json.dumps(workers, default=str),
+        "assignments_json": json.dumps(assignments),
     })
     return render_template("dashboard/dispatch.html", **ctx)
 

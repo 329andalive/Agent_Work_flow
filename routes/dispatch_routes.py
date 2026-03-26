@@ -105,6 +105,30 @@ def dispatch_assign():
             }],
         )
 
+        # Upsert to route_assignments so dragging back and forth stays in sync
+        try:
+            from datetime import date as date_cls
+            dispatch_date = data.get("date", date_cls.today().isoformat())
+            sb = _get_supabase()
+            existing = sb.table("route_assignments").select("id").eq(
+                "job_id", job_id).eq("client_id", client_id).execute()
+            if existing.data:
+                sb.table("route_assignments").update({
+                    "worker_id": worker_id,
+                    "dispatch_date": dispatch_date,
+                    "assigned_at": datetime.now(timezone.utc).isoformat(),
+                }).eq("job_id", job_id).eq("client_id", client_id).execute()
+            else:
+                sb.table("route_assignments").insert({
+                    "client_id": client_id,
+                    "job_id": job_id,
+                    "worker_id": worker_id,
+                    "dispatch_date": dispatch_date,
+                    "assigned_at": datetime.now(timezone.utc).isoformat(),
+                }).execute()
+        except Exception as e:
+            print(f"[{timestamp()}] WARN dispatch: assign upsert failed — {e}")
+
         if session_id:
             print(f"[{timestamp()}] INFO dispatch: Assigned job {job_id[:8]} → worker {worker_id[:8]}")
             return jsonify({"success": True, "assignment_id": session_id})
@@ -295,6 +319,59 @@ def dispatch_send():
 
 
 # ---------------------------------------------------------------------------
+# POST /api/dispatch/unassign — worker reschedules a job
+# ---------------------------------------------------------------------------
+
+@dispatch_bp.route("/api/dispatch/unassign", methods=["POST"])
+def dispatch_unassign():
+    """
+    Unassign a job — called by RESCHEDULE button on worker route page.
+    Token-validated (no session auth needed — workers don't have login).
+    """
+    data = request.get_json(silent=True) or {}
+    job_id = data.get("job_id")
+    token = data.get("token")
+
+    if not job_id or not token:
+        return jsonify({"success": False, "error": "job_id and token required"}), 400
+
+    sb = _get_supabase()
+
+    # Validate token
+    try:
+        tok = sb.table("route_tokens").select("client_id, expires_at").eq("token", token).execute()
+        if not tok.data:
+            return jsonify({"success": False, "error": "Invalid token"}), 403
+        expires = tok.data[0].get("expires_at", "")
+        if expires:
+            expires_dt = datetime.fromisoformat(expires.replace("Z", "+00:00"))
+            if datetime.now(timezone.utc) > expires_dt:
+                return jsonify({"success": False, "error": "Token expired"}), 403
+        client_id = tok.data[0].get("client_id")
+    except Exception as e:
+        print(f"[{timestamp()}] ERROR dispatch: unassign token check failed — {e}")
+        return jsonify({"success": False, "error": "Token validation failed"}), 500
+
+    # Remove from route_assignments
+    try:
+        sb.table("route_assignments").delete().eq("job_id", job_id).eq("client_id", client_id).execute()
+    except Exception as e:
+        print(f"[{timestamp()}] WARN dispatch: unassign delete failed — {e}")
+
+    # Set dispatch_status = unassigned
+    try:
+        sb.table("jobs").update({
+            "dispatch_status": "unassigned",
+            "assigned_worker_id": None,
+        }).eq("id", job_id).execute()
+    except Exception as e:
+        print(f"[{timestamp()}] WARN dispatch: unassign job update failed — {e}")
+
+    print(f"[{timestamp()}] INFO dispatch: Job {job_id[:8]} unassigned via worker route")
+    return jsonify({"success": True})
+
+
+# ---------------------------------------------------------------------------
 # GET /r/<token> — Worker route page (mobile, no login)
 # ---------------------------------------------------------------------------
 
@@ -416,10 +493,20 @@ def worker_route(token):
 
     print(f"[{timestamp()}] INFO dispatch: Route {token} viewed by {worker_name} — {len(jobs)} jobs")
 
+    # Get business phone for SMS buttons
+    client_phone_for_sms = ""
+    try:
+        cp = sb.table("clients").select("phone").eq("id", client_id).execute()
+        if cp.data:
+            client_phone_for_sms = cp.data[0].get("phone", "")
+    except Exception:
+        pass
+
     return render_template("worker_route.html",
         business_name=business_name,
         worker_name=worker_name,
         dispatch_date=dispatch_date_str,
         jobs=jobs,
         token=token,
+        business_phone=client_phone_for_sms,
     )
