@@ -1388,9 +1388,7 @@ def dispatch_board():
     suggestions = []
     try:
         from execution.dispatch_suggestion import get_suggestions
-        client = ctx["_client"]
-        client_phone = client.get("phone", "")
-        suggestions = get_suggestions(client_phone, jobs, workers)
+        suggestions = get_suggestions(client_id, jobs, workers)
     except Exception as e:
         print(f"[{_ts()}] WARN dashboard_routes: dispatch suggestions — {e}")
 
