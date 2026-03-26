@@ -1,6 +1,27 @@
 # HANDOFF.md — Bolts11 Session Log
-> Last updated: March 25, 2026 — Backend Engineer
+> Last updated: March 26, 2026 — Backend Engineer
 > Read CLAUDE.md first every session before touching any code.
+
+---
+
+## Session — March 26, 2026
+
+### Fixed
+- route_assignments: dropped FK constraints, added client_id, dispatch_date columns
+- dispatch_log: dropped NOT NULL on client_phone, dispatch_date
+- Worker route page: jobs now load correctly from route_assignments
+- UUID bug: get_suggestions() now receives client_id not client_phone
+- Route expiry: uses expires_at not calendar date
+- Workers UI: /dashboard/workers — add/edit/deactivate
+- DONE/BACK/PARTS/NOSHOW/SCOPE SMS handler fully wired
+- DONE auto-creates draft invoice when estimated_amount exists
+- Dispatch board: state persists after Send Routes (no snap-back)
+
+### Next session priorities
+1. Add estimated_amount to test jobs so auto-invoice fires end-to-end
+2. Dashboard — surface draft invoices with Review & Send button
+3. Control board — completed jobs count today
+4. Dispatch board patches from dispatch_patches.py still need applying
 
 ---
 
