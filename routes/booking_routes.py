@@ -670,6 +670,7 @@ def run_scheduled_sms():
         send_class_nudges,
         send_appointment_reminders,
         mark_no_shows,
+        run_end_of_day_sweep,
     )
 
     results = {}
@@ -682,6 +683,9 @@ def run_scheduled_sms():
 
     if job in ("no_shows", "all"):
         results["no_shows"] = mark_no_shows()
+
+    if job in ("sweep", "all"):
+        results["end_of_day_sweep"] = run_end_of_day_sweep()
 
     print(f"[{timestamp()}] INFO admin: run-scheduled-sms job={job} results={results}")
     return jsonify({"success": True, "results": results})

@@ -352,3 +352,141 @@ def mark_no_shows() -> dict:
     if result["marked"]:
         print(f"[{timestamp()}] INFO scheduled_sms: Marked {result['marked']} no-shows")
     return result
+
+
+# ---------------------------------------------------------------------------
+# 4. run_end_of_day_sweep — carry unfinished jobs to tomorrow
+# ---------------------------------------------------------------------------
+
+def run_end_of_day_sweep() -> dict:
+    """
+    End-of-day carry-forward sweep. Finds all unfinished jobs for today
+    across all active clients and rolls them to tomorrow.
+
+    Unfinished = status IN (new, scheduled, carry_forward, parts_pending,
+    scope_review) — never touches completed/invoiced/paid/cancelled/no_show.
+
+    For each job:
+    - Sets scheduled_date = tomorrow
+    - Sets carry_forward_from = today (if not already set)
+    - Leaves status unchanged
+
+    After sweep, SMSes each owner a summary of what was moved.
+    Multi-tenant: loops over all active clients.
+
+    Returns:
+        {"clients_swept": int, "jobs_moved": int}
+    """
+    sb = get_supabase()
+    result = {"clients_swept": 0, "jobs_moved": 0}
+    today_str = date.today().isoformat()
+    tomorrow_str = (date.today() + timedelta(days=1)).isoformat()
+
+    # Statuses that mean "unfinished" — everything else stays put
+    UNFINISHED = ["new", "scheduled", "carry_forward", "parts_pending", "scope_review"]
+
+    # Load all active clients
+    try:
+        clients = sb.table("clients").select(
+            "id, phone, owner_mobile, business_name"
+        ).eq("active", True).execute()
+        client_list = clients.data or []
+    except Exception as e:
+        print(f"[{timestamp()}] ERROR scheduled_sms: end_of_day client query failed — {e}")
+        return result
+
+    for client in client_list:
+        client_id = client["id"]
+        client_phone = client.get("phone", "")
+        owner_mobile = client.get("owner_mobile") or client_phone
+        business_name = client.get("business_name", "")
+
+        # Find today's unfinished jobs
+        try:
+            jobs = sb.table("jobs").select(
+                "id, customer_id, status"
+            ).eq("client_id", client_id).eq(
+                "scheduled_date", today_str
+            ).in_("status", UNFINISHED).execute()
+            unfinished = jobs.data or []
+        except Exception as e:
+            print(f"[{timestamp()}] WARN scheduled_sms: end_of_day jobs query for {client_id[:8]} — {e}")
+            continue
+
+        if not unfinished:
+            continue
+
+        # Move each job to tomorrow
+        customer_names = []
+        for job in unfinished:
+            try:
+                update = {
+                    "scheduled_date": tomorrow_str,
+                }
+                # Only set carry_forward_from if not already set
+                # (preserves the original date it was first carried)
+                try:
+                    existing = sb.table("jobs").select("carry_forward_from").eq("id", job["id"]).execute()
+                    if existing.data and not existing.data[0].get("carry_forward_from"):
+                        update["carry_forward_from"] = today_str
+                except Exception:
+                    update["carry_forward_from"] = today_str
+
+                sb.table("jobs").update(update).eq("id", job["id"]).execute()
+                result["jobs_moved"] += 1
+
+                # Get customer name for the summary SMS
+                if job.get("customer_id"):
+                    try:
+                        cust = sb.table("customers").select("customer_name").eq("id", job["customer_id"]).execute()
+                        if cust.data:
+                            customer_names.append(cust.data[0].get("customer_name", "Customer"))
+                    except Exception:
+                        pass
+
+            except Exception as e:
+                print(f"[{timestamp()}] WARN scheduled_sms: end_of_day job move failed for {job['id'][:8]} — {e}")
+
+        result["clients_swept"] += 1
+
+        # SMS owner summary
+        if customer_names and owner_mobile:
+            try:
+                n = len(customer_names)
+                if n <= 3:
+                    names_str = ", ".join(customer_names)
+                else:
+                    names_str = ", ".join(customer_names[:3]) + f" and {n - 3} more"
+
+                from execution.sms_send import send_sms
+                send_sms(
+                    to_number=owner_mobile,
+                    message_body=(
+                        f"\U0001f4cb End of day: {n} job{'s' if n != 1 else ''} carried to tomorrow \u2014 "
+                        f"{names_str}"
+                    ),
+                    from_number=client_phone,
+                    message_type="carry_forward_notify",
+                )
+                print(f"[{timestamp()}] INFO scheduled_sms: Carry-forward summary sent to {owner_mobile} — {n} jobs")
+            except Exception as e:
+                print(f"[{timestamp()}] WARN scheduled_sms: carry-forward SMS failed — {e}")
+
+        # Log to agent_activity
+        try:
+            from execution.db_agent_activity import log_activity
+            log_activity(
+                client_phone=client_phone,
+                agent_name="end_of_day_sweep",
+                action_taken="carry_forward",
+                input_summary=f"{len(unfinished)} unfinished jobs on {today_str}",
+                output_summary=f"Moved {len(unfinished)} jobs to {tomorrow_str}",
+                sms_sent=bool(customer_names and owner_mobile),
+            )
+        except Exception:
+            pass
+
+        print(f"[{timestamp()}] INFO scheduled_sms: {business_name} — {len(unfinished)} jobs carried to {tomorrow_str}")
+
+    print(f"[{timestamp()}] INFO scheduled_sms: End-of-day sweep complete — {result['clients_swept']} clients, {result['jobs_moved']} jobs moved")
+    return result

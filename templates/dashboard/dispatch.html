@@ -210,7 +210,8 @@
     div.dataset.phone = job.customer_phone || job.phone || '';
     div.dataset.address = job.address || job.job_description || '';
     div.dataset.price = job.estimated_amount ? '$' + Math.round(job.estimated_amount) : '';
-    var cf = isCF ? '<div class="slip-card__cf">&#8617; carry-forward</div>' : '';
+    var cfFrom = job.carry_forward_from || job.scheduled_date || '';
+    var cf = isCF ? '<div class="slip-card__cf">&#8617; carried from ' + cfFrom + '</div>' : '';
     div.innerHTML = cf + '<div class="slip-card__name">' + (div.dataset.name || 'Customer') + '</div><div class="slip-card__desc">' + (div.dataset.desc || 'No description') + '</div><div class="slip-card__badges"><span class="slip-badge slip-badge--' + zc + '">' + (div.dataset.zone) + '</span>' + (div.dataset.time ? '<span class="slip-badge slip-badge--time">' + div.dataset.time + '</span>' : '') + '</div>';
     div.addEventListener('click', function() { openPreview(div.dataset); });
     bindDrag(div);
@@ -262,7 +263,12 @@
   function populateBoard() {
     var queue = document.getElementById('queue');
     var assigned = new Set(Object.keys(ASSIGNMENTS));
-    ALL_JOBS.forEach(function(j) { if (!assigned.has(j.id)) queue.appendChild(makeCard(j, false)); });
+    ALL_JOBS.forEach(function(j) {
+      if (!assigned.has(j.id)) {
+        var isCF = !!j.carry_forward_from;
+        queue.appendChild(makeCard(j, isCF));
+      }
+    });
     var cfJobs = {{ carry_forward_json|safe }};
     cfJobs.forEach(function(j) { if (!assigned.has(j.id)) queue.appendChild(makeCard(j, true)); });
     Object.keys(ASSIGNMENTS).forEach(function(jid) {
