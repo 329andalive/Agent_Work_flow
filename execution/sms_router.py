@@ -672,26 +672,6 @@ def _handle_worker_status_reply(
         except Exception:
             pass
 
-        # NOSHOW: queue follow-up SMS to customer (if consent)
-        if command == "NOSHOW" and customer_phone:
-            try:
-                cust = sb.table("customers").select("sms_consent").eq(
-                    "customer_phone", customer_phone
-                ).eq("client_id", client_id).limit(1).execute()
-                if cust.data and cust.data[0].get("sms_consent"):
-                    biz_name = client.get("business_name", "your service provider")
-                    send_sms(
-                        to_number=customer_phone,
-                        message_body=f"Hi, {biz_name} arrived for your appointment but no one was available. Please call to reschedule.",
-                        from_number=client_phone,
-                        message_type="no_show_followup",
-                    )
-                    print(f"[{timestamp()}] INFO sms_router: No-show follow-up SMS sent to {customer_phone}")
-                else:
-                    print(f"[{timestamp()}] INFO sms_router: No-show follow-up skipped — no SMS consent")
-            except Exception as e:
-                print(f"[{timestamp()}] WARN sms_router: No-show follow-up failed — {e}")
-
         # Reply to worker with confirmation
         status_label = new_status.replace("_", " ")
         send_sms(

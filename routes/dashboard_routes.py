@@ -1106,6 +1106,11 @@ def api_create_job():
         return jsonify({"success": False, "error": "Failed to verify customer"}), 500
 
     # Insert job
+    # Pricing fields from the New Job form
+    estimated_amount = data.get("estimated_amount")
+    estimated_hours = data.get("estimated_hours")
+    contract_type = data.get("contract_type")
+
     job_row = {
         "client_id": client_id,
         "customer_id": customer_id,
@@ -1116,6 +1121,20 @@ def api_create_job():
         "job_notes": notes,
         "raw_input": "Created via dashboard New Job form",
     }
+
+    # Add pricing if provided
+    if estimated_amount is not None:
+        try:
+            job_row["estimated_amount"] = float(estimated_amount)
+        except (ValueError, TypeError):
+            pass
+    if estimated_hours is not None:
+        try:
+            job_row["estimated_hours"] = float(estimated_hours)
+        except (ValueError, TypeError):
+            pass
+    if contract_type:
+        job_row["contract_type"] = contract_type
 
     # Include address if provided
     address = data.get("address", "").strip()
@@ -1816,6 +1835,74 @@ def workers_update():
     except Exception as e:
         print(f"[{_ts()}] ERROR dashboard_routes: workers_update failed — {e}")
         return jsonify({"success": False, "error": str(e)})
+
+
+# ---------------------------------------------------------------------------
+# POST /api/jobs/<id>/approve-scope — Owner approves scope change
+# ---------------------------------------------------------------------------
+
+@dashboard_bp.route("/api/jobs/<job_id>/approve-scope", methods=["POST"])
+def approve_scope(job_id):
+    client_id = _resolve_client_id()
+    if not client_id:
+        return jsonify({"success": False, "error": "Not authenticated"}), 401
+
+    sb = _get_supabase()
+
+    # Verify job belongs to this client
+    try:
+        job_check = sb.table("jobs").select("id, customer_id").eq("id", job_id).eq("client_id", client_id).execute()
+        if not job_check.data:
+            return jsonify({"success": False, "error": "Job not found"}), 404
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+    # Clear scope_hold
+    try:
+        sb.table("jobs").update({"scope_hold": False}).eq("id", job_id).execute()
+    except Exception as e:
+        print(f"[{_ts()}] WARN dashboard_routes: scope_hold clear failed — {e}")
+
+    # Find the most recent draft invoice for this job and set to sent
+    invoice_id = None
+    amount = 0
+    customer_name = "Customer"
+    try:
+        inv = sb.table("invoices").select("id, amount_due, customer_id").eq(
+            "job_id", job_id
+        ).eq("status", "draft").order("created_at", desc=True).limit(1).execute()
+        if inv.data:
+            invoice_id = inv.data[0]["id"]
+            amount = float(inv.data[0].get("amount_due") or 0)
+            # Get customer name
+            cust_id = inv.data[0].get("customer_id")
+            if cust_id:
+                cust = sb.table("customers").select("customer_name").eq("id", cust_id).execute()
+                if cust.data:
+                    customer_name = cust.data[0].get("customer_name", "Customer")
+            # Update invoice status
+            sb.table("invoices").update({"status": "sent"}).eq("id", invoice_id).execute()
+            print(f"[{_ts()}] INFO dashboard_routes: Scope approved — invoice {invoice_id[:8]} sent for ${amount:.0f}")
+    except Exception as e:
+        print(f"[{_ts()}] WARN dashboard_routes: approve-scope invoice update failed — {e}")
+
+    # SMS owner confirmation
+    try:
+        client = _load_client(client_id)
+        owner_mobile = client.get("owner_mobile") or client.get("phone", "")
+        client_phone = client.get("phone", "")
+        if owner_mobile and invoice_id:
+            from execution.sms_send import send_sms
+            send_sms(
+                to_number=owner_mobile,
+                message_body=f"Invoice approved and sent for {customer_name} — ${amount:.0f}",
+                from_number=client_phone,
+                message_type="invoice",
+            )
+    except Exception as e:
+        print(f"[{_ts()}] WARN dashboard_routes: approve-scope SMS failed — {e}")
+
+    return jsonify({"success": True, "invoice_id": invoice_id})
 
 
 # ---------------------------------------------------------------------------
