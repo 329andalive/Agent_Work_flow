@@ -560,7 +560,12 @@ def _handle_worker_status_reply(
         elif command in ("PARTS", "NOSHOW", "SCOPE"):
             incomplete_reason = f"{command.lower()} reported by {worker_name}"
 
-        update_job_status(job_id, new_status, incomplete_reason=incomplete_reason)
+        update_job_status(job_id, new_status)
+        if incomplete_reason:
+            try:
+                    sb.table("jobs").update({"job_notes": incomplete_reason}).eq("id", job_id).execute()
+            except Exception:
+                pass
 
         # Update dispatch_decisions with outcome (feeds AI learning loop)
         try:
