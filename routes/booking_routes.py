@@ -727,6 +727,7 @@ def generate_slots():
     title_prefix = data.get("title_prefix") or data.get("title") or "Appointment"
     client_phone = data.get("client_phone", "")
     board_id = data.get("board_id")
+    board_type = data.get("board_type", "appointment")
 
     if not slot_date:
         return jsonify({"success": False, "error": "slot_date is required"}), 400
@@ -804,6 +805,7 @@ def generate_slots():
             "capacity": 1,
             "enrolled_count": 0,
             "status": "open",
+            "board_type": board_type,
         }
         if board_id:
             row["board_id"] = board_id

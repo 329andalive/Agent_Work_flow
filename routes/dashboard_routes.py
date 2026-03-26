@@ -1669,7 +1669,9 @@ def schedule_page():
         result = sb.table("class_slots").select(
             "id, title, slot_date, start_time, end_time, capacity, "
             "enrolled_count, status, description"
-        ).eq("client_phone", client_phone).gte(
+        ).eq("client_phone", client_phone).eq(
+            "board_type", "appointment"
+        ).gte(
             "slot_date", today_d.isoformat()
         ).lte("slot_date", end_date).order("slot_date").order("start_time").execute()
         slots = result.data or []
