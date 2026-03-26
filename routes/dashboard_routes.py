@@ -1680,6 +1680,129 @@ def schedule_page():
 
 
 # ---------------------------------------------------------------------------
+# GET /dashboard/workers — Worker roster management
+# ---------------------------------------------------------------------------
+
+@dashboard_bp.route("/dashboard/workers")
+def workers_page():
+    client_id = _resolve_client_id()
+    if not client_id:
+        return redirect("/login")
+
+    ctx = _base_context("workers", client_id)
+    sb = _get_supabase()
+
+    workers = []
+    try:
+        result = sb.table("employees").select(
+            "id, name, phone, role, notes, active"
+        ).eq("client_id", client_id).order("active", desc=True).order("name").execute()
+        workers = result.data or []
+    except Exception as e:
+        print(f"[{_ts()}] WARN dashboard_routes: workers query failed — {e}")
+
+    ctx.update({"workers": workers})
+    return render_template("dashboard/workers.html", **ctx)
+
+
+# ---------------------------------------------------------------------------
+# POST /api/workers/create — Add a new worker
+# ---------------------------------------------------------------------------
+
+@dashboard_bp.route("/api/workers/create", methods=["POST"])
+def workers_create():
+    client_id = _resolve_client_id()
+    if not client_id:
+        return jsonify({"success": False, "error": "Not authenticated"}), 401
+
+    data = request.get_json(silent=True) or {}
+    name = (data.get("name") or "").strip()
+    phone = (data.get("phone") or "").strip()
+    role = (data.get("role") or "").strip()
+    notes = (data.get("notes") or "").strip()
+
+    if not name:
+        return jsonify({"success": False, "error": "Name is required"})
+    if not phone:
+        return jsonify({"success": False, "error": "Phone is required"})
+
+    # Normalize phone to E.164
+    import re as _re
+    digits = _re.sub(r'\D', '', phone)
+    if len(digits) == 10:
+        phone = f"+1{digits}"
+    elif len(digits) == 11 and digits[0] == '1':
+        phone = f"+{digits}"
+    elif not phone.startswith("+"):
+        phone = f"+{digits}"
+
+    try:
+        sb = _get_supabase()
+        result = sb.table("employees").insert({
+            "client_id": client_id,
+            "name": name,
+            "phone": phone,
+            "role": role or None,
+            "notes": notes or None,
+            "active": True,
+        }).execute()
+        worker_id = result.data[0]["id"]
+        print(f"[{_ts()}] INFO dashboard_routes: Created worker {name} id={worker_id[:8]}")
+        return jsonify({"success": True, "id": worker_id})
+    except Exception as e:
+        print(f"[{_ts()}] ERROR dashboard_routes: workers_create failed — {e}")
+        return jsonify({"success": False, "error": str(e)})
+
+
+# ---------------------------------------------------------------------------
+# POST /api/workers/update — Edit or deactivate a worker
+# ---------------------------------------------------------------------------
+
+@dashboard_bp.route("/api/workers/update", methods=["POST"])
+def workers_update():
+    client_id = _resolve_client_id()
+    if not client_id:
+        return jsonify({"success": False, "error": "Not authenticated"}), 401
+
+    data = request.get_json(silent=True) or {}
+    worker_id = data.get("id")
+    if not worker_id:
+        return jsonify({"success": False, "error": "Worker id required"})
+
+    updates = {}
+    if "name" in data:
+        updates["name"] = data["name"].strip()
+    if "phone" in data:
+        import re as _re
+        digits = _re.sub(r'\D', '', data["phone"].strip())
+        if len(digits) == 10:
+            updates["phone"] = f"+1{digits}"
+        elif len(digits) == 11 and digits[0] == '1':
+            updates["phone"] = f"+{digits}"
+        else:
+            updates["phone"] = data["phone"].strip()
+    if "role" in data:
+        updates["role"] = data["role"] or None
+    if "notes" in data:
+        updates["notes"] = data["notes"].strip() or None
+    if "active" in data:
+        updates["active"] = bool(data["active"])
+
+    if not updates:
+        return jsonify({"success": False, "error": "Nothing to update"})
+
+    try:
+        sb = _get_supabase()
+        # Multi-tenancy: filter by both worker_id AND client_id
+        sb.table("employees").update(updates).eq("id", worker_id).eq("client_id", client_id).execute()
+        print(f"[{_ts()}] INFO dashboard_routes: Updated worker id={worker_id[:8]} fields={list(updates.keys())}")
+        return jsonify({"success": True})
+    except Exception as e:
+        print(f"[{_ts()}] ERROR dashboard_routes: workers_update failed — {e}")
+        return jsonify({"success": False, "error": str(e)})
+
+
+# ---------------------------------------------------------------------------
 # GET /dashboard/admin — Super admin heartbeat view
 # ---------------------------------------------------------------------------
 

@@ -325,17 +325,19 @@ def worker_route(token):
             sub="Try again or contact your dispatcher.",
         ), 500
 
-    # Check expiry — past midnight of dispatch_date
+    # Check expiry — use token expires_at, not calendar date
+    # Jobs stay active until completed/cancelled regardless of dispatch date
     dispatch_date_str = route.get("dispatch_date", "")
     try:
-        from datetime import date as date_cls
-        dispatch_dt = date_cls.fromisoformat(dispatch_date_str)
-        if date_cls.today() > dispatch_dt:
-            return render_template("error.html",
-                title="Route Expired",
-                message=f"This route was for {dispatch_date_str}.",
-                sub="Contact your dispatcher for today's route.",
-            ), 410
+        expires_at_str = route.get("expires_at", "")
+        if expires_at_str:
+            expires_dt = datetime.fromisoformat(expires_at_str.replace("Z", "+00:00"))
+            if datetime.now(timezone.utc) > expires_dt:
+                return render_template("error.html",
+                    title="Route Expired",
+                    message="This route link has expired.",
+                    sub="Contact your dispatcher for a new link.",
+                ), 410
     except (ValueError, TypeError):
         pass
 

@@ -1,0 +1,302 @@
+{% extends "base.html" %}
+
+{% block title %}Workers{% endblock %}
+{% block page_title %}Workers{% endblock %}
+{% block topbar_meta %}{{ today }}{% endblock %}
+
+{% block extra_css %}
+  .workers-page { max-width: 860px; }
+
+  .page-header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 20px;
+  }
+  .page-header__left { display: flex; align-items: baseline; gap: 12px; }
+  .worker-count-badge {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px; color: var(--text-tertiary);
+    background: var(--bg-page); padding: 2px 10px; border-radius: 10px;
+  }
+  .btn-add-worker {
+    background: #1a2e4a; color: #fff; border: none;
+    padding: 8px 16px; border-radius: 6px; font-size: 13px;
+    font-weight: 600; cursor: pointer; transition: background 0.15s;
+    font-family: 'Barlow', sans-serif;
+  }
+  .btn-add-worker:hover { background: #243d5e; }
+
+  .roster { display: flex; flex-direction: column; gap: 8px; }
+
+  .worker-card {
+    background: var(--bg-card); border: 1px solid var(--border);
+    border-radius: 8px; padding: 14px 16px;
+    display: flex; align-items: flex-start; gap: 14px;
+    transition: box-shadow 0.12s;
+  }
+  .worker-card:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+  .worker-card--inactive { opacity: 0.5; }
+
+  .worker-avatar {
+    width: 42px; height: 42px; border-radius: 50%;
+    background: #1a2e4a; color: #f59e0b;
+    font-size: 17px; font-weight: 700;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .worker-info { flex: 1; min-width: 0; }
+  .worker-name { font-size: 15px; font-weight: 600; color: var(--text-primary); }
+  .worker-meta {
+    display: flex; align-items: center; gap: 8px; margin-top: 3px; flex-wrap: wrap;
+  }
+  .worker-phone {
+    font-family: 'DM Mono', monospace; font-size: 12px; color: var(--text-secondary);
+  }
+  .worker-notes {
+    font-size: 12px; color: var(--text-tertiary); margin-top: 4px; line-height: 1.4;
+  }
+
+  .role-badge {
+    font-family: 'DM Mono', monospace;
+    font-size: 9px; font-weight: 600; padding: 2px 7px;
+    border-radius: 3px; text-transform: uppercase; letter-spacing: 0.04em;
+  }
+  .role-badge--owner      { background: #FAEEDA; color: #854F0B; }
+  .role-badge--foreman    { background: #dbeafe; color: #1d4ed8; }
+  .role-badge--field_tech { background: #EAF3DE; color: #3B6D11; }
+  .role-badge--office     { background: #F1EFE8; color: #5F5E5A; }
+
+  .worker-actions { display: flex; gap: 6px; align-items: center; flex-shrink: 0; }
+  .btn-edit-w {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px; padding: 4px 10px; border-radius: 4px;
+    border: 1px solid var(--border); background: var(--bg-card);
+    color: var(--text-secondary); cursor: pointer; transition: all 0.1s;
+  }
+  .btn-edit-w:hover { border-color: #1a2e4a; color: #1a2e4a; }
+  .btn-deact {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px; padding: 4px 10px; border-radius: 4px;
+    border: 1px solid #F7C1C1; background: var(--bg-card);
+    color: #A32D2D; cursor: pointer;
+  }
+  .btn-deact:hover { background: #FCEBEB; }
+  .btn-react {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px; padding: 4px 10px; border-radius: 4px;
+    border: 1px solid #C0DD97; background: var(--bg-card);
+    color: #3B6D11; cursor: pointer;
+  }
+  .inactive-label { font-size: 10px; color: var(--text-tertiary); font-style: italic; }
+
+  /* Modal */
+  .modal-bg {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.35); z-index: 100; display: none;
+  }
+  .modal-bg.open { display: block; }
+  .modal-box {
+    position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%);
+    background: var(--bg-card); border-radius: 10px; width: 90%; max-width: 440px;
+    z-index: 101; display: none;
+    box-shadow: 0 16px 48px rgba(0,0,0,0.15);
+  }
+  .modal-box.open { display: block; }
+  .modal-head {
+    padding: 16px 20px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .modal-title { font-size: 16px; font-weight: 700; color: #1a2e4a; }
+  .modal-close {
+    background: none; border: none; font-size: 16px;
+    color: var(--text-tertiary); cursor: pointer; padding: 4px 8px;
+  }
+  .modal-close:hover { color: var(--text-primary); }
+  .modal-body { padding: 18px 20px; }
+  .modal-foot {
+    padding: 12px 20px 16px; border-top: 1px solid var(--border);
+    display: flex; justify-content: flex-end; gap: 8px;
+  }
+  .modal-err {
+    background: #FCEBEB; color: #A32D2D; border-radius: 5px;
+    padding: 6px 10px; font-size: 12px; margin-top: 10px; display: none;
+  }
+  .fg { margin-bottom: 14px; }
+  .fg-label {
+    font-family: 'DM Mono', monospace;
+    font-size: 10px; font-weight: 500; text-transform: uppercase;
+    letter-spacing: 0.06em; color: var(--text-tertiary); margin-bottom: 5px; display: block;
+  }
+  .fg-input, .fg-select, .fg-textarea {
+    width: 100%; padding: 8px 10px; border-radius: 6px;
+    border: 1px solid var(--border); font-size: 13px;
+    color: var(--text-primary); background: var(--bg-card);
+    font-family: 'Barlow', sans-serif; outline: none;
+  }
+  .fg-input:focus, .fg-select:focus, .fg-textarea:focus { border-color: #1a2e4a; }
+  .fg-textarea { resize: vertical; min-height: 60px; }
+  .btn-modal-cancel {
+    padding: 7px 14px; border-radius: 6px; border: 1px solid var(--border);
+    background: var(--bg-card); color: var(--text-secondary); font-size: 13px;
+    cursor: pointer;
+  }
+  .btn-modal-save {
+    padding: 7px 18px; border-radius: 6px; border: none;
+    background: #1a2e4a; color: #fff; font-size: 13px; font-weight: 600;
+    cursor: pointer;
+  }
+  .btn-modal-save:disabled { opacity: 0.5; cursor: not-allowed; }
+{% endblock %}
+
+{% block content %}
+<div class="workers-page">
+  <div class="page-header">
+    <div class="page-header__left">
+      <span class="worker-count-badge">{{ workers|length }} workers</span>
+    </div>
+    <button class="btn-add-worker" onclick="openAdd()">+ Add Worker</button>
+  </div>
+
+  <div class="roster">
+    {% if workers %}
+    {% for w in workers %}
+    <div class="worker-card {% if not w.active %}worker-card--inactive{% endif %}">
+      <div class="worker-avatar">{{ (w.name or '?')[0]|upper }}</div>
+      <div class="worker-info">
+        <div class="worker-name">{{ w.name or 'Unnamed' }}</div>
+        <div class="worker-meta">
+          <span class="worker-phone">{{ w.phone or '—' }}</span>
+          {% if w.role %}
+          <span class="role-badge role-badge--{{ w.role }}">{{ w.role|replace('_',' ')|title }}</span>
+          {% endif %}
+        </div>
+        {% if w.notes %}
+        <div class="worker-notes">{{ w.notes }}</div>
+        {% endif %}
+      </div>
+      <div class="worker-actions">
+        <button class="btn-edit-w" onclick='openEdit({{ w|tojson }})'>Edit</button>
+        {% if w.active %}
+        <button class="btn-deact" onclick="toggle('{{ w.id }}', false)">Deactivate</button>
+        {% else %}
+        <span class="inactive-label">Inactive</span>
+        <button class="btn-react" onclick="toggle('{{ w.id }}', true)">Reactivate</button>
+        {% endif %}
+      </div>
+    </div>
+    {% endfor %}
+    {% else %}
+    <div class="empty-state">
+      No workers yet. Add your first worker to start dispatching routes.
+      <br><button class="btn-add-worker" style="margin-top:12px" onclick="openAdd()">+ Add Worker</button>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Modal -->
+<div class="modal-bg" id="mbg" onclick="closeModal()"></div>
+<div class="modal-box" id="mbox">
+  <div class="modal-head">
+    <span class="modal-title" id="mtitle">Add Worker</span>
+    <button class="modal-close" onclick="closeModal()">&times;</button>
+  </div>
+  <div class="modal-body">
+    <input type="hidden" id="wid">
+    <div class="fg">
+      <label class="fg-label">Name *</label>
+      <input type="text" class="fg-input" id="wname" placeholder="Full name">
+    </div>
+    <div class="fg">
+      <label class="fg-label">Phone *</label>
+      <input type="tel" class="fg-input" id="wphone" placeholder="(207) 555-1234">
+    </div>
+    <div class="fg">
+      <label class="fg-label">Role</label>
+      <select class="fg-select" id="wrole">
+        <option value="">Select role</option>
+        <option value="owner">Owner</option>
+        <option value="foreman">Foreman</option>
+        <option value="field_tech">Field Tech</option>
+        <option value="office">Office</option>
+      </select>
+    </div>
+    <div class="fg">
+      <label class="fg-label">Notes / Skills</label>
+      <textarea class="fg-textarea" id="wnotes" placeholder="CDL licensed, septic specialist, etc." rows="2"></textarea>
+    </div>
+    <div class="modal-err" id="merr"></div>
+  </div>
+  <div class="modal-foot">
+    <button class="btn-modal-cancel" onclick="closeModal()">Cancel</button>
+    <button class="btn-modal-save" id="msave" onclick="save()">Save</button>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function openAdd() {
+  document.getElementById('mtitle').textContent = 'Add Worker';
+  document.getElementById('wid').value = '';
+  document.getElementById('wname').value = '';
+  document.getElementById('wphone').value = '';
+  document.getElementById('wrole').value = '';
+  document.getElementById('wnotes').value = '';
+  document.getElementById('msave').textContent = 'Add Worker';
+  document.getElementById('merr').style.display = 'none';
+  document.getElementById('mbg').classList.add('open');
+  document.getElementById('mbox').classList.add('open');
+  document.getElementById('wname').focus();
+}
+function openEdit(w) {
+  document.getElementById('mtitle').textContent = 'Edit Worker';
+  document.getElementById('wid').value = w.id || '';
+  document.getElementById('wname').value = w.name || '';
+  document.getElementById('wphone').value = w.phone || '';
+  document.getElementById('wrole').value = w.role || '';
+  document.getElementById('wnotes').value = w.notes || '';
+  document.getElementById('msave').textContent = 'Save Changes';
+  document.getElementById('merr').style.display = 'none';
+  document.getElementById('mbg').classList.add('open');
+  document.getElementById('mbox').classList.add('open');
+}
+function closeModal() {
+  document.getElementById('mbg').classList.remove('open');
+  document.getElementById('mbox').classList.remove('open');
+}
+function showErr(m) {
+  var e = document.getElementById('merr'); e.textContent = m; e.style.display = 'block';
+}
+async function save() {
+  var id = document.getElementById('wid').value.trim();
+  var name = document.getElementById('wname').value.trim();
+  var phone = document.getElementById('wphone').value.trim();
+  var role = document.getElementById('wrole').value;
+  var notes = document.getElementById('wnotes').value.trim();
+  if (!name) { showErr('Name is required.'); return; }
+  if (!phone) { showErr('Phone is required.'); return; }
+  var btn = document.getElementById('msave');
+  btn.disabled = true; btn.textContent = 'Saving…';
+  document.getElementById('merr').style.display = 'none';
+  var url = id ? '/api/workers/update' : '/api/workers/create';
+  var body = { name: name, phone: phone, role: role, notes: notes };
+  if (id) body.id = id;
+  try {
+    var res = await fetch(url, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) });
+    var data = await res.json();
+    if (data.success) { window.location.reload(); }
+    else { showErr(data.error || 'Failed.'); btn.disabled = false; btn.textContent = id ? 'Save Changes' : 'Add Worker'; }
+  } catch(e) { showErr('Network error.'); btn.disabled = false; btn.textContent = id ? 'Save Changes' : 'Add Worker'; }
+}
+async function toggle(id, active) {
+  if (!confirm((active ? 'Reactivate' : 'Deactivate') + ' this worker?')) return;
+  try {
+    var res = await fetch('/api/workers/update', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({id:id, active:active}) });
+    var data = await res.json();
+    if (data.success) window.location.reload();
+    else alert(data.error || 'Failed.');
+  } catch(e) { alert('Network error.'); }
+}
+document.addEventListener('keydown', function(e) { if (e.key === 'Escape') closeModal(); });
+</script>
+{% endblock %}
