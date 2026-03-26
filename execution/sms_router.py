@@ -472,13 +472,12 @@ def _handle_worker_status_reply(
     today_str = date_cls.today().isoformat()
     client_phone = client.get("phone", to_number)
 
-    # Map commands to scheduled_jobs status values
     STATUS_MAP = {
-        "DONE": "completed",
-        "BACK": "carry_forward",
-        "PARTS": "parts_pending",
+        "DONE":   "completed",
+        "BACK":   "carry_forward",
+        "PARTS":  "parts_pending",
         "NOSHOW": "no_show",
-        "SCOPE": "scope_review",
+        "SCOPE":  "scope_review",
     }
     new_status = STATUS_MAP.get(command, command.lower())
 
@@ -486,21 +485,18 @@ def _handle_worker_status_reply(
         from execution.db_connection import get_client as get_supabase
         sb = get_supabase()
 
-        # Get today's assignments for this worker
         # Find worker_id from employees table
         worker_result = sb.table("employees").select("id").eq(
             "client_id", client_id
         ).eq("phone", from_number).eq("active", True).limit(1).execute()
 
-        # Also check workers table
         if not worker_result.data:
-            worker_result = sb.table("workers").select("id").eq(
-                "client_phone", client_phone
-            ).eq("phone", from_number).eq("active", True).limit(1).execute()
-
-        if not worker_result.data:
-            send_sms(to_number=from_number, message_body="I don't have you listed as a worker. Contact your dispatcher.",
-                     from_number=client_phone, message_type="route")
+            send_sms(
+                to_number=from_number,
+                message_body="I don't have you listed as a worker. Contact your dispatcher.",
+                from_number=client_phone,
+                message_type="route",
+            )
             return
 
         worker_id = worker_result.data[0]["id"]
@@ -511,61 +507,108 @@ def _handle_worker_status_reply(
         ).eq("worker_id", worker_id).order("sort_order").execute()
 
         if not assignments.data:
-            send_sms(to_number=from_number, message_body="No jobs assigned to you today.",
-                     from_number=client_phone, message_type="route")
+            send_sms(
+                to_number=from_number,
+                message_body="No jobs assigned to you today.",
+                from_number=client_phone,
+                message_type="route",
+            )
             return
 
         assigned_jobs = assignments.data
 
-        # Resolve which job to update
+        # Resolve which job to update (job_num is 1-indexed)
         target_assignment = None
         if job_num is not None:
-            # Job number is 1-indexed (matches the route page display)
             idx = job_num - 1
             if 0 <= idx < len(assigned_jobs):
                 target_assignment = assigned_jobs[idx]
             else:
-                send_sms(to_number=from_number,
-                         message_body=f"Job #{job_num} not found. You have {len(assigned_jobs)} jobs today. Reply {command} 1-{len(assigned_jobs)}.",
-                         from_number=client_phone, message_type="route")
+                send_sms(
+                    to_number=from_number,
+                    message_body=f"Job #{job_num} not found. You have {len(assigned_jobs)} jobs today. Reply {command} 1-{len(assigned_jobs)}.",
+                    from_number=client_phone,
+                    message_type="route",
+                )
                 return
         elif len(assigned_jobs) == 1:
             target_assignment = assigned_jobs[0]
         else:
-            send_sms(to_number=from_number,
-                     message_body=f"Which job? You have {len(assigned_jobs)} today. Reply {command} 1-{len(assigned_jobs)}.",
-                     from_number=client_phone, message_type="route")
+            send_sms(
+                to_number=from_number,
+                message_body=f"Which job? You have {len(assigned_jobs)} today. Reply {command} 1-{len(assigned_jobs)}.",
+                from_number=client_phone,
+                message_type="route",
+            )
             return
 
         job_id = target_assignment["job_id"]
 
-        # Get job details for the confirmation message
+        # Load job + customer details from jobs table (not scheduled_jobs)
         job_name = "Job"
         customer_phone = None
+        customer_id = None
+        estimated_amount = 0.0
+        job_type_val = "Service"
         try:
-            job_row = sb.table("scheduled_jobs").select(
-                "customer_name, customer_phone, job_type"
+            job_row = sb.table("jobs").select(
+                "customer_id, job_type, estimated_amount, job_notes, job_description"
             ).eq("id", job_id).execute()
             if job_row.data:
-                job_name = job_row.data[0].get("customer_name") or job_row.data[0].get("job_type") or "Job"
-                customer_phone = job_row.data[0].get("customer_phone")
-        except Exception:
-            pass
+                job_data = job_row.data[0]
+                customer_id = job_data.get("customer_id")
+                estimated_amount = float(job_data.get("estimated_amount") or 0)
+                job_type_val = job_data.get("job_type") or "Service"
+                # Get customer name + phone
+                if customer_id:
+                    cust_row = sb.table("customers").select(
+                        "customer_name, customer_phone"
+                    ).eq("id", customer_id).execute()
+                    if cust_row.data:
+                        job_name = cust_row.data[0].get("customer_name") or job_type_val
+                        customer_phone = cust_row.data[0].get("customer_phone")
+        except Exception as e:
+            print(f"[{timestamp()}] WARN sms_router: Job detail lookup failed — {e}")
 
         # Update job status
-        from execution.db_jobs import update_job_status  # RIGHT
+        from execution.db_jobs import update_job_status
+        update_job_status(job_id, new_status)
+
+        # Store incomplete reason on job notes
         incomplete_reason = None
         if command == "BACK":
             incomplete_reason = f"carry_forward_from={today_str}"
         elif command in ("PARTS", "NOSHOW", "SCOPE"):
             incomplete_reason = f"{command.lower()} reported by {worker_name}"
-
-        update_job_status(job_id, new_status)
         if incomplete_reason:
             try:
-                    sb.table("jobs").update({"job_notes": incomplete_reason}).eq("id", job_id).execute()
+                sb.table("jobs").update({"job_notes": incomplete_reason}).eq("id", job_id).execute()
             except Exception:
                 pass
+
+        # Auto-invoice on DONE
+        if command == "DONE":
+            try:
+                if customer_id and estimated_amount > 0:
+                    invoice_desc = f"{job_type_val} — completed by {worker_name}"
+                    inv_result = sb.table("invoices").insert({
+                        "client_id":    client_id,
+                        "customer_id":  customer_id,
+                        "job_id":       job_id,
+                        "invoice_text": invoice_desc,
+                        "amount_due":   estimated_amount,
+                        "status":       "draft",
+                    }).execute()
+                    if inv_result.data:
+                        invoice_id = inv_result.data[0]["id"]
+                        print(f"[{timestamp()}] INFO sms_router: Auto-invoice created id={invoice_id[:8]} amount=${estimated_amount:.0f}")
+                        job_name = f"{job_name} — invoice ${estimated_amount:.0f} created"
+                    else:
+                        print(f"[{timestamp()}] WARN sms_router: Auto-invoice insert returned no data")
+                else:
+                    print(f"[{timestamp()}] INFO sms_router: DONE but no estimated_amount — skipping auto-invoice")
+            except Exception as e:
+                print(f"[{timestamp()}] WARN sms_router: Auto-invoice failed — {e}")
 
         # Update dispatch_decisions with outcome (feeds AI learning loop)
         try:
@@ -574,7 +617,7 @@ def _handle_worker_status_reply(
                 "outcome_at": datetime.now(timezone.utc).isoformat(),
             }).eq("job_id", job_id).execute()
         except Exception:
-            pass  # Non-fatal — table or row may not exist
+            pass
 
         # NOSHOW: queue follow-up SMS to customer (if consent)
         if command == "NOSHOW" and customer_phone:
@@ -598,9 +641,12 @@ def _handle_worker_status_reply(
 
         # Reply to worker with confirmation
         status_label = new_status.replace("_", " ")
-        send_sms(to_number=from_number,
-                 message_body=f"Got it. {job_name} marked {status_label}.",
-                 from_number=client_phone, message_type="route")
+        send_sms(
+            to_number=from_number,
+            message_body=f"Got it. {job_name} marked {status_label}.",
+            from_number=client_phone,
+            message_type="route",
+        )
 
         print(f"[{timestamp()}] INFO sms_router: Worker {worker_name} → {command} job {job_id[:8]} → {new_status}")
 
@@ -621,9 +667,12 @@ def _handle_worker_status_reply(
     except Exception as e:
         print(f"[{timestamp()}] ERROR sms_router: Worker status reply failed — {e}")
         try:
-            send_sms(to_number=from_number,
-                     message_body="Something went wrong processing your update. Try again or call dispatch.",
-                     from_number=client_phone, message_type="route")
+            send_sms(
+                to_number=from_number,
+                message_body="Something went wrong processing your update. Try again or call dispatch.",
+                from_number=client_phone,
+                message_type="route",
+            )
         except Exception:
             pass
 
