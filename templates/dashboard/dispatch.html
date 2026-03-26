@@ -361,8 +361,12 @@
 {% block content %}
 <!-- Header -->
 <div class="dispatch-header">
-  <div style="display:flex;align-items:baseline;gap:12px">
-    <span class="dispatch-date">{{ today }}</span>
+  <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+    <input type="date" value="{{ dispatch_date }}" id="date-picker"
+           style="font-family:'DM Mono',monospace;font-size:13px;padding:4px 8px;
+                  border:1px solid var(--border);border-radius:4px;background:var(--bg-card);
+                  color:var(--text-primary);cursor:pointer"
+           onchange="window.location='/dashboard/dispatch?date='+this.value">
     <div class="dispatch-stats">
       <span class="dispatch-stat"><strong id="total-count">{{ (jobs|length) + (carry_forward|length) }}</strong> slips</span>
       <span class="dispatch-stat"><strong>{{ workers|length }}</strong> workers</span>

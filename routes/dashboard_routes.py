@@ -1349,8 +1349,15 @@ def dispatch_board():
         get_todays_jobs, get_workers, get_carry_forward_jobs, get_held_jobs,
     )
 
-    today_str = date.today().isoformat()
-    jobs = get_todays_jobs(client_id, today_str)
+    # Support date selector via ?date=YYYY-MM-DD query param
+    selected_date = request.args.get("date", date.today().isoformat())
+    # Validate date format
+    try:
+        date.fromisoformat(selected_date)
+    except (ValueError, TypeError):
+        selected_date = date.today().isoformat()
+
+    jobs = get_todays_jobs(client_id, selected_date)
     workers = get_workers(client_id)
     carry_forward = get_carry_forward_jobs(client_id)
     held = get_held_jobs(client_id)
@@ -1393,7 +1400,7 @@ def dispatch_board():
         "carry_forward": carry_forward,
         "held": held,
         "suggestions": suggestions,
-        "dispatch_date": today_str,
+        "dispatch_date": selected_date,
         "jobs_json": json.dumps(jobs + carry_forward, default=str),
         "workers_json": json.dumps(workers, default=str),
     })

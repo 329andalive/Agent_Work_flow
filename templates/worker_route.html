@@ -158,7 +158,7 @@
   <div class="route-header__biz"><span class="bolt">⚡</span> {{ business_name }}</div>
   <div class="route-header__meta">
     <span>{{ worker_name }}</span>
-    <span>{{ dispatch_date }} · {{ jobs|length }} job{{ 's' if jobs|length != 1 else '' }}{% set total_quoted = jobs|sum(attribute='estimated_amount', default=0) %}{% if total_quoted %} · ${{ "%.0f"|format(total_quoted|float) }}{% endif %}</span>
+    <span>{{ dispatch_date }} · {{ jobs|length }} job{{ 's' if jobs|length != 1 else '' }}{% set total_quoted = namespace(value=0) %}{% for j in jobs %}{% if j.estimated_amount %}{% set total_quoted.value = total_quoted.value + j.estimated_amount|float %}{% endif %}{% endfor %}{% if total_quoted.value %} · ${{ "%.0f"|format(total_quoted.value) }}{% endif %}</span>
   </div>
 </div>
 
