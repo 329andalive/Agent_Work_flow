@@ -80,6 +80,113 @@
     gap: 12px;
   }
 
+  /* ── Pricing panel ─────────────────────────────────────── */
+  .pricing-panel {
+    background: var(--bg-base, #f8f9fb);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px;
+    margin-bottom: 16px;
+    display: none;               /* hidden until a mode is chosen */
+  }
+  .pricing-panel.visible { display: block; }
+
+  .pricing-panel .form-group { margin-bottom: 12px; }
+  .pricing-panel .form-group:last-child { margin-bottom: 0; }
+
+  .pricing-panel .panel-title {
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-tertiary);
+    margin-bottom: 12px;
+  }
+
+  .input-prefix-wrap {
+    position: relative;
+    display: flex;
+    align-items: center;
+  }
+  .input-prefix {
+    position: absolute;
+    left: 10px;
+    font-size: 14px;
+    color: var(--text-secondary);
+    pointer-events: none;
+  }
+  .input-prefix-wrap .form-input { padding-left: 22px; }
+
+  .pricing-hint {
+    font-size: 11px;
+    color: var(--text-tertiary);
+    margin-top: 4px;
+  }
+
+  /* ── Estimate badge preview ────────────────────────────── */
+  .estimate-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--amber-soft, rgba(251,191,36,0.12));
+    border: 1px solid var(--amber, #f59e0b);
+    color: var(--amber, #f59e0b);
+    font-family: 'DM Mono', monospace;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 4px 10px;
+    border-radius: 20px;
+    margin-top: 10px;
+    display: none;
+  }
+  .estimate-badge.visible { display: inline-flex; }
+
+  /* ── Line items ────────────────────────────────────────── */
+  .line-items-list { list-style: none; padding: 0; margin: 0 0 10px 0; }
+  .line-item-row {
+    display: grid;
+    grid-template-columns: 1fr 90px 28px;
+    gap: 8px;
+    align-items: center;
+    margin-bottom: 8px;
+  }
+  .line-item-row .form-input { font-size: 13px; }
+
+  .btn-add-line {
+    font-family: 'Barlow', sans-serif;
+    font-size: 12px;
+    color: var(--blue);
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .btn-add-line:hover { text-decoration: underline; }
+
+  .btn-remove-line {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--text-tertiary);
+    font-size: 16px;
+    line-height: 1;
+    padding: 0;
+  }
+  .btn-remove-line:hover { color: var(--red); }
+
+  .line-items-total {
+    font-family: 'DM Mono', monospace;
+    font-size: 12px;
+    color: var(--text-secondary);
+    text-align: right;
+    margin-top: 6px;
+  }
+
+  /* ── Misc ──────────────────────────────────────────────── */
   .form-check {
     display: flex;
     align-items: flex-start;
@@ -114,23 +221,15 @@
     transition: background 0.12s;
   }
   .btn-create:hover { background: #1d4ed8; }
-  .btn-create:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-  }
+  .btn-create:disabled { opacity: 0.6; cursor: not-allowed; }
 
-  .form-error {
-    margin-top: 10px;
-    font-size: 13px;
-    color: var(--red);
-    display: none;
-  }
+  .form-error   { margin-top: 10px; font-size: 13px; color: var(--red);   display: none; }
+  .form-success { margin-top: 10px; font-size: 13px; color: var(--green); display: none; }
 
-  .form-success {
-    margin-top: 10px;
-    font-size: 13px;
-    color: var(--green);
-    display: none;
+  .section-divider {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 20px 0;
   }
 {% endblock %}
 
@@ -140,6 +239,7 @@
 <div class="form-card">
   <form id="new-job-form" autocomplete="off">
 
+    <!-- Customer -->
     <div class="form-group">
       <label class="form-label">
         Customer
@@ -153,6 +253,7 @@
       </select>
     </div>
 
+    <!-- Job Type -->
     <div class="form-group">
       <label class="form-label">Job Type</label>
       <select class="form-select" id="job_type" name="job_type" required>
@@ -167,11 +268,13 @@
       </select>
     </div>
 
+    <!-- Address -->
     <div class="form-group">
       <label class="form-label">Address</label>
       <input type="text" class="form-input" id="address" name="address" placeholder="Job site address">
     </div>
 
+    <!-- Date / Time -->
     <div class="form-row">
       <div class="form-group">
         <label class="form-label">Scheduled Date</label>
@@ -183,12 +286,94 @@
       </div>
     </div>
 
+    <!-- Notes -->
     <div class="form-group">
       <label class="form-label">Notes</label>
-      <textarea class="form-textarea" id="notes" name="notes" rows="4"
+      <textarea class="form-textarea" id="notes" name="notes" rows="3"
         placeholder="Job details, scope, special instructions&hellip;"></textarea>
     </div>
 
+    <hr class="section-divider">
+
+    <!-- ── Pricing Mode ───────────────────────────────────── -->
+    <div class="form-group">
+      <label class="form-label">Pricing</label>
+      <select class="form-select" id="pricing_mode" name="pricing_mode">
+        <option value="none">No estimate yet</option>
+        <option value="flat">Flat rate</option>
+        <option value="tm">Time &amp; materials</option>
+        <option value="lineitems">Line items</option>
+      </select>
+    </div>
+
+    <!-- Estimate badge — shown when any amount is entered -->
+    <div class="estimate-badge" id="estimate-badge">
+      &#9889; Est. <span id="estimate-badge-amount"></span>
+    </div>
+
+    <!-- FLAT RATE panel -->
+    <div class="pricing-panel" id="panel-flat">
+      <div class="panel-title">Flat Rate</div>
+      <div class="form-group">
+        <label class="form-label">Amount</label>
+        <div class="input-prefix-wrap">
+          <span class="input-prefix">$</span>
+          <input type="number" class="form-input" id="flat_amount" name="flat_amount"
+            placeholder="0.00" min="0" step="0.01">
+        </div>
+        <div class="pricing-hint">Worker hits DONE &rarr; invoice auto-generates at this amount.</div>
+      </div>
+    </div>
+
+    <!-- TIME & MATERIALS panel -->
+    <div class="pricing-panel" id="panel-tm">
+      <div class="panel-title">Time &amp; Materials</div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Est. Hours</label>
+          <input type="number" class="form-input" id="tm_hours" name="tm_hours"
+            placeholder="0.0" min="0" step="0.5">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Parts Budget</label>
+          <div class="input-prefix-wrap">
+            <span class="input-prefix">$</span>
+            <input type="number" class="form-input" id="tm_parts" name="tm_parts"
+              placeholder="0.00" min="0" step="0.01">
+          </div>
+        </div>
+      </div>
+      <div class="pricing-hint">
+        Est. total: <strong id="tm-calc">—</strong> &nbsp;(labor @ $<span id="tm-rate">125</span>/hr + parts)
+      </div>
+    </div>
+
+    <!-- LINE ITEMS panel -->
+    <div class="pricing-panel" id="panel-lineitems">
+      <div class="panel-title">Line Items</div>
+      <ul class="line-items-list" id="line-items-list">
+        <li class="line-item-row">
+          <input type="text" class="form-input" placeholder="Description (e.g. Pump out)" data-li-desc>
+          <div class="input-prefix-wrap">
+            <span class="input-prefix">$</span>
+            <input type="number" class="form-input" placeholder="0.00" min="0" step="0.01" data-li-amt>
+          </div>
+          <button type="button" class="btn-remove-line" title="Remove">&times;</button>
+        </li>
+      </ul>
+      <button type="button" class="btn-add-line" id="btn-add-line">+ Add line</button>
+      <div class="line-items-total">Total: <strong id="li-total">$0.00</strong></div>
+    </div>
+
+    <!-- hidden fields written by JS before submit -->
+    <input type="hidden" id="h_contract_type"    name="contract_type"    value="">
+    <input type="hidden" id="h_estimated_amount" name="estimated_amount" value="">
+    <input type="hidden" id="h_estimated_hours"  name="estimated_hours"  value="">
+    <input type="hidden" id="h_line_items_json"  name="line_items_json"  value="">
+
+    <hr class="section-divider">
+
+    <!-- Proposal checkbox -->
     <label class="form-check">
       <input type="checkbox" id="generate_proposal" name="generate_proposal">
       <span>
@@ -198,7 +383,7 @@
     </label>
 
     <button type="submit" class="btn-create" id="btn-submit">Create Job</button>
-    <div class="form-error" id="form-error"></div>
+    <div class="form-error"   id="form-error"></div>
     <div class="form-success" id="form-success"></div>
   </form>
 </div>
@@ -207,22 +392,24 @@
 {% block extra_js %}
 <script>
 (function() {
+  // ── Customer map + redirect ───────────────────────────────────────
   var customers = {{ customers_json|safe }};
   var custMap = {};
   customers.forEach(function(c) { custMap[c.id] = c; });
 
-  // Check for new customer from redirect
   var selCustomer = document.getElementById('customer_id');
-  var inpAddress = document.getElementById('address');
-  var urlParams = new URLSearchParams(window.location.search);
-  var newCustId = urlParams.get('new_customer_id');
+  var inpAddress  = document.getElementById('address');
+  var urlParams   = new URLSearchParams(window.location.search);
+  var newCustId   = urlParams.get('new_customer_id');
   var newCustName = urlParams.get('new_customer_name');
   var newCustAddr = urlParams.get('new_customer_address');
+
   if (newCustId) {
-    // Add and select the new customer if not already in the list
     var exists = false;
     for (var i = 0; i < selCustomer.options.length; i++) {
-      if (selCustomer.options[i].value === newCustId) { exists = true; selCustomer.options[i].selected = true; break; }
+      if (selCustomer.options[i].value === newCustId) {
+        exists = true; selCustomer.options[i].selected = true; break;
+      }
     }
     if (!exists) {
       var opt = document.createElement('option');
@@ -232,30 +419,145 @@
       selCustomer.appendChild(opt);
     }
     if (newCustAddr) { inpAddress.value = newCustAddr; }
-    // Add to custMap so address auto-fill works
     custMap[newCustId] = { id: newCustId, customer_name: newCustName, customer_address: newCustAddr || '' };
   }
 
-  // Auto-fill address on customer select
   selCustomer.addEventListener('change', function() {
     var c = custMap[this.value];
-    if (c && c.customer_address) {
-      inpAddress.value = c.customer_address;
-    }
+    if (c && c.customer_address) { inpAddress.value = c.customer_address; }
   });
 
-  // Default date to today, time to 08:00
+  // ── Default date / time ───────────────────────────────────────────
   var today = new Date();
-  var yyyy = today.getFullYear();
-  var mm = String(today.getMonth() + 1).padStart(2, '0');
-  var dd = String(today.getDate()).padStart(2, '0');
+  var yyyy  = today.getFullYear();
+  var mm    = String(today.getMonth() + 1).padStart(2, '0');
+  var dd    = String(today.getDate()).padStart(2, '0');
   document.getElementById('scheduled_date').value = yyyy + '-' + mm + '-' + dd;
   document.getElementById('scheduled_time').value = '08:00';
 
-  // Form submit
-  var form = document.getElementById('new-job-form');
+  // ── Pricing mode ──────────────────────────────────────────────────
+  var HOURLY_RATE = 125; // matches personality layer default
+
+  var pricingMode   = document.getElementById('pricing_mode');
+  var panelFlat     = document.getElementById('panel-flat');
+  var panelTm       = document.getElementById('panel-tm');
+  var panelLi       = document.getElementById('panel-lineitems');
+  var badge         = document.getElementById('estimate-badge');
+  var badgeAmt      = document.getElementById('estimate-badge-amount');
+
+  var hContractType   = document.getElementById('h_contract_type');
+  var hEstAmount      = document.getElementById('h_estimated_amount');
+  var hEstHours       = document.getElementById('h_estimated_hours');
+  var hLineItemsJson  = document.getElementById('h_line_items_json');
+
+  function showPanel(id) {
+    [panelFlat, panelTm, panelLi].forEach(function(p) { p.classList.remove('visible'); });
+    if (id) { document.getElementById(id).classList.add('visible'); }
+  }
+
+  function updateBadge(amount) {
+    if (amount && amount > 0) {
+      badgeAmt.textContent = '$' + parseFloat(amount).toLocaleString('en-US', {minimumFractionDigits: 0, maximumFractionDigits: 0});
+      badge.classList.add('visible');
+    } else {
+      badge.classList.remove('visible');
+    }
+  }
+
+  pricingMode.addEventListener('change', function() {
+    var mode = this.value;
+    hContractType.value = '';
+    hEstAmount.value    = '';
+    hEstHours.value     = '';
+    hLineItemsJson.value = '';
+    badge.classList.remove('visible');
+
+    if (mode === 'flat') {
+      showPanel('panel-flat');
+      hContractType.value = 'flat_rate';
+    } else if (mode === 'tm') {
+      showPanel('panel-tm');
+      hContractType.value = 'time_and_materials';
+      recalcTm();
+    } else if (mode === 'lineitems') {
+      showPanel('panel-lineitems');
+      hContractType.value = 'flat_rate';
+      recalcLineItems();
+    } else {
+      showPanel(null);
+    }
+  });
+
+  // Flat rate live update
+  document.getElementById('flat_amount').addEventListener('input', function() {
+    var v = parseFloat(this.value) || 0;
+    hEstAmount.value = v > 0 ? v : '';
+    updateBadge(v);
+  });
+
+  // T&M live calc
+  function recalcTm() {
+    var hrs   = parseFloat(document.getElementById('tm_hours').value) || 0;
+    var parts = parseFloat(document.getElementById('tm_parts').value) || 0;
+    var total = Math.round((hrs * HOURLY_RATE + parts) * 100) / 100;
+    document.getElementById('tm-rate').textContent = HOURLY_RATE;
+    document.getElementById('tm-calc').textContent = total > 0 ? '$' + total.toFixed(2) : '—';
+    hEstHours.value  = hrs > 0 ? hrs : '';
+    hEstAmount.value = total > 0 ? total : '';
+    updateBadge(total);
+  }
+  document.getElementById('tm_hours').addEventListener('input', recalcTm);
+  document.getElementById('tm_parts').addEventListener('input', recalcTm);
+
+  // Line items
+  function recalcLineItems() {
+    var rows  = document.querySelectorAll('#line-items-list .line-item-row');
+    var total = 0;
+    var items = [];
+    rows.forEach(function(row) {
+      var desc = row.querySelector('[data-li-desc]').value.trim();
+      var amt  = parseFloat(row.querySelector('[data-li-amt]').value) || 0;
+      total += amt;
+      if (desc || amt > 0) { items.push({ description: desc, qty: 1, unit_price: amt, total: amt }); }
+    });
+    document.getElementById('li-total').textContent = '$' + total.toFixed(2);
+    hEstAmount.value    = total > 0 ? total : '';
+    hLineItemsJson.value = items.length ? JSON.stringify(items) : '';
+    updateBadge(total);
+  }
+
+  document.getElementById('btn-add-line').addEventListener('click', function() {
+    var list = document.getElementById('line-items-list');
+    var li = document.createElement('li');
+    li.className = 'line-item-row';
+    li.innerHTML = [
+      '<input type="text" class="form-input" placeholder="Description" data-li-desc>',
+      '<div class="input-prefix-wrap">',
+        '<span class="input-prefix">$</span>',
+        '<input type="number" class="form-input" placeholder="0.00" min="0" step="0.01" data-li-amt>',
+      '</div>',
+      '<button type="button" class="btn-remove-line" title="Remove">&times;</button>'
+    ].join('');
+    li.querySelector('.btn-remove-line').addEventListener('click', function() {
+      li.remove(); recalcLineItems();
+    });
+    li.querySelector('[data-li-desc]').addEventListener('input', recalcLineItems);
+    li.querySelector('[data-li-amt]').addEventListener('input', recalcLineItems);
+    list.appendChild(li);
+  });
+
+  // Wire remove on first row
+  document.querySelector('.btn-remove-line').addEventListener('click', function() {
+    var rows = document.querySelectorAll('#line-items-list .line-item-row');
+    if (rows.length > 1) { this.closest('.line-item-row').remove(); recalcLineItems(); }
+  });
+  document.querySelector('[data-li-desc]').addEventListener('input', recalcLineItems);
+  document.querySelector('[data-li-amt]').addEventListener('input', recalcLineItems);
+
+  // ── Form submit ───────────────────────────────────────────────────
+  var form      = document.getElementById('new-job-form');
   var btnSubmit = document.getElementById('btn-submit');
-  var elError = document.getElementById('form-error');
+  var elError   = document.getElementById('form-error');
   var elSuccess = document.getElementById('form-success');
 
   form.addEventListener('submit', function(e) {
@@ -266,14 +568,25 @@
     var isProposal = document.getElementById('generate_proposal').checked;
     btnSubmit.textContent = isProposal ? 'Creating job + drafting proposal\u2026' : 'Creating\u2026';
 
+    // Build line_items from hidden field or empty array
+    var lineItems = [];
+    try {
+      if (hLineItemsJson.value) { lineItems = JSON.parse(hLineItemsJson.value); }
+    } catch(e) {}
+
     var payload = {
-      customer_id: document.getElementById('customer_id').value,
-      job_type: document.getElementById('job_type').value,
-      address: document.getElementById('address').value,
-      scheduled_date: document.getElementById('scheduled_date').value,
-      scheduled_time: document.getElementById('scheduled_time').value,
-      notes: document.getElementById('notes').value,
-      generate_proposal: document.getElementById('generate_proposal').checked
+      customer_id:      document.getElementById('customer_id').value,
+      job_type:         document.getElementById('job_type').value,
+      address:          document.getElementById('address').value,
+      scheduled_date:   document.getElementById('scheduled_date').value,
+      scheduled_time:   document.getElementById('scheduled_time').value,
+      notes:            document.getElementById('notes').value,
+      generate_proposal: document.getElementById('generate_proposal').checked,
+      // Pricing
+      contract_type:    hContractType.value   || null,
+      estimated_amount: hEstAmount.value      ? parseFloat(hEstAmount.value) : null,
+      estimated_hours:  hEstHours.value       ? parseFloat(hEstHours.value)  : null,
+      line_items:       lineItems.length      ? lineItems : null,
     };
 
     fetch('/api/jobs/create', {

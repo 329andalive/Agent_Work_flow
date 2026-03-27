@@ -1,0 +1,464 @@
+{% extends "base.html" %}
+
+{% block title %}Classes{% endblock %}
+{% block page_title %}Classes{% endblock %}
+{% block topbar_meta %}{{ today }}{% endblock %}
+
+{% block extra_css %}
+/* ── Two-panel layout ────────────────────────── */
+.classes-layout {
+  display: flex;
+  gap: 20px;
+  align-items: flex-start;
+}
+.classes-left { width: 300px; min-width: 300px; flex-shrink: 0; }
+.classes-right { flex: 1; min-width: 0; }
+@media (max-width: 900px) {
+  .classes-layout { flex-direction: column; }
+  .classes-left { width: 100%; min-width: 0; }
+}
+
+/* ── Booking URL banner ──────────────────────── */
+.booking-banner {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px 14px;
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.booking-banner__label {
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-tertiary);
+}
+.booking-banner__url {
+  font-family: 'DM Mono', monospace;
+  font-size: 12px;
+  color: var(--blue);
+  word-break: break-all;
+}
+.btn-copy {
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  padding: 3px 10px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.12s;
+}
+.btn-copy:hover { background: var(--bg-page); }
+
+/* ── Add Class form ──────────────────────────── */
+.form-card-title {
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-secondary);
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.form-body { padding: 16px; }
+.form-group { margin-bottom: 12px; }
+.form-label {
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-tertiary);
+  margin-bottom: 4px;
+  display: block;
+}
+.form-input, .form-textarea {
+  width: 100%;
+  font-family: 'Barlow', sans-serif;
+  font-size: 13px;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-card);
+  color: var(--text-primary);
+  outline: none;
+  transition: border-color 0.12s;
+}
+.form-input:focus, .form-textarea:focus { border-color: var(--blue); }
+.form-textarea { resize: vertical; }
+.form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.btn-create-slot {
+  width: 100%;
+  font-family: 'Barlow', sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 8px 0;
+  border-radius: 6px;
+  border: none;
+  background: var(--blue);
+  color: #fff;
+  cursor: pointer;
+  margin-top: 4px;
+  transition: background 0.12s;
+}
+.btn-create-slot:hover { background: #1d4ed8; }
+.btn-create-slot:disabled { opacity: 0.6; cursor: not-allowed; }
+.form-msg { font-size: 12px; margin-top: 6px; display: none; }
+.form-msg--ok { color: var(--green); }
+.form-msg--err { color: var(--red); }
+
+/* ── Date group ──────────────────────────────── */
+.date-group { margin-bottom: 16px; }
+.date-group__label {
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-tertiary);
+  margin-bottom: 6px;
+  padding: 0 2px;
+}
+
+/* ── Slot card ───────────────────────────────── */
+.slot-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 12px 14px;
+  margin-bottom: 8px;
+}
+.slot-card__top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+.slot-card__title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.slot-card__time {
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+.slot-card__instructor {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  margin-top: 2px;
+}
+
+/* ── Capacity bar ────────────────────────────── */
+.cap-badge {
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  font-weight: 500;
+  padding: 2px 8px;
+  border-radius: 3px;
+  white-space: nowrap;
+}
+.cap-badge--open { background: #EAF3DE; color: #3B6D11; }
+.cap-badge--low  { background: #FAEEDA; color: #854F0B; }
+.cap-badge--full { background: #FCEBEB; color: #A32D2D; }
+.cap-bar {
+  height: 4px;
+  background: #e5e7eb;
+  border-radius: 2px;
+  margin-top: 8px;
+  overflow: hidden;
+}
+.cap-bar__fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.2s;
+}
+.cap-bar__fill--open { background: var(--green); }
+.cap-bar__fill--low  { background: var(--amber); }
+.cap-bar__fill--full { background: var(--red); }
+
+/* ── Enrollment list ─────────────────────────── */
+.enrollment-toggle {
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  color: var(--blue);
+  cursor: pointer;
+  margin-top: 8px;
+  display: inline-block;
+}
+.enrollment-toggle:hover { text-decoration: underline; }
+.enrollment-list {
+  display: none;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+}
+.enrollment-list.open { display: block; }
+.enrollment-item {
+  font-size: 12px;
+  color: var(--text-secondary);
+  padding: 2px 0;
+}
+
+/* ── Slot actions ────────────────────────────── */
+.slot-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+.slot-btn {
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  padding: 3px 10px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.slot-btn:hover { background: var(--bg-page); }
+.slot-btn--cancel { border-color: var(--red); color: var(--red); }
+.slot-btn--cancel:hover { background: #FCEBEB; }
+
+/* ── Past section ────────────────────────────── */
+.past-label {
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-tertiary);
+  margin: 20px 0 8px;
+}
+.slot-card--past { opacity: 0.6; }
+{% endblock %}
+
+{% block content %}
+{% if booking_url %}
+<div class="booking-banner">
+  <div>
+    <div class="booking-banner__label">Public Booking URL</div>
+    <div class="booking-banner__url" id="booking-url">{{ booking_url }}</div>
+  </div>
+  <button class="btn-copy" onclick="copyBookingUrl()">Copy</button>
+</div>
+{% endif %}
+
+<div class="classes-layout">
+  <!-- Left: Add Class -->
+  <div class="classes-left">
+    <div class="card">
+      <div class="form-card-title">Add Class</div>
+      <div class="form-body">
+        <div class="form-group">
+          <label class="form-label">Title</label>
+          <input type="text" class="form-input" id="f-title" placeholder="e.g. Morning Pump Class">
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Date</label>
+            <input type="date" class="form-input" id="f-date">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Capacity</label>
+            <input type="number" class="form-input" id="f-capacity" value="10" min="1">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Start Time</label>
+            <input type="time" class="form-input" id="f-start">
+          </div>
+          <div class="form-group">
+            <label class="form-label">End Time</label>
+            <input type="time" class="form-input" id="f-end">
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Instructor</label>
+          <input type="text" class="form-input" id="f-instructor" placeholder="Optional">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Description</label>
+          <textarea class="form-textarea" id="f-desc" rows="2" placeholder="Optional details..."></textarea>
+        </div>
+        <button class="btn-create-slot" id="btn-add" onclick="createSlot()">Add Class</button>
+        <div class="form-msg form-msg--ok" id="msg-ok"></div>
+        <div class="form-msg form-msg--err" id="msg-err"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Right: Slot list -->
+  <div class="classes-right">
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Upcoming Classes</span>
+        <span class="card-count">{{ upcoming_slots|length }}</span>
+      </div>
+      <div class="card-body">
+        {% if upcoming_by_date %}
+          {% for dt, slots in upcoming_by_date|dictsort %}
+          <div class="date-group">
+            <div class="date-group__label">{{ fmt_short_date(dt) }}</div>
+            {% for s in slots %}
+            {% set remaining = (s.capacity or 10) - (s.enrolled_count or 0) %}
+            {% set pct = ((s.enrolled_count or 0) / (s.capacity or 10) * 100)|int %}
+            <div class="slot-card">
+              <div class="slot-card__top">
+                <div>
+                  <div class="slot-card__title">{{ s.title or 'Class' }}</div>
+                  <div class="slot-card__time">{{ s.start_time or '—' }}{% if s.end_time %} – {{ s.end_time }}{% endif %}</div>
+                  {% if s.instructor %}<div class="slot-card__instructor">{{ s.instructor }}</div>{% endif %}
+                </div>
+                <div>
+                  {% if remaining <= 0 %}
+                  <span class="cap-badge cap-badge--full">Full ({{ s.enrolled_count }}/{{ s.capacity }})</span>
+                  {% elif remaining <= 3 %}
+                  <span class="cap-badge cap-badge--low">{{ remaining }} left ({{ s.enrolled_count }}/{{ s.capacity }})</span>
+                  {% else %}
+                  <span class="cap-badge cap-badge--open">{{ remaining }} open ({{ s.enrolled_count }}/{{ s.capacity }})</span>
+                  {% endif %}
+                </div>
+              </div>
+              <div class="cap-bar">
+                <div class="cap-bar__fill {% if remaining <= 0 %}cap-bar__fill--full{% elif remaining <= 3 %}cap-bar__fill--low{% else %}cap-bar__fill--open{% endif %}"
+                     style="width:{{ pct }}%"></div>
+              </div>
+              {% if s.description %}<div style="font-size:12px;color:var(--text-tertiary);margin-top:6px">{{ s.description }}</div>{% endif %}
+
+              {% set enr_list = enrollments.get(s.id, []) %}
+              {% if enr_list %}
+              <span class="enrollment-toggle" onclick="this.nextElementSibling.classList.toggle('open')">
+                View enrollments ({{ enr_list|length }}) ▾
+              </span>
+              <div class="enrollment-list">
+                {% for e in enr_list %}
+                <div class="enrollment-item">{{ e.customer_name or e.customer_phone or '—' }}</div>
+                {% endfor %}
+              </div>
+              {% endif %}
+
+              <div class="slot-actions">
+                {% if booking_url %}
+                <button class="slot-btn" onclick="copyText('{{ booking_url }}')">Copy booking link</button>
+                {% endif %}
+                <button class="slot-btn slot-btn--cancel" onclick="cancelSlot('{{ s.id }}', '{{ s.title }}')">Cancel class</button>
+              </div>
+            </div>
+            {% endfor %}
+          </div>
+          {% endfor %}
+        {% else %}
+          <div class="empty-state">No upcoming classes in the next 14 days.</div>
+        {% endif %}
+
+        {% if past_by_date %}
+        <div class="past-label">Past 7 Days</div>
+        {% for dt, slots in past_by_date|dictsort(reverse=true) %}
+        <div class="date-group">
+          <div class="date-group__label">{{ fmt_short_date(dt) }}</div>
+          {% for s in slots %}
+          <div class="slot-card slot-card--past">
+            <div class="slot-card__top">
+              <div>
+                <div class="slot-card__title">{{ s.title or 'Class' }}</div>
+                <div class="slot-card__time">{{ s.start_time or '—' }}{% if s.end_time %} – {{ s.end_time }}{% endif %}</div>
+              </div>
+              <span class="cap-badge cap-badge--open">{{ s.enrolled_count or 0 }}/{{ s.capacity or 10 }}</span>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+        {% endfor %}
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function createSlot() {
+  var btn = document.getElementById('btn-add');
+  var ok = document.getElementById('msg-ok');
+  var err = document.getElementById('msg-err');
+  ok.style.display = 'none';
+  err.style.display = 'none';
+  btn.disabled = true;
+  btn.textContent = 'Adding…';
+
+  fetch('/api/slots/create', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      title: document.getElementById('f-title').value,
+      slot_date: document.getElementById('f-date').value,
+      start_time: document.getElementById('f-start').value,
+      end_time: document.getElementById('f-end').value,
+      capacity: parseInt(document.getElementById('f-capacity').value) || 10,
+      instructor: document.getElementById('f-instructor').value,
+      description: document.getElementById('f-desc').value
+    })
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(d) {
+    if (d.success) {
+      ok.textContent = 'Class added.';
+      ok.style.display = 'block';
+      setTimeout(function() { window.location.reload(); }, 1200);
+    } else {
+      err.textContent = d.error || 'Failed to add class.';
+      err.style.display = 'block';
+      btn.disabled = false;
+      btn.textContent = 'Add Class';
+    }
+  })
+  .catch(function(e) {
+    err.textContent = 'Network error: ' + e.message;
+    err.style.display = 'block';
+    btn.disabled = false;
+    btn.textContent = 'Add Class';
+  });
+}
+
+function cancelSlot(id, title) {
+  if (!confirm('Cancel "' + title + '"? This cannot be undone.')) return;
+  fetch('/api/slots/cancel', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({slot_id: id})
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(d) {
+    if (d.success) { window.location.reload(); }
+    else { alert(d.error || 'Cancel failed.'); }
+  });
+}
+
+function copyBookingUrl() {
+  var url = document.getElementById('booking-url').textContent;
+  copyText(url);
+}
+
+function copyText(text) {
+  navigator.clipboard.writeText(text).then(function() {
+    var btn = event.target;
+    var orig = btn.textContent;
+    btn.textContent = 'Copied!';
+    setTimeout(function() { btn.textContent = orig; }, 1500);
+  });
+}
+</script>
+{% endblock %}

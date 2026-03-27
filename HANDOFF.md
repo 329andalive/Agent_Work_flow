@@ -1,3 +1,5 @@
+Response
+
 # HANDOFF.md — Bolts11 Session Log
 > Last updated: March 23, 2026 — Backend Engineer
 > Read CLAUDE.md first every session before touching any code.

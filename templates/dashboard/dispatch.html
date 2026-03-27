@@ -1,0 +1,323 @@
+{% extends "base.html" %}
+{% block title %}Dispatch Board{% endblock %}
+{% block page_title %}Dispatch Board{% endblock %}
+{% block topbar_meta %}{{ today }}{% endblock %}
+
+{% block extra_css %}
+.db-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; flex-wrap:wrap; gap:8px; }
+.db-nav { display:flex; align-items:center; gap:6px; }
+.db-nav-btn { font-family:'DM Mono',monospace; font-size:14px; padding:5px 10px; border:1px solid var(--border); border-radius:4px; background:var(--bg-card); color:var(--text-secondary); cursor:pointer; line-height:1; }
+.db-nav-btn:hover { background:var(--bg-page); color:var(--text-primary); }
+#date-picker { font-family:'DM Mono',monospace; font-size:13px; padding:5px 8px; border:1px solid var(--border); border-radius:4px; background:var(--bg-card); color:var(--text-primary); cursor:pointer; }
+.db-today-btn { font-family:'DM Mono',monospace; font-size:11px; padding:5px 10px; border:1px solid var(--border); border-radius:4px; background:var(--bg-card); color:var(--text-secondary); cursor:pointer; }
+.db-today-btn:hover { background:var(--bg-page); }
+.db-stats { display:flex; align-items:center; gap:14px; }
+.db-stat { font-family:'DM Mono',monospace; font-size:11px; color:var(--text-tertiary); }
+.db-stat strong { color:var(--text-primary); font-size:13px; }
+.btn-send-routes { font-family:'DM Mono',monospace; font-size:11px; font-weight:600; padding:7px 16px; border-radius:4px; border:none; background:var(--green); color:#fff; cursor:pointer; transition:opacity 0.12s; }
+.btn-send-routes:hover { opacity:0.85; }
+.btn-send-routes:disabled { opacity:0.4; cursor:not-allowed; background:var(--text-tertiary); }
+.btn-send-routes.sent { background:#639922; }
+
+.week-strip { display:flex; gap:4px; margin-bottom:12px; overflow-x:auto; padding-bottom:2px; }
+.week-day { font-family:'DM Mono',monospace; font-size:10px; padding:4px 10px; border-radius:4px; border:1px solid var(--border); background:var(--bg-card); color:var(--text-secondary); cursor:pointer; white-space:nowrap; text-decoration:none; display:inline-block; }
+.week-day:hover { border-color:#1a2e4a; color:#1a2e4a; }
+.week-day.active { background:#1a2e4a; color:#fff; border-color:#1a2e4a; }
+
+.dispatch-board { display:flex; gap:10px; align-items:flex-start; overflow-x:auto; min-height:calc(100vh - 240px); padding-bottom:20px; }
+.queue-col { width:272px; min-width:272px; flex-shrink:0; }
+.col-header { font-family:'DM Mono',monospace; font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:0.08em; color:var(--text-tertiary); padding:8px 10px; border-bottom:2px solid var(--text-tertiary); margin-bottom:6px; display:flex; justify-content:space-between; align-items:center; }
+.queue-list { max-height:calc(100vh - 300px); overflow-y:auto; min-height:60px; padding:2px 0; }
+.queue-list.drag-over { background:rgba(37,99,235,0.05); border-radius:6px; }
+
+.worker-col { width:232px; min-width:232px; flex-shrink:0; }
+.worker-header { padding:8px 10px; border-bottom:3px solid; margin-bottom:6px; }
+.worker-header-top { display:flex; align-items:center; justify-content:space-between; margin-bottom:4px; }
+.worker-name { font-family:'Barlow Condensed',sans-serif; font-size:14px; font-weight:700; text-transform:uppercase; }
+.worker-job-count { font-family:'DM Mono',monospace; font-size:10px; color:var(--text-tertiary); background:var(--bg-page); padding:1px 6px; border-radius:3px; }
+.worker-label-input { font-family:'DM Mono',monospace; font-size:10px; color:var(--text-tertiary); background:transparent; border:none; border-bottom:1px dashed var(--border); outline:none; width:100%; padding:1px 2px; }
+.worker-label-input::placeholder { color:var(--text-tertiary); opacity:0.6; }
+.worker-label-input:focus { border-bottom-color:var(--text-secondary); color:var(--text-secondary); }
+.worker-list { min-height:60px; padding:2px 0; }
+.worker-list.drag-over { background:rgba(37,99,235,0.05); border-radius:6px; }
+.worker-col:nth-child(2) .worker-header { border-color:#2563eb; }
+.worker-col:nth-child(3) .worker-header { border-color:#16a34a; }
+.worker-col:nth-child(4) .worker-header { border-color:#d97706; }
+.worker-col:nth-child(5) .worker-header { border-color:#dc2626; }
+.worker-col:nth-child(6) .worker-header { border-color:#7c3aed; }
+
+.slip-card { background:var(--bg-card); border:1px solid var(--border); border-radius:6px; padding:10px 12px; margin-bottom:6px; cursor:grab; transition:box-shadow 0.12s,opacity 0.12s; }
+.slip-card:active { cursor:grabbing; }
+.slip-card.dragging { opacity:0.35; }
+.slip-card.carry-forward { border-left:3px solid var(--amber); }
+.slip-card__cf { font-family:'DM Mono',monospace; font-size:9px; color:var(--amber); margin-bottom:3px; }
+.slip-card__name { font-size:14px; font-weight:600; color:var(--text-primary); margin-bottom:2px; }
+.slip-card__desc { font-size:12px; color:var(--text-secondary); margin-bottom:5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.slip-card__badges { display:flex; flex-wrap:wrap; gap:4px; }
+.slip-badge { font-family:'DM Mono',monospace; font-size:9px; font-weight:600; padding:1px 6px; border-radius:3px; text-transform:uppercase; }
+.slip-badge--north { background:#dbeafe; color:#1d4ed8; }
+.slip-badge--central { background:#EAF3DE; color:#3B6D11; }
+.slip-badge--south { background:#FAEEDA; color:#854F0B; }
+.slip-badge--unknown { background:#f3f4f6; color:#6b7280; }
+.slip-badge--time { background:#FAEEDA; color:#854F0B; }
+.slip-badge--asap { background:#FCEBEB; color:#A32D2D; }
+
+.slip-tab { background:var(--bg-card); border:1px solid var(--border); border-radius:4px; padding:6px 10px; margin-bottom:4px; cursor:grab; display:flex; align-items:center; justify-content:space-between; font-size:12px; gap:4px; }
+.slip-tab:active { cursor:grabbing; }
+.slip-tab.dragging { opacity:0.35; }
+.slip-tab__name { font-weight:500; color:var(--text-primary); flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.slip-tab__badge { font-family:'DM Mono',monospace; font-size:9px; color:var(--text-tertiary); flex-shrink:0; }
+.slip-tab__remove { font-size:15px; color:var(--text-tertiary); cursor:pointer; flex-shrink:0; line-height:1; padding:0 2px; }
+.slip-tab__remove:hover { color:var(--red); }
+
+.held-section { margin-top:16px; }
+.held-header { font-family:'DM Mono',monospace; font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:0.08em; color:var(--text-tertiary); padding:8px 0; cursor:pointer; display:flex; align-items:center; gap:6px; }
+.held-header:hover { color:var(--text-secondary); }
+.held-list { display:none; }
+.held-list.open { display:block; }
+.held-card { background:var(--bg-card); border:1px solid var(--border); border-left:3px solid var(--red); border-radius:6px; padding:8px 12px; margin-bottom:6px; font-size:12px; }
+.held-card__name { font-weight:500; }
+.held-card__reason { font-family:'DM Mono',monospace; font-size:10px; color:var(--text-tertiary); margin-top:2px; }
+
+.preview-panel { position:fixed; bottom:0; left:var(--sidebar-w); right:0; height:0; background:var(--bg-card); border-top:1px solid var(--border); transition:height 0.18s ease; overflow:hidden; z-index:30; }
+.preview-panel.open { height:120px; padding:14px 20px; }
+.preview-close { position:absolute; top:8px; right:14px; font-size:16px; cursor:pointer; color:var(--text-tertiary); background:none; border:none; }
+.preview-grid { display:grid; grid-template-columns:repeat(5,1fr); gap:14px; }
+.pv-label { font-family:'DM Mono',monospace; font-size:9px; text-transform:uppercase; letter-spacing:0.06em; color:var(--text-tertiary); margin-bottom:2px; }
+.pv-value { font-size:13px; color:var(--text-primary); }
+.dispatch-empty { text-align:center; padding:48px 20px; color:var(--text-tertiary); font-size:13px; }
+{% endblock %}
+
+{% block content %}
+<div class="db-header">
+  <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+    <div class="db-nav">
+      <button class="db-nav-btn" id="btn-prev">&#8249;</button>
+      <input type="date" id="date-picker" value="{{ dispatch_date }}">
+      <button class="db-nav-btn" id="btn-next">&#8250;</button>
+      <button class="db-today-btn" onclick="goToDate('{{ today_iso }}')">Today</button>
+    </div>
+    <div class="db-stats">
+      <span class="db-stat"><strong id="total-count">{{ (jobs|length) + (carry_forward|length) }}</strong> slips</span>
+      <span class="db-stat"><strong>{{ workers|length }}</strong> workers</span>
+    </div>
+  </div>
+  <button class="btn-send-routes" id="btn-send" disabled>Send Routes</button>
+</div>
+
+<div class="week-strip" id="week-strip"></div>
+
+{% if jobs or carry_forward or workers %}
+<div class="dispatch-board" id="dispatch-board">
+  <div class="queue-col">
+    <div class="col-header"><span>Unassigned</span><span id="queue-count">0</span></div>
+    <div class="queue-list" id="queue" data-worker=""></div>
+  </div>
+  {% for w in workers %}
+  <div class="worker-col" id="wcol-{{ w.id }}">
+    <div class="worker-header" id="whead-{{ w.id }}">
+      <div class="worker-header-top">
+        <span class="worker-name">{{ w.name or 'Worker' }}</span>
+        <span class="worker-job-count" id="count-{{ w.id }}">0</span>
+      </div>
+      <input class="worker-label-input" id="label-{{ w.id }}" placeholder="add label" onchange="saveLabel('{{ w.id }}',this.value)" onblur="saveLabel('{{ w.id }}',this.value)">
+    </div>
+    <div class="worker-list" id="worker-{{ w.id }}" data-worker="{{ w.id }}"></div>
+  </div>
+  {% endfor %}
+</div>
+
+{% if held %}
+<div class="held-section">
+  <div class="held-header" onclick="document.getElementById('held-list').classList.toggle('open')">▸ Held Jobs ({{ held|length }})</div>
+  <div class="held-list" id="held-list">
+    {% for h in held %}
+    <div class="held-card">
+      <div class="held-card__name">{{ h.customer_name or h.job_type or 'Job' }}</div>
+      <div class="held-card__reason">{{ h.dispatch_status or h.status }} — {{ (h.job_description or '')[:50] }}</div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+{% else %}
+<div class="dispatch-empty">No jobs or workers for this date.</div>
+{% endif %}
+
+<div class="preview-panel" id="preview-panel">
+  <button class="preview-close" onclick="closePreview()">&times;</button>
+  <div class="preview-grid">
+    <div><div class="pv-label">Customer</div><div class="pv-value" id="pv-name">—</div></div>
+    <div><div class="pv-label">Phone</div><div class="pv-value" id="pv-phone">—</div></div>
+    <div><div class="pv-label">Address</div><div class="pv-value" id="pv-address">—</div></div>
+    <div><div class="pv-label">Time</div><div class="pv-value" id="pv-time">—</div></div>
+    <div><div class="pv-label">Type</div><div class="pv-value" id="pv-type">—</div></div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function() {
+  var ALL_JOBS = {{ jobs_json|safe }};
+  var ALL_WORKERS = {{ workers_json|safe }};
+  var ASSIGNMENTS = {{ assignments_json|safe }};
+  var DISPATCH_DATE = '{{ dispatch_date }}';
+  var TODAY_ISO = '{{ today_iso }}';
+  var LABEL_KEY = 'dispatch_labels_' + DISPATCH_DATE;
+  var draggedEl = null;
+
+  function buildWeekStrip() {
+    var strip = document.getElementById('week-strip');
+    if (!strip) return;
+    var base = new Date(DISPATCH_DATE + 'T12:00:00');
+    var days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+    var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    for (var i = 0; i < 10; i++) {
+      var d = new Date(base); d.setDate(base.getDate() - 3 + i);
+      var iso = d.toISOString().slice(0,10);
+      var a = document.createElement('a');
+      a.className = 'week-day' + (iso === DISPATCH_DATE ? ' active' : '');
+      a.textContent = days[d.getDay()] + ' ' + months[d.getMonth()] + ' ' + d.getDate();
+      a.href = '/dashboard/dispatch?date=' + iso;
+      strip.appendChild(a);
+    }
+  }
+
+  function shiftDate(n) { var d = new Date(DISPATCH_DATE + 'T12:00:00'); d.setDate(d.getDate()+n); goToDate(d.toISOString().slice(0,10)); }
+  window.goToDate = function(iso) { window.location.href = '/dashboard/dispatch?date=' + iso; };
+  document.getElementById('btn-prev').addEventListener('click', function() { shiftDate(-1); });
+  document.getElementById('btn-next').addEventListener('click', function() { shiftDate(1); });
+  document.getElementById('date-picker').addEventListener('change', function() { goToDate(this.value); });
+
+  var savedLabels = {};
+  try { savedLabels = JSON.parse(localStorage.getItem(LABEL_KEY) || '{}'); } catch(e) {}
+  function loadLabels() { ALL_WORKERS.forEach(function(w) { var inp = document.getElementById('label-' + w.id); if (inp && savedLabels[w.id]) inp.value = savedLabels[w.id]; }); }
+  window.saveLabel = function(wid, val) { savedLabels[wid] = val; try { localStorage.setItem(LABEL_KEY, JSON.stringify(savedLabels)); } catch(e) {} };
+
+  function makeCard(job, isCF) {
+    var zc = (job.zone_cluster || 'unknown').toLowerCase();
+    var div = document.createElement('div');
+    div.className = 'slip-card' + (isCF ? ' carry-forward' : '');
+    div.draggable = true;
+    div.dataset.jobId = job.id || job.jobId || '';
+    div.dataset.name = job.customer_name || job.name || '';
+    div.dataset.desc = (job.job_notes || job.job_description || job.job_type || job.desc || '').toString().slice(0,50);
+    div.dataset.zone = job.zone_cluster || job.zone || 'Unknown';
+    div.dataset.time = job.requested_time || job.time || '';
+    div.dataset.type = job.job_type || job.type || '';
+    div.dataset.phone = job.customer_phone || job.phone || '';
+    div.dataset.address = job.address || job.job_description || '';
+    div.dataset.price = job.estimated_amount ? '$' + Math.round(job.estimated_amount) : '';
+    var cfFrom = job.carry_forward_from || job.scheduled_date || '';
+    var cf = isCF ? '<div class="slip-card__cf">&#8617; carried from ' + cfFrom + '</div>' : '';
+    div.innerHTML = cf + '<div class="slip-card__name">' + (div.dataset.name || 'Customer') + '</div><div class="slip-card__desc">' + (div.dataset.desc || 'No description') + '</div><div class="slip-card__badges"><span class="slip-badge slip-badge--' + zc + '">' + (div.dataset.zone) + '</span>' + (div.dataset.time ? '<span class="slip-badge slip-badge--time">' + div.dataset.time + '</span>' : '') + '</div>';
+    div.addEventListener('click', function() { openPreview(div.dataset); });
+    bindDrag(div);
+    return div;
+  }
+
+  function makeTab(d) {
+    var tab = document.createElement('div');
+    tab.className = 'slip-tab';
+    tab.draggable = true;
+    Object.keys(d).forEach(function(k) { tab.dataset[k] = d[k]; });
+    tab.innerHTML = '<span class="slip-tab__name">' + (d.name || d.customer_name || 'Customer') + '</span><span class="slip-tab__badge">' + (d.time || d.zone || '') + '</span><span class="slip-tab__remove">&times;</span>';
+    tab.querySelector('.slip-tab__remove').addEventListener('click', function(e) {
+      e.stopPropagation();
+      var card = makeCard(d, false);
+      document.getElementById('queue').appendChild(card);
+      tab.remove();
+      updateCounts(); updateSendBtn();
+    });
+    tab.addEventListener('click', function(e) { if (!e.target.classList.contains('slip-tab__remove')) openPreview(tab.dataset); });
+    bindDrag(tab);
+    return tab;
+  }
+
+  function bindDrag(el) {
+    el.addEventListener('dragstart', function(e) { draggedEl = el; el.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', el.dataset.jobId); });
+    el.addEventListener('dragend', function() { el.classList.remove('dragging'); draggedEl = null; document.querySelectorAll('.drag-over').forEach(function(z) { z.classList.remove('drag-over'); }); });
+  }
+
+  function initDropZones() {
+    document.querySelectorAll('.queue-list, .worker-list').forEach(function(zone) {
+      zone.addEventListener('dragover', function(e) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; zone.classList.add('drag-over'); });
+      zone.addEventListener('dragleave', function() { zone.classList.remove('drag-over'); });
+      zone.addEventListener('drop', function(e) {
+        e.preventDefault(); zone.classList.remove('drag-over');
+        if (!draggedEl) return;
+        var tw = zone.dataset.worker;
+        var sz = draggedEl.closest('.queue-list, .worker-list');
+        if (!sz || tw === sz.dataset.worker) return;
+        var jid = draggedEl.dataset.jobId;
+        var jd = Object.assign({}, draggedEl.dataset);
+        if (tw === '') { zone.appendChild(makeCard(jd, false)); } else { zone.appendChild(makeTab(jd)); }
+        draggedEl.remove(); updateCounts(); updateSendBtn();
+        if (tw) fetch('/api/dispatch/assign', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({job_id:jid, worker_id:tw, date:DISPATCH_DATE}) }).catch(function() {});
+      });
+    });
+  }
+
+  function populateBoard() {
+    var queue = document.getElementById('queue');
+    var assigned = new Set(Object.keys(ASSIGNMENTS));
+    ALL_JOBS.forEach(function(j) {
+      if (!assigned.has(j.id)) {
+        var isCF = !!j.carry_forward_from;
+        queue.appendChild(makeCard(j, isCF));
+      }
+    });
+    var cfJobs = {{ carry_forward_json|safe }};
+    cfJobs.forEach(function(j) { if (!assigned.has(j.id)) queue.appendChild(makeCard(j, true)); });
+    Object.keys(ASSIGNMENTS).forEach(function(jid) {
+      var wid = ASSIGNMENTS[jid];
+      var wl = document.getElementById('worker-' + wid);
+      if (!wl) return;
+      var job = ALL_JOBS.find(function(j) { return j.id === jid; }) || cfJobs.find(function(j) { return j.id === jid; });
+      if (job) wl.appendChild(makeTab(Object.assign({}, job, {name:job.customer_name||'', zone:job.zone_cluster||'', time:job.requested_time||'', type:job.job_type||'', phone:job.customer_phone||'', address:job.address||'', jobId:job.id})));
+    });
+    updateCounts(); updateSendBtn();
+  }
+
+  function updateCounts() {
+    var q = document.getElementById('queue'), qc = document.getElementById('queue-count');
+    if (q && qc) qc.textContent = q.children.length;
+    ALL_WORKERS.forEach(function(w) { var wl = document.getElementById('worker-' + w.id), b = document.getElementById('count-' + w.id); if (wl && b) b.textContent = wl.children.length; });
+  }
+  function updateSendBtn() {
+    var has = false;
+    document.querySelectorAll('.worker-list').forEach(function(wl) { if (wl.children.length > 0) has = true; });
+    document.getElementById('btn-send').disabled = !has;
+  }
+
+  function openPreview(d) {
+    document.getElementById('pv-name').textContent = d.name || '—';
+    document.getElementById('pv-phone').textContent = d.phone || '—';
+    document.getElementById('pv-address').textContent = d.address || '—';
+    document.getElementById('pv-time').textContent = d.time || 'Anytime';
+    document.getElementById('pv-type').textContent = d.type || '—';
+    document.getElementById('preview-panel').classList.add('open');
+  }
+  window.closePreview = function() { document.getElementById('preview-panel').classList.remove('open'); };
+
+  document.getElementById('btn-send').addEventListener('click', function() {
+    var btn = this; btn.disabled = true; btn.textContent = 'Sending…';
+    var asgn = [];
+    document.querySelectorAll('.worker-list').forEach(function(wl) {
+      var wid = wl.dataset.worker; if (!wid) return;
+      var jobs = []; wl.querySelectorAll('.slip-tab').forEach(function(tab, idx) { jobs.push({job_id:tab.dataset.jobId, sort_order:idx}); });
+      if (jobs.length > 0) asgn.push({worker_id:wid, jobs:jobs});
+    });
+    if (!asgn.length) { btn.disabled = false; btn.textContent = 'Send Routes'; return; }
+    fetch('/api/dispatch/send', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({date:DISPATCH_DATE, assignments:asgn}) })
+    .then(function(r) { return r.json(); })
+    .then(function(d) { if (d.success) { btn.textContent = 'Sent (' + d.sms_sent + ' SMS)'; btn.classList.add('sent'); } else { btn.textContent = 'Failed'; btn.disabled = false; setTimeout(function() { btn.textContent = 'Send Routes'; }, 3000); } })
+    .catch(function() { btn.textContent = 'Error'; btn.disabled = false; setTimeout(function() { btn.textContent = 'Send Routes'; }, 3000); });
+  });
+
+  buildWeekStrip(); populateBoard(); initDropZones(); loadLabels();
+})();
+</script>
+{% endblock %}

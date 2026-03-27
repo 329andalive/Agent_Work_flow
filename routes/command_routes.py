@@ -74,6 +74,14 @@ def handle_command():
     client_phone = client.get("phone", "")
     owner_mobile = client.get("owner_mobile") or client_phone
 
+    # ── Load context object (stateful single-pass foundation) ──────────────
+    from execution.context_loader import load_context
+    ctx = load_context(
+        from_phone=owner_mobile,
+        client_phone=client_phone
+    )
+    print(f"[{timestamp()}] INFO command: context loaded | cold_start={ctx['cold_start']} | jobs={len(ctx['active_jobs'])} | thread={len(ctx['recent_thread'])}")
+
     # ─────────────────────────────────────────
     # FIX 1: Command Center is always the owner — never treat as customer
     # The sender is the owner/dispatcher at the dashboard. Skip customer
@@ -95,13 +103,21 @@ def handle_command():
                ["INVOICE", "BILL ", "SEND HER A BILL",
                 "SEND HIM A BILL", "BILL FOR"]):
             customer_phone, customer_name = _resolve_customer_from_text(text, client_id)
-            from execution.invoice_agent import run as invoice_run
-            output = invoice_run(client_phone=client_phone, raw_input=text, customer_phone=customer_phone)
-            if output:
-                display = '\n'.join(output.split('\n')[:2])
-                result = {"agent": "invoice_agent", "status": "ok", "message": display or "Invoice generated and sent."}
+            if not customer_phone:
+                extracted_name = _extract_customer_name(text) or "that customer"
+                result = {
+                    "agent": "invoice_agent",
+                    "status": "clarification_needed",
+                    "message": f"I couldn't find {extracted_name} in your customer list. Can you include their phone number? Example: invoice {extracted_name} $275 phone 207-555-1212"
+                }
             else:
-                result = {"agent": "invoice_agent", "status": "error", "message": "Invoice failed — check that a dollar amount was included."}
+                from execution.invoice_agent import run as invoice_run
+                output = invoice_run(client_phone=client_phone, raw_input=text, customer_phone=customer_phone)
+                if output:
+                    display = '\n'.join(output.split('\n')[:2])
+                    result = {"agent": "invoice_agent", "status": "ok", "message": display or "Invoice generated and sent."}
+                else:
+                    result = {"agent": "invoice_agent", "status": "error", "message": "Invoice failed — check that a dollar amount was included."}
 
         # ── ESTIMATE / PROPOSAL ─────────────
         elif any(kw in text_upper for kw in
@@ -133,17 +149,25 @@ def handle_command():
                  ["DONE", "COMPLETE", "FINISHED", "WRAPPED UP",
                   "ALL DONE", "JOB DONE"]):
             customer_phone, _ = _resolve_customer_from_text(text, client_id)
-            from execution.invoice_agent import run as invoice_run
-            output = invoice_run(client_phone=client_phone, raw_input=text, customer_phone=customer_phone)
-            if output:
-                display = '\n'.join(output.split('\n')[:2])
-                result = {"agent": "invoice_agent", "status": "ok", "message": display or "Job completed and invoice sent."}
+            if not customer_phone:
+                extracted_name = _extract_customer_name(text) or "that customer"
+                result = {
+                    "agent": "invoice_agent",
+                    "status": "clarification_needed",
+                    "message": f"I couldn't find {extracted_name} in your customer list. Can you include their phone number? Example: invoice {extracted_name} $275 phone 207-555-1212"
+                }
             else:
-                result = {"agent": "invoice_agent", "status": "error", "message": "Invoice failed — check that a dollar amount was included."}
+                from execution.invoice_agent import run as invoice_run
+                output = invoice_run(client_phone=client_phone, raw_input=text, customer_phone=customer_phone)
+                if output:
+                    display = '\n'.join(output.split('\n')[:2])
+                    result = {"agent": "invoice_agent", "status": "ok", "message": display or "Job completed and invoice sent."}
+                else:
+                    result = {"agent": "invoice_agent", "status": "error", "message": "Invoice failed — check that a dollar amount was included."}
 
         # ── EVERYTHING ELSE → Claude classifies and routes
         else:
-            result = _interpret_and_route(text=text, client=client, client_phone=client_phone, owner_mobile=owner_mobile, client_id=client_id)
+            result = _interpret_and_route(text=text, client=client, client_phone=client_phone, owner_mobile=owner_mobile, client_id=client_id, ctx=ctx)
 
     except Exception as e:
         print(f"[{timestamp()}] ERROR command: {e}")
@@ -244,6 +268,7 @@ def _resolve_customer_from_text(text: str, client_id: str) -> tuple:
     if name:
         try:
             sb = _get_supabase()
+            # First pass — exact substring match
             results = sb.table("customers").select(
                 "id, customer_phone, customer_name"
             ).eq("client_id", client_id).ilike(
@@ -256,32 +281,73 @@ def _resolve_customer_from_text(text: str, client_id: str) -> tuple:
             elif results.data and len(results.data) > 1:
                 names = ", ".join(r.get("customer_name", "?") for r in results.data[:5])
                 print(f"[{timestamp()}] INFO command: Multiple customers match '{name}': {names}")
-                # Return None — caller should handle ambiguity
-            else:
-                print(f"[{timestamp()}] INFO command: Customer '{name}' not found in DB")
+                return (None, None)
+
+            # Second pass — fuzzy match on each word in the name
+            # Handles "seekings" → "Seekins", "peavy" → "Peavey" etc.
+            name_parts = name.strip().split()
+            for part in name_parts:
+                if len(part) < 3:
+                    continue
+                fuzzy = sb.table("customers").select(
+                    "id, customer_phone, customer_name"
+                ).eq("client_id", client_id).ilike(
+                    "customer_name", f"%{part[:4]}%"
+                ).execute()
+                if fuzzy.data and len(fuzzy.data) == 1:
+                    found = fuzzy.data[0]
+                    print(f"[{timestamp()}] INFO command: Fuzzy match '{part}' → {found['customer_name']} → {found['customer_phone']}")
+                    return (found["customer_phone"], found.get("customer_name"))
+                elif fuzzy.data and len(fuzzy.data) > 1:
+                    # Multiple fuzzy matches — take the closest one by name length
+                    scored = sorted(fuzzy.data, key=lambda r: abs(len(r.get("customer_name", "")) - len(name)))
+                    found = scored[0]
+                    print(f"[{timestamp()}] INFO command: Fuzzy best match '{part}' → {found['customer_name']} → {found['customer_phone']}")
+                    return (found["customer_phone"], found.get("customer_name"))
+
+            print(f"[{timestamp()}] INFO command: Customer '{name}' not found — no exact or fuzzy match")
         except Exception as e:
             print(f"[{timestamp()}] WARN command: Name lookup failed — {e}")
 
     return (None, None)
 
 
-def _interpret_and_route(text, client, client_phone, owner_mobile, client_id):
+def _interpret_and_route(text, client, client_phone, owner_mobile, client_id, ctx=None):
     """
     For ambiguous commands: use Claude Haiku to identify intent
     and call the right agent. No clarification questions — decide and execute.
     """
     from execution.call_claude import call_claude
 
+    # Build recent thread summary for context
+    thread_summary = ""
+    if ctx and ctx.get("recent_thread"):
+        recent = ctx["recent_thread"][:3]  # last 3 exchanges only
+        thread_lines = []
+        for msg in reversed(recent):  # chronological order
+            direction = "Owner" if msg.get("direction") == "inbound" else "System"
+            body = (msg.get("body") or "")[:80]
+            thread_lines.append(f"{direction}: {body}")
+        if thread_lines:
+            thread_summary = "\n".join(thread_lines)
+
+    active_jobs_summary = ""
+    if ctx and ctx.get("active_jobs"):
+        job_descs = [j.get("job_description", "")[:50] for j in ctx["active_jobs"][:3]]
+        active_jobs_summary = ", ".join(job_descs)
+
     classify_prompt = (
-        f"You are dispatching commands for a trade business back office.\n"
-        f"The owner typed this command:\n\"{text}\"\n\n"
-        f"Classify the intent as exactly one of:\n"
-        f"INVOICE - creating or sending an invoice/bill\n"
+        f"You are dispatching commands for a trade business back office.\n\n"
+        f"Recent conversation:\n{thread_summary if thread_summary else 'No prior messages'}\n\n"
+        f"Active jobs: {active_jobs_summary if active_jobs_summary else 'None'}\n\n"
+        f"The owner just typed:\n\"{text}\"\n\n"
+        f"Using the context above, classify the intent as exactly one of:\n"
+        f"INVOICE - creating or sending an invoice/bill, OR a dollar amount continuing a previous invoice request\n"
         f"PROPOSAL - creating an estimate or proposal\n"
         f"SCHEDULE - booking or scheduling a job\n"
         f"CLOCK - clock in or clock out event\n"
         f"REPORT - asking for a summary or report\n"
-        f"UNKNOWN - cannot determine\n\n"
+        f"UNKNOWN - cannot determine even with context\n\n"
         f"Reply with ONE WORD only from the list above."
     )
 
@@ -296,6 +362,13 @@ def _interpret_and_route(text, client, client_phone, owner_mobile, client_id):
     customer_phone, _ = _resolve_customer_from_text(text, client_id)
 
     if intent == "INVOICE":
+        if not customer_phone:
+            extracted_name = _extract_customer_name(text) or "that customer"
+            return {
+                "agent": "invoice_agent",
+                "status": "clarification_needed",
+                "message": f"I couldn't find {extracted_name} in your customer list. Can you include their phone number? Example: invoice {extracted_name} $275 phone 207-555-1212"
+            }
         from execution.invoice_agent import run as invoice_run
         output = invoice_run(client_phone=client_phone, raw_input=text, customer_phone=customer_phone)
         if output:
@@ -340,9 +413,12 @@ def _interpret_and_route(text, client, client_phone, owner_mobile, client_id):
             return {"agent": "report", "status": "ok", "message": f"Report generation failed: {e}"}
 
     else:
+        # Use context to give a smarter unknown response
+        active_job_names = [j.get("job_description", "")[:40] for j in (ctx or {}).get("active_jobs", [])]
+        context_hint = f" You have {len(active_job_names)} active job(s) open." if active_job_names else ""
         return {
             "agent": "unknown", "status": "ok",
-            "message": "I received your message but wasn't sure which action to take. Try starting with: INVOICE, ESTIMATE, SCHEDULE, CLOCK IN, or DONE.",
+            "message": f"I received your message but wasn't sure which action to take.{context_hint} Try starting with: INVOICE, ESTIMATE, SCHEDULE, CLOCK IN, or DONE.",
         }
 
 
@@ -385,9 +461,21 @@ def api_stats():
         )
         open_jobs = jobs.count if hasattr(jobs, 'count') else len(jobs.data or [])
 
+        # Count unassigned dispatch jobs for today
+        open_dispatch = 0
+        try:
+            today_str = date.today().isoformat()
+            dispatch_q = sb.table("jobs").select("id").eq(
+                "dispatch_status", "unassigned"
+            ).eq("scheduled_date", today_str).execute()
+            open_dispatch = len(dispatch_q.data or [])
+        except Exception:
+            pass  # dispatch_status column may not exist yet
+
         return jsonify({
             "success": True,
             "open_jobs": open_jobs,
+            "open_dispatch_jobs": open_dispatch,
             "sms_active": bool(os.environ.get("SMS_10DLC_ACTIVE", "")),
             "square_env": os.environ.get("SQUARE_ENVIRONMENT", "sandbox"),
         })

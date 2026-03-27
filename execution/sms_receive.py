@@ -44,6 +44,8 @@ from routes.command_routes import command_bp
 from routes.onboarding_routes import onboarding_bp
 from routes.dashboard_routes import dashboard_bp
 from routes.auth_routes import auth_bp
+from routes.dispatch_routes import dispatch_bp
+from routes.booking_routes import booking_bp
 app.register_blueprint(document_bp)
 app.register_blueprint(invoice_bp)
 app.register_blueprint(debug_bp)
@@ -51,6 +53,8 @@ app.register_blueprint(command_bp)
 app.register_blueprint(onboarding_bp)
 app.register_blueprint(dashboard_bp)
 app.register_blueprint(auth_bp)
+app.register_blueprint(dispatch_bp)
+app.register_blueprint(booking_bp)
 
 
 def timestamp():

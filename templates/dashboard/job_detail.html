@@ -61,12 +61,79 @@
     font-weight: 700;
     color: var(--text-primary);
   }
+  .mini-table tr:last-child td { border-bottom: none; }
+  .mini-table tr { cursor: pointer; transition: background 0.1s; }
+  .mini-table tr:hover td { background: #f8fafc; }
+  .activity-item {
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--border);
+    font-size: 13px;
+  }
+  .activity-item:last-child { border-bottom: none; }
+  .activity-agent {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    color: var(--text-tertiary);
+  }
+  .activity-time {
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    color: var(--text-tertiary);
+    float: right;
+  }
+  .activity-summary { color: var(--text-secondary); margin-top: 2px; }
+  .detail-link {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    color: var(--text-tertiary);
+    text-decoration: none;
+  }
+  .detail-link:hover { color: var(--text-primary); }
+  .scope-banner {
+    background: #FAEEDA;
+    border: 1px solid #d4a844;
+    border-radius: 8px;
+    padding: 14px 16px;
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .scope-banner__text {
+    font-size: 14px;
+    font-weight: 600;
+    color: #854F0B;
+  }
+  .scope-banner__actions { display: flex; gap: 8px; }
+  .scope-btn {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 6px 14px;
+    border-radius: 5px;
+    border: none;
+    cursor: pointer;
+    transition: opacity 0.12s;
+  }
+  .scope-btn:hover { opacity: 0.85; }
+  .scope-btn--approve { background: #639922; color: #fff; }
+  .scope-btn--edit { background: transparent; border: 1px solid var(--border); color: var(--text-secondary); }
 {% endblock %}
 
 {% block content %}
 <a href="/dashboard/" class="back-link">&larr; Control Board</a>
 
-<!-- Job header -->
+{% if job.scope_hold %}
+<div class="scope-banner">
+  <span class="scope-banner__text">⚠️ Scope change flagged by field crew — review before invoicing</span>
+  <div class="scope-banner__actions">
+    <button class="scope-btn scope-btn--approve" onclick="approveScope('{{ job.id }}')">Approve &amp; Send Invoice</button>
+  </div>
+</div>
+{% endif %}
+
 {% set st = job.status or 'new' %}
 <div class="job-header">
   <div>
@@ -266,4 +333,25 @@
   </div>
 </div>
 {% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function approveScope(jobId) {
+  if (!confirm('Approve scope change and send the invoice?')) return;
+  fetch('/api/jobs/' + jobId + '/approve-scope', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'}
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(d) {
+    if (d.success) {
+      window.location.reload();
+    } else {
+      alert(d.error || 'Failed to approve.');
+    }
+  })
+  .catch(function() { alert('Network error.'); });
+}
+</script>
 {% endblock %}

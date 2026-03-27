@@ -1106,15 +1106,35 @@ def api_create_job():
         return jsonify({"success": False, "error": "Failed to verify customer"}), 500
 
     # Insert job
+    # Pricing fields from the New Job form
+    estimated_amount = data.get("estimated_amount")
+    estimated_hours = data.get("estimated_hours")
+    contract_type = data.get("contract_type")
+
     job_row = {
         "client_id": client_id,
         "customer_id": customer_id,
         "job_type": job_type,
         "status": "scheduled",
+        "dispatch_status": "unassigned",
         "scheduled_date": scheduled_dt,
         "job_notes": notes,
         "raw_input": "Created via dashboard New Job form",
     }
+
+    # Add pricing if provided
+    if estimated_amount is not None:
+        try:
+            job_row["estimated_amount"] = float(estimated_amount)
+        except (ValueError, TypeError):
+            pass
+    if estimated_hours is not None:
+        try:
+            job_row["estimated_hours"] = float(estimated_hours)
+        except (ValueError, TypeError):
+            pass
+    if contract_type:
+        job_row["contract_type"] = contract_type
 
     # Include address if provided
     address = data.get("address", "").strip()
@@ -1329,6 +1349,653 @@ def customer_detail(customer_id):
     })
     return render_template("dashboard/customer_detail.html", **ctx)
 
+
+# ---------------------------------------------------------------------------
+# GET /dashboard/dispatch — Dispatch Board
+# ---------------------------------------------------------------------------
+
+@dashboard_bp.route("/dashboard/dispatch")
+def dispatch_board():
+    client_id = _resolve_client_id()
+    if not client_id:
+        return redirect("/login")
+
+    ctx = _base_context("dispatch", client_id)
+    sb = _get_supabase()
+
+    # Load scheduling data via Option A (unified jobs table)
+    from execution.db_scheduling import (
+        get_todays_jobs, get_workers, get_carry_forward_jobs, get_held_jobs,
+    )
+
+    # Support date selector via ?date=YYYY-MM-DD query param
+    selected_date = request.args.get("date", date.today().isoformat())
+    # Validate date format
+    try:
+        date.fromisoformat(selected_date)
+    except (ValueError, TypeError):
+        selected_date = date.today().isoformat()
+
+    jobs = get_todays_jobs(client_id, selected_date)
+    workers = get_workers(client_id)
+    carry_forward = get_carry_forward_jobs(client_id)
+    held = get_held_jobs(client_id)
+
+    # Enrich jobs with customer names
+    all_jobs = jobs + carry_forward + held
+    cust_ids = list(set(j.get("customer_id") for j in all_jobs if j.get("customer_id")))
+    cust_map = {}
+    if cust_ids:
+        try:
+            custs = sb.table("customers").select("id, customer_name, customer_phone, customer_address").in_("id", cust_ids).execute().data or []
+            cust_map = {c["id"]: c for c in custs}
+        except Exception as e:
+            print(f"[{_ts()}] WARN dashboard_routes: dispatch customer map — {e}")
+
+    for j in all_jobs:
+        cid = j.get("customer_id")
+        if cid and cid in cust_map:
+            j["customer_name"] = cust_map[cid].get("customer_name", "")
+            j["customer_phone"] = cust_map[cid].get("customer_phone", "")
+            j["address"] = cust_map[cid].get("customer_address", "") or j.get("job_description", "")
+        else:
+            j["customer_name"] = ""
+            j["customer_phone"] = ""
+            j["address"] = j.get("job_description", "")
+
+    # Phase 2 AI suggestions (returns [] if < 30 sessions)
+    suggestions = []
+    try:
+        from execution.dispatch_suggestion import get_suggestions
+        suggestions = get_suggestions(client_id, jobs, workers)
+    except Exception as e:
+        print(f"[{_ts()}] WARN dashboard_routes: dispatch suggestions — {e}")
+
+    # Load existing assignments for this date from route_assignments
+    # This restores board state after page reload or Send Routes
+    assignments = {}  # {job_id: worker_id}
+    try:
+        asgn_rows = sb.table("route_assignments").select(
+            "job_id, worker_id, sort_order"
+        ).eq("client_id", client_id).execute()
+        for row in (asgn_rows.data or []):
+            if row.get("job_id") and row.get("worker_id"):
+                assignments[row["job_id"]] = row["worker_id"]
+    except Exception as e:
+        print(f"[{_ts()}] WARN dashboard_routes: dispatch assignments query — {e}")
+
+    ctx.update({
+        "jobs": jobs,
+        "workers": workers,
+        "carry_forward": carry_forward,
+        "held": held,
+        "suggestions": suggestions,
+        "dispatch_date": selected_date,
+        "today_iso": date.today().isoformat(),
+        "jobs_json": json.dumps(jobs, default=str),
+        "carry_forward_json": json.dumps(carry_forward, default=str),
+        "workers_json": json.dumps(workers, default=str),
+        "assignments_json": json.dumps(assignments),
+    })
+    return render_template("dashboard/dispatch.html", **ctx)
+
+
+# ---------------------------------------------------------------------------
+# GET /dashboard/classes — Class/Slot management
+# ---------------------------------------------------------------------------
+
+@dashboard_bp.route("/dashboard/classes")
+def classes_page():
+    client_id = _resolve_client_id()
+    if not client_id:
+        return redirect("/login")
+
+    ctx = _base_context("classes", client_id)
+    sb = _get_supabase()
+    client = ctx["_client"]
+    client_phone = client.get("phone", "")
+    today_str = date.today().isoformat()
+    future_14 = (date.today() + timedelta(days=14)).isoformat()
+    past_7 = (date.today() - timedelta(days=7)).isoformat()
+
+    # Load class board for this client
+    board = None
+    try:
+        result = sb.table("class_boards").select("*").eq("client_phone", client_phone).limit(1).execute()
+        if result.data:
+            board = result.data[0]
+    except Exception as e:
+        print(f"[{_ts()}] WARN dashboard_routes: class_boards query — {e}")
+
+    # Load upcoming slots (next 14 days)
+    upcoming_slots = []
+    try:
+        result = sb.table("class_slots").select(
+            "id, title, slot_date, start_time, end_time, capacity, enrolled_count, "
+            "instructor, description, status"
+        ).eq("client_phone", client_phone).gte("slot_date", today_str).lte(
+            "slot_date", future_14
+        ).neq("status", "cancelled").order("slot_date").order("start_time").execute()
+        upcoming_slots = result.data or []
+    except Exception as e:
+        print(f"[{_ts()}] WARN dashboard_routes: upcoming slots query — {e}")
+
+    # Load past slots (last 7 days)
+    past_slots = []
+    try:
+        result = sb.table("class_slots").select(
+            "id, title, slot_date, start_time, end_time, capacity, enrolled_count, "
+            "instructor, description, status"
+        ).eq("client_phone", client_phone).lt("slot_date", today_str).gte(
+            "slot_date", past_7
+        ).order("slot_date", desc=True).order("start_time").execute()
+        past_slots = result.data or []
+    except Exception as e:
+        print(f"[{_ts()}] WARN dashboard_routes: past slots query — {e}")
+
+    # Load enrollments for upcoming slots
+    slot_ids = [s["id"] for s in upcoming_slots]
+    enrollments = {}
+    if slot_ids:
+        try:
+            for sid in slot_ids[:50]:
+                enr = sb.table("class_enrollments").select(
+                    "customer_name, customer_phone"
+                ).eq("slot_id", sid).eq("status", "enrolled").execute()
+                enrollments[sid] = enr.data or []
+        except Exception as e:
+            print(f"[{_ts()}] WARN dashboard_routes: enrollments query — {e}")
+
+    # Group slots by date
+    from collections import defaultdict
+    upcoming_by_date = defaultdict(list)
+    for s in upcoming_slots:
+        upcoming_by_date[s.get("slot_date", "")].append(s)
+
+    past_by_date = defaultdict(list)
+    for s in past_slots:
+        past_by_date[s.get("slot_date", "")].append(s)
+
+    base_url = os.environ.get("BOLTS11_BASE_URL", "https://bolts11.com")
+    board_token = board.get("token", "") if board else ""
+    booking_url = f"{base_url}/book/{board_token}" if board_token else ""
+
+    ctx.update({
+        "board": board,
+        "upcoming_slots": upcoming_slots,
+        "past_slots": past_slots,
+        "upcoming_by_date": dict(upcoming_by_date),
+        "past_by_date": dict(past_by_date),
+        "enrollments": enrollments,
+        "booking_url": booking_url,
+        "slots_json": json.dumps(upcoming_slots, default=str),
+        "fmt_short_date": fmt_short_date,
+    })
+    return render_template("dashboard/classes.html", **ctx)
+
+
+# ---------------------------------------------------------------------------
+# POST /api/slots/create — Create a new class slot
+# ---------------------------------------------------------------------------
+
+@dashboard_bp.route("/api/slots/create", methods=["POST"])
+def api_create_slot():
+    client_id = _resolve_client_id()
+    if not client_id:
+        return jsonify({"success": False, "error": "Not authenticated"}), 401
+
+    data = request.get_json(silent=True)
+    if not data:
+        return jsonify({"success": False, "error": "Invalid JSON body"}), 400
+
+    title = (data.get("title") or "").strip()
+    slot_date = data.get("slot_date")
+    start_time = data.get("start_time")
+
+    if not title:
+        return jsonify({"success": False, "error": "Title is required"}), 400
+    if not slot_date:
+        return jsonify({"success": False, "error": "Date is required"}), 400
+    if not start_time:
+        return jsonify({"success": False, "error": "Start time is required"}), 400
+
+    client = _load_client(client_id)
+    client_phone = client.get("phone", "")
+
+    row = {
+        "client_phone": client_phone,
+        "title": title,
+        "slot_date": slot_date,
+        "start_time": start_time,
+        "end_time": data.get("end_time") or None,
+        "capacity": int(data.get("capacity", 10)),
+        "enrolled_count": 0,
+        "instructor": (data.get("instructor") or "").strip() or None,
+        "description": (data.get("description") or "").strip() or None,
+        "status": "open",
+    }
+
+    try:
+        sb = _get_supabase()
+        result = sb.table("class_slots").insert(row).execute()
+        if not result.data:
+            return jsonify({"success": False, "error": "Insert failed"}), 500
+        slot_id = result.data[0]["id"]
+        print(f"[{_ts()}] INFO dashboard_routes: Created slot {slot_id[:8]} — {title} on {slot_date}")
+        return jsonify({"success": True, "slot_id": slot_id})
+    except Exception as e:
+        print(f"[{_ts()}] ERROR dashboard_routes: slot create failed — {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+# ---------------------------------------------------------------------------
+# POST /api/slots/cancel — Cancel a class slot
+# ---------------------------------------------------------------------------
+
+@dashboard_bp.route("/api/slots/cancel", methods=["POST"])
+def api_cancel_slot():
+    client_id = _resolve_client_id()
+    if not client_id:
+        return jsonify({"success": False, "error": "Not authenticated"}), 401
+
+    data = request.get_json(silent=True)
+    slot_id = (data or {}).get("slot_id")
+    if not slot_id:
+        return jsonify({"success": False, "error": "slot_id required"}), 400
+
+    client = _load_client(client_id)
+    client_phone = client.get("phone", "")
+
+    try:
+        sb = _get_supabase()
+        # Verify slot belongs to this client
+        check = sb.table("class_slots").select("id").eq("id", slot_id).eq("client_phone", client_phone).execute()
+        if not check.data:
+            return jsonify({"success": False, "error": "Slot not found"}), 404
+
+        sb.table("class_slots").update({"status": "cancelled"}).eq("id", slot_id).execute()
+        print(f"[{_ts()}] INFO dashboard_routes: Cancelled slot {slot_id[:8]}")
+        return jsonify({"success": True})
+    except Exception as e:
+        print(f"[{_ts()}] ERROR dashboard_routes: slot cancel failed — {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+# ---------------------------------------------------------------------------
+# GET /dashboard/schedule — Appointment schedule (vertical timeline)
+# ---------------------------------------------------------------------------
+
+@dashboard_bp.route("/dashboard/schedule")
+def schedule_page():
+    client_id = _resolve_client_id()
+    if not client_id:
+        return redirect("/login")
+
+    ctx = _base_context("schedule", client_id)
+    sb = _get_supabase()
+    client = ctx["_client"]
+    client_phone = client.get("phone", "")
+    today_d = date.today()
+
+    # Load appointment board
+    board = None
+    try:
+        result = sb.table("class_boards").select("*").eq(
+            "client_phone", client_phone
+        ).eq("board_type", "appointment").limit(1).execute()
+        if result.data:
+            board = result.data[0]
+    except Exception as e:
+        print(f"[{_ts()}] WARN dashboard_routes: appointment board query — {e}")
+
+    # Parse settings
+    settings = {}
+    if board and board.get("settings_json"):
+        raw = board["settings_json"]
+        if isinstance(raw, str):
+            try:
+                settings = json.loads(raw)
+            except Exception:
+                settings = {}
+        elif isinstance(raw, dict):
+            settings = raw
+
+    slot_duration = settings.get("slot_duration_minutes", 25)
+
+    # Load slots for next 2 weeks
+    end_date = (today_d + timedelta(days=14)).isoformat()
+    slots = []
+    try:
+        result = sb.table("class_slots").select(
+            "id, title, slot_date, start_time, end_time, capacity, "
+            "enrolled_count, status, description"
+        ).eq("client_phone", client_phone).eq(
+            "board_type", "appointment"
+        ).gte(
+            "slot_date", today_d.isoformat()
+        ).lte("slot_date", end_date).order("slot_date").order("start_time").execute()
+        slots = result.data or []
+    except Exception as e:
+        print(f"[{_ts()}] WARN dashboard_routes: schedule slots query — {e}")
+
+    # Load enrollments for booked slots
+    slot_ids = [s["id"] for s in slots if (s.get("enrolled_count") or 0) > 0]
+    enrollments = {}
+    if slot_ids:
+        try:
+            for sid in slot_ids[:100]:
+                enr = sb.table("class_enrollments").select(
+                    "customer_name, customer_phone, customer_id"
+                ).eq("slot_id", sid).eq("status", "enrolled").execute()
+                enrollments[sid] = enr.data or []
+        except Exception as e:
+            print(f"[{_ts()}] WARN dashboard_routes: schedule enrollments query — {e}")
+
+    # Group by date
+    from collections import defaultdict
+    week_slots = defaultdict(list)
+    for s in slots:
+        week_slots[s.get("slot_date", "")].append(s)
+
+    base_url = os.environ.get("BOLTS11_BASE_URL", "https://bolts11.com")
+    board_token = board.get("token", "") if board else ""
+    booking_url = f"{base_url}/book/{board_token}" if board_token else ""
+
+    ctx.update({
+        "board": board,
+        "week_slots": dict(week_slots),
+        "enrollments": enrollments,
+        "slot_duration": slot_duration,
+        "settings": settings,
+        "booking_url": booking_url,
+        "fmt_short_date": fmt_short_date,
+    })
+    return render_template("dashboard/schedule.html", **ctx)
+
+
+# NOTE: /api/slots/generate is now in booking_routes.py (idempotent version)
+
+
+# ---------------------------------------------------------------------------
+# GET /dashboard/workers — Worker roster management
+# ---------------------------------------------------------------------------
+
+@dashboard_bp.route("/dashboard/workers")
+def workers_page():
+    client_id = _resolve_client_id()
+    if not client_id:
+        return redirect("/login")
+
+    ctx = _base_context("workers", client_id)
+    sb = _get_supabase()
+
+    workers = []
+    try:
+        result = sb.table("employees").select(
+            "id, name, phone, role, notes, active"
+        ).eq("client_id", client_id).order("active", desc=True).order("name").execute()
+        workers = result.data or []
+    except Exception as e:
+        print(f"[{_ts()}] WARN dashboard_routes: workers query failed — {e}")
+
+    ctx.update({"workers": workers})
+    return render_template("dashboard/workers.html", **ctx)
+
+
+# ---------------------------------------------------------------------------
+# POST /api/workers/create — Add a new worker
+# ---------------------------------------------------------------------------
+
+@dashboard_bp.route("/api/workers/create", methods=["POST"])
+def workers_create():
+    client_id = _resolve_client_id()
+    if not client_id:
+        return jsonify({"success": False, "error": "Not authenticated"}), 401
+
+    data = request.get_json(silent=True) or {}
+    name = (data.get("name") or "").strip()
+    phone = (data.get("phone") or "").strip()
+    role = (data.get("role") or "").strip()
+    notes = (data.get("notes") or "").strip()
+
+    if not name:
+        return jsonify({"success": False, "error": "Name is required"})
+    if not phone:
+        return jsonify({"success": False, "error": "Phone is required"})
+
+    # Normalize phone to E.164
+    import re as _re
+    digits = _re.sub(r'\D', '', phone)
+    if len(digits) == 10:
+        phone = f"+1{digits}"
+    elif len(digits) == 11 and digits[0] == '1':
+        phone = f"+{digits}"
+    elif not phone.startswith("+"):
+        phone = f"+{digits}"
+
+    try:
+        sb = _get_supabase()
+        result = sb.table("employees").insert({
+            "client_id": client_id,
+            "name": name,
+            "phone": phone,
+            "role": role or None,
+            "notes": notes or None,
+            "active": True,
+        }).execute()
+        worker_id = result.data[0]["id"]
+        print(f"[{_ts()}] INFO dashboard_routes: Created worker {name} id={worker_id[:8]}")
+        return jsonify({"success": True, "id": worker_id})
+    except Exception as e:
+        print(f"[{_ts()}] ERROR dashboard_routes: workers_create failed — {e}")
+        return jsonify({"success": False, "error": str(e)})
+
+
+# ---------------------------------------------------------------------------
+# POST /api/workers/update — Edit or deactivate a worker
+# ---------------------------------------------------------------------------
+
+@dashboard_bp.route("/api/workers/update", methods=["POST"])
+def workers_update():
+    client_id = _resolve_client_id()
+    if not client_id:
+        return jsonify({"success": False, "error": "Not authenticated"}), 401
+
+    data = request.get_json(silent=True) or {}
+    worker_id = data.get("id")
+    if not worker_id:
+        return jsonify({"success": False, "error": "Worker id required"})
+
+    updates = {}
+    if "name" in data:
+        updates["name"] = data["name"].strip()
+    if "phone" in data:
+        import re as _re
+        digits = _re.sub(r'\D', '', data["phone"].strip())
+        if len(digits) == 10:
+            updates["phone"] = f"+1{digits}"
+        elif len(digits) == 11 and digits[0] == '1':
+            updates["phone"] = f"+{digits}"
+        else:
+            updates["phone"] = data["phone"].strip()
+    if "role" in data:
+        updates["role"] = data["role"] or None
+    if "notes" in data:
+        updates["notes"] = data["notes"].strip() or None
+    if "active" in data:
+        updates["active"] = bool(data["active"])
+
+    if not updates:
+        return jsonify({"success": False, "error": "Nothing to update"})
+
+    try:
+        sb = _get_supabase()
+        # Multi-tenancy: filter by both worker_id AND client_id
+        sb.table("employees").update(updates).eq("id", worker_id).eq("client_id", client_id).execute()
+        print(f"[{_ts()}] INFO dashboard_routes: Updated worker id={worker_id[:8]} fields={list(updates.keys())}")
+        return jsonify({"success": True})
+    except Exception as e:
+        print(f"[{_ts()}] ERROR dashboard_routes: workers_update failed — {e}")
+        return jsonify({"success": False, "error": str(e)})
+
+
+# ---------------------------------------------------------------------------
+# POST /api/jobs/<id>/approve-scope — Owner approves scope change
+# ---------------------------------------------------------------------------
+
+@dashboard_bp.route("/api/jobs/<job_id>/approve-scope", methods=["POST"])
+def approve_scope(job_id):
+    client_id = _resolve_client_id()
+    if not client_id:
+        return jsonify({"success": False, "error": "Not authenticated"}), 401
+
+    sb = _get_supabase()
+
+    # Verify job belongs to this client
+    try:
+        job_check = sb.table("jobs").select("id, customer_id").eq("id", job_id).eq("client_id", client_id).execute()
+        if not job_check.data:
+            return jsonify({"success": False, "error": "Job not found"}), 404
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+    # Clear scope_hold
+    try:
+        sb.table("jobs").update({"scope_hold": False}).eq("id", job_id).execute()
+    except Exception as e:
+        print(f"[{_ts()}] WARN dashboard_routes: scope_hold clear failed — {e}")
+
+    # Find the most recent draft invoice for this job and set to sent
+    invoice_id = None
+    amount = 0
+    customer_name = "Customer"
+    try:
+        inv = sb.table("invoices").select("id, amount_due, customer_id").eq(
+            "job_id", job_id
+        ).eq("status", "draft").order("created_at", desc=True).limit(1).execute()
+        if inv.data:
+            invoice_id = inv.data[0]["id"]
+            amount = float(inv.data[0].get("amount_due") or 0)
+            # Get customer name
+            cust_id = inv.data[0].get("customer_id")
+            if cust_id:
+                cust = sb.table("customers").select("customer_name").eq("id", cust_id).execute()
+                if cust.data:
+                    customer_name = cust.data[0].get("customer_name", "Customer")
+            # Update invoice status
+            sb.table("invoices").update({"status": "sent"}).eq("id", invoice_id).execute()
+            print(f"[{_ts()}] INFO dashboard_routes: Scope approved — invoice {invoice_id[:8]} sent for ${amount:.0f}")
+    except Exception as e:
+        print(f"[{_ts()}] WARN dashboard_routes: approve-scope invoice update failed — {e}")
+
+    # SMS owner confirmation
+    try:
+        client = _load_client(client_id)
+        owner_mobile = client.get("owner_mobile") or client.get("phone", "")
+        client_phone = client.get("phone", "")
+        if owner_mobile and invoice_id:
+            from execution.sms_send import send_sms
+            send_sms(
+                to_number=owner_mobile,
+                message_body=f"Invoice approved and sent for {customer_name} — ${amount:.0f}",
+                from_number=client_phone,
+                message_type="invoice",
+            )
+    except Exception as e:
+        print(f"[{_ts()}] WARN dashboard_routes: approve-scope SMS failed — {e}")
+
+    return jsonify({"success": True, "invoice_id": invoice_id})
+
+
+# ---------------------------------------------------------------------------
+# GET /dashboard/admin — Super admin heartbeat view
+# ---------------------------------------------------------------------------
+
+@dashboard_bp.route("/dashboard/admin")
+def admin_heartbeat():
+    if not session.get("is_super_admin"):
+        abort(403)
+
+    sb = _get_supabase()
+    now_iso = datetime.now(timezone.utc)
+
+    # All clients
+    clients_list = []
+    try:
+        result = sb.table("clients").select(
+            "id, business_name, owner_name, phone, active"
+        ).eq("active", True).order("business_name").execute()
+        clients_list = result.data or []
+    except Exception as e:
+        print(f"[{_ts()}] ERROR dashboard_routes: admin clients query — {e}")
+
+    # Per-client stats
+    for c in clients_list:
+        cid = c["id"]
+        cphone = c.get("phone", "")
+
+        # Last 5 agent activity
+        try:
+            act = sb.table("agent_activity").select(
+                "agent_name, action_taken, output_summary, created_at"
+            ).eq("client_phone", cphone).order("created_at", desc=True).limit(5).execute()
+            c["recent_activity"] = act.data or []
+            c["last_activity"] = act.data[0].get("created_at", "") if act.data else ""
+        except Exception:
+            c["recent_activity"] = []
+            c["last_activity"] = ""
+
+        # Open jobs count
+        try:
+            jobs = sb.table("jobs").select("id").eq("client_id", cid).not_.in_(
+                "status", ["completed", "cancelled", "invoiced", "paid"]
+            ).execute()
+            c["open_jobs"] = len(jobs.data or [])
+        except Exception:
+            c["open_jobs"] = 0
+
+        # Needs attention count
+        try:
+            na = sb.table("needs_attention").select("id").eq(
+                "client_phone", cphone
+            ).eq("status", "open").execute()
+            c["needs_attention"] = len(na.data or [])
+        except Exception:
+            c["needs_attention"] = 0
+
+    # Board counts by type
+    board_counts = {}
+    try:
+        boards = sb.table("class_boards").select("board_type").execute()
+        for b in (boards.data or []):
+            bt = b.get("board_type", "unknown")
+            board_counts[bt] = board_counts.get(bt, 0) + 1
+    except Exception:
+        pass
+
+    # SMS sent today
+    sms_today = 0
+    try:
+        today_start = now_iso.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+        sms = sb.table("sms_message_log").select("id").gte("sent_at", today_start).execute()
+        sms_today = len(sms.data or [])
+    except Exception:
+        pass
+
+    ctx = {
+        "active_page": "admin",
+        "business_name": "Bolts11 Admin",
+        "owner_name": session.get("owner_name", ""),
+        "current_date": datetime.now().strftime("%a %b %d, %Y"),
+        "today": date.today().strftime("%A, %B %-d"),
+        "clients": clients_list,
+        "board_counts": board_counts,
+        "sms_today": sms_today,
+        "total_clients": len(clients_list),
+        "total_boards": sum(board_counts.values()),
+        "fmt_activity_time": fmt_activity_time,
+    }
+    return render_template("dashboard/admin.html", **ctx)
 
 # ---------------------------------------------------------------------------
 # Stub routes — coming soon pages

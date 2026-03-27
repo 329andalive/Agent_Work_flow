@@ -32,6 +32,9 @@
   .doc-btn-primary { background: var(--blue); color: #fff; }
   .doc-btn-green { background: #16a34a; color: #fff; }
   .doc-btn-outline { background: transparent; border: 1px solid var(--border); color: var(--text-secondary); }
+  .doc-btn-navy { background: #1a2e4a; color: #fff; }
+  .doc-btn-amber { background: #f59e0b; color: #1a2e4a; font-weight: 600; }
+  .doc-btn:disabled { opacity: 0.4; cursor: not-allowed; }
   .flash-msg { padding: 10px 16px; border-radius: 6px; font-size: 13px; margin-bottom: 12px; }
   .flash-success { background: #dcfce7; color: #166534; }
   .flash-info { background: #dbeafe; color: #1e40af; }
@@ -125,6 +128,21 @@
           <button type="submit" class="doc-btn doc-btn-green">Mark Paid</button>
         </form>
         {% endif %}
+
+        {% set has_text = invoice.invoice_text or line_items %}
+        <button class="doc-btn doc-btn-navy" id="btn-copy"
+                onclick="copyInvoice()"
+                {% if not has_text %}disabled title="Invoice text not available"{% endif %}>
+          Copy Invoice
+        </button>
+
+        {% if total > 0 %}
+        <a class="doc-btn doc-btn-amber" id="btn-email"
+           href="#" onclick="emailInvoice(); return false;"
+           {% if not has_text %}style="pointer-events:none;opacity:0.4" title="Invoice text not available"{% endif %}>
+          Email Invoice
+        </a>
+        {% endif %}
       </div>
     </div>
 
@@ -135,4 +153,64 @@
     {% endif %}
   </div>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function buildInvoiceText() {
+  var lines = [];
+  lines.push('INVOICE — {{ business_name }}');
+  lines.push('#{{ invoice.id[:8]|upper if invoice.id else "" }}');
+  lines.push('');
+  lines.push('Customer: {{ customer.customer_name or "Customer" }}');
+  {% if customer.customer_phone %}lines.push('Phone: {{ fmt_phone(customer.customer_phone) }}');{% endif %}
+  {% if customer.customer_address %}lines.push('Address: {{ customer.customer_address }}');{% endif %}
+  lines.push('');
+  lines.push('Job: {{ job.job_type or "Service" }}{% if job.job_description %} — {{ job.job_description }}{% endif %}');
+  {% if job.job_notes %}lines.push('Notes: {{ job.job_notes }}');{% endif %}
+  lines.push('');
+  lines.push('Line Items:');
+  {% for li in line_items %}
+  lines.push('  {{ li.description or li.get("name","Item") }} — ${{ "%.2f"|format(li.total|float if li.total is defined else li.amount|float if li.amount is defined else 0) }}');
+  {% endfor %}
+  lines.push('');
+  lines.push('Subtotal: ${{ "%.2f"|format(subtotal) }}');
+  {% if tax_amount > 0 %}lines.push('Tax: ${{ "%.2f"|format(tax_amount) }}');{% endif %}
+  lines.push('Total Due: ${{ "%.2f"|format(total) }}');
+  {% if invoice.due_date %}lines.push('Due: {{ fmt_date(invoice.due_date) }}');{% endif %}
+  lines.push('');
+  lines.push('{{ business_name }}');
+  return lines.join('\n');
+}
+
+function copyInvoice() {
+  var text = buildInvoiceText();
+  var btn = document.getElementById('btn-copy');
+  navigator.clipboard.writeText(text).then(function() {
+    var orig = btn.textContent;
+    btn.textContent = 'Copied \u2713';
+    setTimeout(function() { btn.textContent = orig; }, 2000);
+  }).catch(function() {
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    var orig = btn.textContent;
+    btn.textContent = 'Copied \u2713';
+    setTimeout(function() { btn.textContent = orig; }, 2000);
+  });
+}
+
+function emailInvoice() {
+  var body = buildInvoiceText();
+  var to = '{{ customer.customer_email or "" }}';
+  var subject = 'Invoice from {{ business_name }} — ${{ "%.2f"|format(total) }}';
+  var mailto = 'mailto:' + encodeURIComponent(to)
+    + '?subject=' + encodeURIComponent(subject)
+    + '&body=' + encodeURIComponent(body);
+  window.open(mailto, '_blank');
+}
+</script>
 {% endblock %}
