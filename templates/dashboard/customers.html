@@ -2,56 +2,88 @@
 
 {% block title %}Customers{% endblock %}
 {% block page_title %}Customers{% endblock %}
-{% block topbar_meta %}{{ customers|length }} customers · {{ today }}{% endblock %}
+{% block topbar_meta %}{{ customers|length }} total · {{ today }}{% endblock %}
 
 {% block extra_css %}
-  .search-bar {
+  .customers-layout {
+    display: grid;
+    grid-template-columns: 300px 1fr;
+    gap: 16px;
+    align-items: start;
+  }
+  @media (max-width: 768px) {
+    .customers-layout { grid-template-columns: 1fr; }
+  }
+
+  /* Add customer form */
+  .add-form label {
+    display: block;
+    font-family: 'DM Mono', monospace;
+    font-size: 9.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--text-tertiary);
+    margin-bottom: 5px;
+  }
+  .add-form .field { margin-bottom: 12px; }
+  .add-form input,
+  .add-form textarea {
     width: 100%;
     font-family: 'Barlow', sans-serif;
     font-size: 13px;
-    padding: 8px 12px;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    background: var(--bg-card);
+    padding: 8px 11px;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-sm);
+    background: var(--bg-page);
     color: var(--text-primary);
     outline: none;
-    margin: 12px 16px;
-    width: calc(100% - 32px);
-    transition: border-color 0.12s;
+    transition: border-color 0.12s, background 0.12s;
   }
-  .search-bar:focus { border-color: var(--blue); }
-  .search-bar::placeholder { color: var(--text-tertiary); }
+  .add-form input:focus,
+  .add-form textarea:focus {
+    border-color: var(--blue);
+    background: #fff;
+  }
+  .add-form textarea { resize: vertical; min-height: 64px; }
+  .add-form input::placeholder,
+  .add-form textarea::placeholder { color: var(--text-tertiary); }
+
+  .form-msg {
+    font-size: 12px;
+    padding: 7px 11px;
+    border-radius: var(--radius-sm);
+    margin-bottom: 10px;
+    display: none;
+  }
+  .form-msg.success { background: var(--green-bg); color: var(--green-text); }
+  .form-msg.error   { background: var(--red-bg);   color: var(--red-text); }
+
+  /* Customer table */
   .sms-dot {
     display: inline-block;
-    width: 7px;
-    height: 7px;
+    width: 7px; height: 7px;
     border-radius: 50%;
     vertical-align: middle;
   }
-  .btn-add {
-    font-family: 'DM Mono', monospace;
-    font-size: 10px;
-    font-weight: 500;
-    letter-spacing: 0.04em;
-    padding: 4px 12px;
-    border-radius: 4px;
-    border: 1px solid var(--border);
-    background: transparent;
-    color: var(--text-secondary);
-    text-decoration: none;
-    transition: background 0.12s, color 0.12s;
+  .customer-arrow {
+    font-size: 13px;
+    color: var(--text-tertiary);
+    transition: color 0.1s, transform 0.1s;
   }
-  .btn-add:hover {
-    background: #1a2e4a;
-    color: #fff;
-    border-color: #1a2e4a;
-    text-decoration: none;
+  .data-table tbody tr:hover .customer-arrow { color: var(--text-primary); transform: translateX(2px); }
+
+  .metrics-row-3 {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+    margin-bottom: 18px;
   }
+  @media (max-width: 500px) { .metrics-row-3 { grid-template-columns: 1fr 1fr; } }
 {% endblock %}
 
 {% block content %}
 <!-- Metrics -->
-<div class="metrics-row">
+<div class="metrics-row-3">
   <div class="metric">
     <div class="metric-label">Total Customers</div>
     <div class="metric-value">{{ customers|length }}</div>
@@ -66,51 +98,100 @@
   </div>
 </div>
 
-<!-- Customer List -->
-<div class="card">
-  <div class="card-header">
-    <span class="card-title">All Customers</span>
-    <a href="/dashboard/customers/new" class="btn-add">+ Add Customer</a>
+<div class="customers-layout">
+  <!-- Left: Add Customer -->
+  <div class="card" style="position:sticky;top:0">
+    <div class="card-header">
+      <span class="card-title">New Customer</span>
+    </div>
+    <div class="card-body add-form">
+      <div id="form-msg" class="form-msg"></div>
+
+      <div class="field">
+        <label>Full Name *</label>
+        <input type="text" id="f-name" placeholder="Jane Smith" autocomplete="off" />
+      </div>
+      <div class="field">
+        <label>Phone *</label>
+        <input type="tel" id="f-phone" placeholder="(207) 555-1234" autocomplete="off" />
+      </div>
+      <div class="field">
+        <label>Address</label>
+        <input type="text" id="f-address" placeholder="123 Main St, City, ME" autocomplete="off" />
+      </div>
+      <div class="field">
+        <label>Notes</label>
+        <textarea id="f-notes" placeholder="Any details…"></textarea>
+      </div>
+
+      <button class="btn btn-navy" id="save-btn" onclick="saveCustomer()"
+              style="width:100%;padding:8px;font-size:11px;letter-spacing:0.05em">
+        Save Customer
+      </button>
+    </div>
   </div>
-  <input type="search" class="search-bar" id="cust-search"
-         placeholder="Search name, phone, or address…"
-         oninput="filterCustomers(this.value)">
-  <div class="card-body-flush">
-    {% if customers %}
-    <table class="data-table" id="cust-table">
-      <thead>
-        <tr>
-          <th>Name</th>
-          <th>Phone</th>
-          <th>Address</th>
-          <th style="text-align:right">Jobs</th>
-          <th>Last Job</th>
-          <th>SMS</th>
-          <th></th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for c in customers %}
-        <tr style="cursor:pointer"
-            onclick="window.location='/dashboard/customers/{{ c.id }}'"
-            data-search="{{ (c.customer_name or '')|lower }} {{ (c.customer_phone or '')|lower }} {{ (c.customer_address or '')|lower }}">
-          <td style="font-weight:500">{{ c.customer_name or '—' }}</td>
-          <td style="font-family:'DM Mono',monospace;font-size:12px">{{ fmt_phone(c.customer_phone) }}</td>
-          <td style="font-size:12px;color:var(--text-tertiary);max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ c.customer_address or '—' }}</td>
-          <td style="text-align:right">
-            {% if c.job_count > 0 %}<span class="badge badge-blue">{{ c.job_count }}</span>{% else %}—{% endif %}
-          </td>
-          <td style="font-family:'DM Mono',monospace;font-size:11px;color:var(--text-tertiary)">{{ fmt_short_date(c.last_job) if c.last_job else '—' }}</td>
-          <td><span class="sms-dot" style="background:{% if c.sms_consent %}var(--green){% else %}#d1d5db{% endif %}"></span></td>
-          <td style="font-family:'DM Mono',monospace;font-size:11px;color:var(--text-tertiary)">&rarr;</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-    <div id="no-results" class="empty-state" style="display:none">No customers match your search.</div>
-    {% else %}
-    <div class="empty-state">No customers yet. <a href="/dashboard/customers/new">Add your first customer &rarr;</a></div>
-    {% endif %}
+
+  <!-- Right: Customer List -->
+  <div class="card">
+    <div class="card-header">
+      <span style="display:flex;align-items:center;gap:10px">
+        <span class="card-title">All Customers</span>
+        <span class="card-count" id="cust-count">{{ customers|length }}</span>
+      </span>
+    </div>
+    <input type="search" class="search-bar" id="cust-search"
+           placeholder="Search by name, phone, or address…"
+           oninput="filterCustomers(this.value)" />
+    <div class="card-body-flush">
+      {% if customers %}
+      <table class="data-table" id="cust-table">
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Phone</th>
+            <th>Address</th>
+            <th style="text-align:right">Jobs</th>
+            <th>Last Job</th>
+            <th>SMS</th>
+            <th style="width:24px"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for c in customers %}
+          <tr style="cursor:pointer"
+              onclick="window.location='/dashboard/customers/{{ c.id }}'"
+              data-search="{{ (c.customer_name or '')|lower }} {{ (c.customer_phone or '')|lower }} {{ (c.customer_address or '')|lower }}">
+            <td style="font-weight:500">{{ c.customer_name or '—' }}</td>
+            <td style="font-family:'DM Mono',monospace;font-size:12px">{{ fmt_phone(c.customer_phone) }}</td>
+            <td style="font-size:12px;color:var(--text-tertiary);max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+              {{ c.customer_address or '—' }}
+            </td>
+            <td style="text-align:right">
+              {% if c.job_count and c.job_count > 0 %}
+                <span class="badge badge-blue">{{ c.job_count }}</span>
+              {% else %}—{% endif %}
+            </td>
+            <td style="font-family:'DM Mono',monospace;font-size:11px;color:var(--text-tertiary)">
+              {{ fmt_short_date(c.last_job) if c.last_job else '—' }}
+            </td>
+            <td>
+              <span class="sms-dot"
+                    style="background:{% if c.sms_consent %}var(--green){% else %}#d1d5db{% endif %}"
+                    title="{{ 'SMS opted in' if c.sms_consent else 'No SMS consent' }}"></span>
+            </td>
+            <td><span class="customer-arrow">→</span></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <div id="no-results" class="empty-state" style="display:none">No customers match your search.</div>
+      {% else %}
+      <div class="empty-state">
+        No customers yet.<br>
+        <span style="font-size:12px;margin-top:4px;display:block">Add your first customer using the form on the left.</span>
+      </div>
+      {% endif %}
+    </div>
   </div>
 </div>
 {% endblock %}
@@ -122,12 +203,66 @@ function filterCustomers(q) {
   var rows = document.querySelectorAll('#cust-table tbody tr');
   var visible = 0;
   rows.forEach(function(row) {
-    var match = row.dataset.search.includes(q);
+    var match = !q || row.dataset.search.includes(q);
     row.style.display = match ? '' : 'none';
     if (match) visible++;
   });
   var nr = document.getElementById('no-results');
-  if (nr) nr.style.display = visible === 0 && q ? 'block' : 'none';
+  if (nr) nr.style.display = (visible === 0 && q) ? 'block' : 'none';
+  var cnt = document.getElementById('cust-count');
+  if (cnt) cnt.textContent = q ? visible : rows.length;
+}
+
+async function saveCustomer() {
+  var btn  = document.getElementById('save-btn');
+  var msg  = document.getElementById('form-msg');
+  var name = document.getElementById('f-name').value.trim();
+  var phone = document.getElementById('f-phone').value.trim();
+
+  if (!name || !phone) {
+    showMsg('error', 'Name and phone are required.');
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = 'Saving…';
+  msg.style.display = 'none';
+
+  try {
+    var resp = await fetch('/api/customers/create', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        customer_name:    name,
+        customer_phone:   phone,
+        customer_address: document.getElementById('f-address').value.trim(),
+        notes:            document.getElementById('f-notes').value.trim(),
+      })
+    });
+    var data = await resp.json();
+    if (resp.ok && data.success !== false) {
+      showMsg('success', 'Customer saved!');
+      ['f-name','f-phone','f-address','f-notes'].forEach(function(id) {
+        document.getElementById(id).value = '';
+      });
+      setTimeout(function() { location.reload(); }, 1200);
+    } else {
+      showMsg('error', data.error || 'Save failed. Please try again.');
+      btn.disabled = false;
+      btn.textContent = 'Save Customer';
+    }
+  } catch(e) {
+    showMsg('error', 'Network error. Please try again.');
+    btn.disabled = false;
+    btn.textContent = 'Save Customer';
+  }
+}
+
+function showMsg(type, text) {
+  var msg = document.getElementById('form-msg');
+  msg.className = 'form-msg ' + type;
+  msg.textContent = text;
+  msg.style.display = 'block';
 }
 </script>
 {% endblock %}

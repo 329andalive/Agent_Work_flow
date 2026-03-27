@@ -4,166 +4,6 @@
 {% block page_title %}Office / Billing{% endblock %}
 {% block topbar_meta %}{{ today }}{% endblock %}
 
-{% block extra_css %}
-  /* ── Summary strip ─────────────────────────────── */
-  .summary-strip {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 12px;
-    margin-bottom: 20px;
-  }
-  @media (max-width: 640px) {
-    .summary-strip { grid-template-columns: repeat(2, 1fr); }
-  }
-  .summary-tile {
-    background: var(--bg-card);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 14px 16px;
-  }
-  .summary-tile__label {
-    font-family: 'DM Mono', monospace;
-    font-size: 10px;
-    font-weight: 500;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: var(--text-tertiary);
-    margin-bottom: 6px;
-  }
-  .summary-tile__value {
-    font-family: 'Barlow Condensed', sans-serif;
-    font-size: 32px;
-    font-weight: 700;
-    line-height: 1;
-    color: var(--text-primary);
-  }
-  .summary-tile__sub {
-    font-size: 11px;
-    color: var(--text-tertiary);
-    margin-top: 4px;
-  }
-  .c-amber-val { color: #BA7517; }
-
-  /* ── Section header ─────────────────────────────── */
-  .section-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 12px;
-    margin-top: 4px;
-  }
-  .section-header__right {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-  }
-  .section-header__title {
-    font-family: 'DM Mono', monospace;
-    font-size: 11px;
-    font-weight: 500;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: var(--text-secondary);
-  }
-  .section-header__count {
-    font-family: 'DM Mono', monospace;
-    font-size: 11px;
-    color: var(--text-tertiary);
-  }
-  .export-btn {
-    font-family: 'DM Mono', monospace;
-    font-size: 10px;
-    padding: 4px 12px;
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    background: transparent;
-    color: var(--text-secondary);
-    text-decoration: none;
-    transition: background 0.12s;
-  }
-  .export-btn:hover {
-    background: var(--bg-page);
-    color: var(--text-primary);
-    text-decoration: none;
-  }
-
-  /* ── Flex list rows ──────────────────────────────── */
-  .list-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 13px 16px;
-    border-bottom: 1px solid var(--border);
-    transition: background 0.1s;
-    text-decoration: none;
-    color: inherit;
-    cursor: pointer;
-  }
-  .list-row:last-child { border-bottom: none; }
-  .list-row:hover { background: #f8fafc; }
-  .list-row__name {
-    font-size: 14px;
-    font-weight: 500;
-    color: var(--text-primary);
-  }
-  .list-row__meta {
-    font-family: 'DM Mono', monospace;
-    font-size: 11px;
-    color: var(--text-tertiary);
-    margin-top: 2px;
-  }
-  .list-row__right {
-    text-align: right;
-    flex-shrink: 0;
-    margin-left: 16px;
-  }
-  .list-row__amount {
-    font-family: 'Barlow Condensed', sans-serif;
-    font-size: 18px;
-    font-weight: 700;
-    color: var(--text-primary);
-    line-height: 1;
-  }
-  .list-row__actions {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-top: 4px;
-    justify-content: flex-end;
-  }
-
-  /* ── Age pill ───────────────────────────────────── */
-  .age-pill {
-    font-family: 'DM Mono', monospace;
-    font-size: 10px;
-    padding: 1px 6px;
-    border-radius: 3px;
-    display: inline-block;
-    margin-left: 6px;
-  }
-  .age-pill--gray   { background: #f1f5f9; color: #64748b; }
-  .age-pill--amber  { background: #FAEEDA; color: #854F0B; }
-  .age-pill--red    { background: #FCEBEB; color: #A32D2D; }
-
-  /* ── Status badges ──────────────────────────────── */
-  .badge-paid     { background: #EAF3DE; color: #3B6D11; }
-  .badge-sent     { background: #FAEEDA; color: #854F0B; }
-  .badge-overdue  { background: #FCEBEB; color: #A32D2D; }
-  .badge-draft    { background: #f3f4f6; color: #6b7280; }
-  .badge-accepted { background: #EAF3DE; color: #3B6D11; }
-  .badge-declined { background: #FCEBEB; color: #A32D2D; }
-
-  /* ── View link ──────────────────────────────────── */
-  .view-link {
-    font-family: 'DM Mono', monospace;
-    font-size: 11px;
-    color: var(--text-tertiary);
-    text-decoration: none;
-    white-space: nowrap;
-  }
-  .view-link:hover { color: var(--text-primary); }
-{% endblock %}
-
 {% block content %}
 <!-- Summary strip -->
 <div class="summary-strip">
@@ -174,7 +14,7 @@
   </div>
   <div class="summary-tile">
     <div class="summary-tile__label">Collected</div>
-    <div class="summary-tile__value">${{ "%.0f"|format(total_paid) }}</div>
+    <div class="summary-tile__value c-green-val">${{ "%.0f"|format(total_paid) }}</div>
     <div class="summary-tile__sub">paid</div>
   </div>
   <div class="summary-tile">
@@ -196,7 +36,7 @@
       <span class="card-title">Invoices</span>
       <span class="card-count">{{ invoices|length }}</span>
     </span>
-    <a href="/api/invoices/export-csv" download class="export-btn">Export CSV</a>
+    <a href="/api/invoices/export-csv" download class="export-btn">↓ Export CSV</a>
   </div>
   <div class="card-body-flush">
     {% if invoices %}
@@ -205,28 +45,27 @@
       <a href="/dashboard/invoice/{{ inv.id }}" class="list-row">
         <div>
           <div class="list-row__name">{{ cust.get('customer_name', 'Customer') }}</div>
-          <div class="list-row__meta">{{ fmt_short_date(inv.created_at) }} · {{ inv.status or 'draft' }}</div>
+          <div class="list-row__meta">
+            {{ fmt_short_date(inv.created_at) }}
+            {% if inv.status == 'sent' and inv.sent_at %}
+              <span data-sent="{{ inv.sent_at }}"></span>
+            {% endif %}
+          </div>
         </div>
         <div class="list-row__right">
           <div class="list-row__amount">${{ "%.2f"|format(inv.amount_due|float) if inv.amount_due else '—' }}</div>
           <div class="list-row__actions">
-            {% if inv.status == 'paid' %}
-              <span class="badge badge-paid">paid</span>
-            {% elif inv.status == 'overdue' %}
-              <span class="badge badge-overdue">overdue</span>
-            {% elif inv.status == 'sent' %}
-              <span class="badge badge-sent">sent</span>
-              {% if inv.sent_at %}<span class="age-holder" data-sent="{{ inv.sent_at }}"></span>{% endif %}
-            {% else %}
-              <span class="badge badge-draft">{{ inv.status or 'draft' }}</span>
-            {% endif %}
-            <span class="view-link">View &rarr;</span>
+            {% if inv.status == 'paid'     %}<span class="badge badge-green">paid</span>
+            {% elif inv.status == 'overdue'%}<span class="badge badge-red">overdue</span>
+            {% elif inv.status == 'sent'   %}<span class="badge badge-amber">sent</span>
+            {% else %}<span class="badge badge-gray">{{ inv.status or 'draft' }}</span>{% endif %}
+            <span class="view-link">View →</span>
           </div>
         </div>
       </a>
     {% endfor %}
     {% else %}
-    <div class="empty-state">No invoices in the last 90 days</div>
+    <div class="empty-state">No invoices in the last 90 days.</div>
     {% endif %}
   </div>
 </div>
@@ -246,27 +85,22 @@
       <a href="/dashboard/proposal/{{ p.id }}" class="list-row">
         <div>
           <div class="list-row__name">{{ cust.get('customer_name', 'Customer') }}</div>
-          <div class="list-row__meta">{{ fmt_short_date(p.created_at) }} · {{ p.status or 'draft' }}</div>
+          <div class="list-row__meta">{{ fmt_short_date(p.created_at) }}</div>
         </div>
         <div class="list-row__right">
           <div class="list-row__amount">${{ "%.0f"|format(p.amount_estimate|float) if p.amount_estimate else '—' }}</div>
           <div class="list-row__actions">
-            {% if p.status == 'accepted' %}
-              <span class="badge badge-accepted">accepted</span>
-            {% elif p.status == 'sent' %}
-              <span class="badge badge-sent">sent</span>
-            {% elif p.status == 'declined' %}
-              <span class="badge badge-declined">declined</span>
-            {% else %}
-              <span class="badge badge-draft">{{ p.status or 'draft' }}</span>
-            {% endif %}
-            <span class="view-link">View &rarr;</span>
+            {% if p.status == 'accepted' %}<span class="badge badge-green">accepted</span>
+            {% elif p.status == 'sent'    %}<span class="badge badge-amber">sent</span>
+            {% elif p.status == 'declined'%}<span class="badge badge-red">declined</span>
+            {% else %}<span class="badge badge-gray">{{ p.status or 'draft' }}</span>{% endif %}
+            <span class="view-link">View →</span>
           </div>
         </div>
       </a>
     {% endfor %}
     {% else %}
-    <div class="empty-state">No proposals in the last 90 days</div>
+    <div class="empty-state">No proposals in the last 90 days.</div>
     {% endif %}
   </div>
 </div>
@@ -276,12 +110,10 @@
 <script>
 document.querySelectorAll('[data-sent]').forEach(function(el) {
   var sent = el.getAttribute('data-sent');
-  if (!sent || sent === '') return;
+  if (!sent) return;
   var days = Math.floor((Date.now() - new Date(sent).getTime()) / 86400000);
   if (days < 0) return;
-  var cls = days >= 7 ? 'age-pill--red'
-          : days >= 3 ? 'age-pill--amber'
-          : 'age-pill--gray';
+  var cls = days >= 7 ? 'age-pill--red' : days >= 3 ? 'age-pill--amber' : 'age-pill--gray';
   var pill = document.createElement('span');
   pill.className = 'age-pill ' + cls;
   pill.textContent = days + 'd';

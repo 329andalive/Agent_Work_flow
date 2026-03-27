@@ -2,132 +2,10 @@
 
 {% block title %}Invoices{% endblock %}
 {% block page_title %}Invoices{% endblock %}
-{% block topbar_meta %}{{ today }}{% endblock %}
-
-{% block extra_css %}
-  .summary-strip {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 12px;
-    margin-bottom: 20px;
-  }
-  @media (max-width: 640px) {
-    .summary-strip { grid-template-columns: repeat(2, 1fr); }
-  }
-  .summary-tile {
-    background: var(--bg-card);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 14px 16px;
-  }
-  .summary-tile__label {
-    font-family: 'DM Mono', monospace;
-    font-size: 10px;
-    font-weight: 500;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: var(--text-tertiary);
-    margin-bottom: 6px;
-  }
-  .summary-tile__value {
-    font-family: 'Barlow Condensed', sans-serif;
-    font-size: 32px;
-    font-weight: 700;
-    line-height: 1;
-    color: var(--text-primary);
-  }
-  .summary-tile__sub {
-    font-size: 11px;
-    color: var(--text-tertiary);
-    margin-top: 4px;
-  }
-  .c-amber-val { color: #BA7517; }
-
-  .export-btn {
-    font-family: 'DM Mono', monospace;
-    font-size: 10px;
-    padding: 4px 12px;
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    background: transparent;
-    color: var(--text-secondary);
-    text-decoration: none;
-    transition: background 0.12s;
-  }
-  .export-btn:hover {
-    background: var(--bg-page);
-    color: var(--text-primary);
-    text-decoration: none;
-  }
-
-  .list-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 13px 16px;
-    border-bottom: 1px solid var(--border);
-    transition: background 0.1s;
-    text-decoration: none;
-    color: inherit;
-    cursor: pointer;
-  }
-  .list-row:last-child { border-bottom: none; }
-  .list-row:hover { background: #f8fafc; }
-  .list-row__name {
-    font-size: 14px;
-    font-weight: 500;
-    color: var(--text-primary);
-  }
-  .list-row__meta {
-    font-family: 'DM Mono', monospace;
-    font-size: 11px;
-    color: var(--text-tertiary);
-    margin-top: 2px;
-  }
-  .list-row__right { text-align: right; flex-shrink: 0; margin-left: 16px; }
-  .list-row__amount {
-    font-family: 'Barlow Condensed', sans-serif;
-    font-size: 18px;
-    font-weight: 700;
-    color: var(--text-primary);
-    line-height: 1;
-  }
-  .list-row__actions {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-top: 4px;
-    justify-content: flex-end;
-  }
-
-  .age-pill {
-    font-family: 'DM Mono', monospace;
-    font-size: 10px;
-    padding: 1px 6px;
-    border-radius: 3px;
-    display: inline-block;
-    margin-left: 6px;
-  }
-  .age-pill--gray  { background: #f1f5f9; color: #64748b; }
-  .age-pill--amber { background: #FAEEDA; color: #854F0B; }
-  .age-pill--red   { background: #FCEBEB; color: #A32D2D; }
-
-  .badge-paid     { background: #EAF3DE; color: #3B6D11; }
-  .badge-sent     { background: #FAEEDA; color: #854F0B; }
-  .badge-overdue  { background: #FCEBEB; color: #A32D2D; }
-  .badge-draft    { background: #f3f4f6; color: #6b7280; }
-
-  .view-link {
-    font-family: 'DM Mono', monospace;
-    font-size: 11px;
-    color: var(--text-tertiary);
-    text-decoration: none;
-    white-space: nowrap;
-  }
-  .view-link:hover { color: var(--text-primary); }
-{% endblock %}
+{% block topbar_meta %}Last 90 days · {{ today }}{% endblock %}
 
 {% block content %}
+<!-- Metrics -->
 <div class="summary-strip">
   <div class="summary-tile">
     <div class="summary-tile__label">Total Billed</div>
@@ -136,7 +14,7 @@
   </div>
   <div class="summary-tile">
     <div class="summary-tile__label">Collected</div>
-    <div class="summary-tile__value">${{ "%.0f"|format(total_paid) }}</div>
+    <div class="summary-tile__value c-green-val">${{ "%.0f"|format(total_paid) }}</div>
     <div class="summary-tile__sub">paid</div>
   </div>
   <div class="summary-tile">
@@ -151,49 +29,62 @@
   </div>
 </div>
 
+<!-- Invoice list -->
 <div class="card">
   <div class="card-header">
     <span style="display:flex;align-items:center;gap:10px">
-      <span class="card-title">Invoices</span>
+      <span class="card-title">Invoices — Last 90 Days</span>
       <span class="card-count">{{ invoices|length }}</span>
     </span>
     <span style="display:flex;align-items:center;gap:8px">
-      <a href="/api/invoices/export-csv" download class="export-btn">Export CSV</a>
-      <a href="/dashboard/invoices/new" style="font-family:'DM Mono',monospace;font-size:10px;font-weight:500;padding:4px 12px;border-radius:4px;border:none;background:#f59e0b;color:#fff;text-decoration:none;letter-spacing:0.04em;transition:opacity 0.12s;display:inline-block"
-         onmouseover="this.style.opacity='0.85'" onmouseout="this.style.opacity='1'">+ New Invoice</a>
+      <a href="/api/invoices/export-csv" download class="export-btn">↓ Export CSV</a>
+      <a href="/dashboard/invoices/new" class="btn btn-primary">+ New Invoice</a>
     </span>
   </div>
   <div class="card-body-flush">
     {% if invoices %}
-    {% for inv in invoices[:25] %}
-      {% set cust = cust_map.get(inv.customer_id, {}) if inv.customer_id else {} %}
-      <a href="/dashboard/invoice/{{ inv.id }}" class="list-row">
-        <div>
-          <div class="list-row__name">{{ cust.get('customer_name', 'Customer') }}</div>
-          <div class="list-row__meta">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Customer</th>
+          <th>Date</th>
+          <th style="text-align:right">Amount</th>
+          <th>Status</th>
+          <th style="width:24px"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for inv in invoices %}
+        {% set cust = cust_map.get(inv.customer_id, {}) if inv.customer_id else {} %}
+        <tr style="cursor:pointer" onclick="window.location='/dashboard/invoice/{{ inv.id }}'">
+          <td style="font-weight:500">{{ cust.get('customer_name', '—') }}</td>
+          <td style="font-family:'DM Mono',monospace;font-size:11px;color:var(--text-tertiary)">
             {{ fmt_short_date(inv.created_at) }}
-            {% if inv.status == 'sent' and inv.sent_at %}<span data-sent="{{ inv.sent_at }}"></span>{% endif %}
-          </div>
-        </div>
-        <div class="list-row__right">
-          <div class="list-row__amount">${{ "%.2f"|format(inv.amount_due|float) if inv.amount_due else '—' }}</div>
-          <div class="list-row__actions">
-            {% if inv.status == 'paid' %}
-              <span class="badge badge-paid">paid</span>
-            {% elif inv.status == 'overdue' %}
-              <span class="badge badge-overdue">overdue</span>
-            {% elif inv.status == 'sent' %}
-              <span class="badge badge-sent">sent</span>
-            {% else %}
-              <span class="badge badge-draft">{{ inv.status or 'draft' }}</span>
+            {% if inv.status != 'paid' and inv.created_at %}
+              <span data-created="{{ inv.created_at }}"></span>
             {% endif %}
-            <span class="view-link">View &rarr;</span>
-          </div>
-        </div>
-      </a>
-    {% endfor %}
+          </td>
+          <td style="text-align:right;font-family:'Barlow Condensed',sans-serif;font-size:17px;font-weight:700">
+            ${{ "%.2f"|format(inv.amount_due|float) if inv.amount_due else '—' }}
+          </td>
+          <td>
+            {% if inv.status == 'paid'     %}<span class="badge badge-green">paid</span>
+            {% elif inv.status == 'overdue'%}<span class="badge badge-red">overdue</span>
+            {% elif inv.status == 'sent'   %}<span class="badge badge-amber">sent</span>
+            {% else %}<span class="badge badge-gray">{{ inv.status or 'draft' }}</span>{% endif %}
+          </td>
+          <td style="color:var(--text-tertiary);font-size:13px">→</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
     {% else %}
-    <div class="empty-state">No invoices in the last 90 days.</div>
+    <div class="empty-state">
+      No invoices in the last 90 days.<br>
+      <a href="/dashboard/invoices/new" style="font-size:12px;color:var(--blue);text-decoration:none;margin-top:4px;display:inline-block">
+        Create your first invoice →
+      </a>
+    </div>
     {% endif %}
   </div>
 </div>
@@ -201,14 +92,13 @@
 
 {% block extra_js %}
 <script>
-document.querySelectorAll('[data-sent]').forEach(function(el) {
-  var sent = el.getAttribute('data-sent');
-  if (!sent || sent === '') return;
-  var days = Math.floor((Date.now() - new Date(sent).getTime()) / 86400000);
-  if (days < 0) return;
-  var cls = days >= 7 ? 'age-pill--red'
-          : days >= 3 ? 'age-pill--amber'
-          : 'age-pill--gray';
+// Age pill: show "Xd" for unpaid invoices older than 30 days
+document.querySelectorAll('[data-created]').forEach(function(el) {
+  var created = el.getAttribute('data-created');
+  if (!created) return;
+  var days = Math.floor((Date.now() - new Date(created).getTime()) / 86400000);
+  if (days < 30) return;
+  var cls = days >= 60 ? 'age-pill--red' : 'age-pill--amber';
   var pill = document.createElement('span');
   pill.className = 'age-pill ' + cls;
   pill.textContent = days + 'd';

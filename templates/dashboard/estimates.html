@@ -2,118 +2,32 @@
 
 {% block title %}Estimates{% endblock %}
 {% block page_title %}Estimates{% endblock %}
-{% block topbar_meta %}{{ today }}{% endblock %}
+{% block topbar_meta %}Last 90 days · {{ today }}{% endblock %}
 
 {% block extra_css %}
-  .summary-strip {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 12px;
-    margin-bottom: 20px;
+  .win-rate-tile {
+    position: relative;
+    overflow: hidden;
   }
-  @media (max-width: 640px) {
-    .summary-strip { grid-template-columns: repeat(2, 1fr); }
+  .win-rate-tile::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    height: 3px;
+    width: {{ win_rate }}%;
+    background: var(--green);
+    border-radius: 0 2px 0 0;
+    transition: width 0.6s ease;
   }
-  .summary-tile {
-    background: var(--bg-card);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 14px 16px;
-  }
-  .summary-tile__label {
-    font-family: 'DM Mono', monospace;
-    font-size: 10px;
-    font-weight: 500;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: var(--text-tertiary);
-    margin-bottom: 6px;
-  }
-  .summary-tile__value {
-    font-family: 'Barlow Condensed', sans-serif;
-    font-size: 32px;
-    font-weight: 700;
-    line-height: 1;
-    color: var(--text-primary);
-  }
-  .summary-tile__sub {
-    font-size: 11px;
-    color: var(--text-tertiary);
-    margin-top: 4px;
-  }
-
-  .list-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 13px 16px;
-    border-bottom: 1px solid var(--border);
-    transition: background 0.1s;
-    text-decoration: none;
-    color: inherit;
-    cursor: pointer;
-  }
-  .list-row:last-child { border-bottom: none; }
-  .list-row:hover { background: #f8fafc; }
-  .list-row__name {
-    font-size: 14px;
-    font-weight: 500;
-    color: var(--text-primary);
-  }
-  .list-row__meta {
-    font-family: 'DM Mono', monospace;
-    font-size: 11px;
-    color: var(--text-tertiary);
-    margin-top: 2px;
-  }
-  .list-row__right { text-align: right; flex-shrink: 0; margin-left: 16px; }
-  .list-row__amount {
-    font-family: 'Barlow Condensed', sans-serif;
-    font-size: 18px;
-    font-weight: 700;
-    color: var(--text-primary);
-    line-height: 1;
-  }
-  .list-row__actions {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-top: 4px;
-    justify-content: flex-end;
-  }
-
-  .age-pill {
-    font-family: 'DM Mono', monospace;
-    font-size: 10px;
-    padding: 1px 6px;
-    border-radius: 3px;
-    display: inline-block;
-    margin-left: 6px;
-  }
-  .age-pill--gray  { background: #f1f5f9; color: #64748b; }
-  .age-pill--amber { background: #FAEEDA; color: #854F0B; }
-  .age-pill--red   { background: #FCEBEB; color: #A32D2D; }
-
-  .badge-accepted { background: #EAF3DE; color: #3B6D11; }
-  .badge-sent     { background: #FAEEDA; color: #854F0B; }
-  .badge-declined { background: #FCEBEB; color: #A32D2D; }
-  .badge-draft    { background: #f3f4f6; color: #6b7280; }
-
-  .view-link {
-    font-family: 'DM Mono', monospace;
-    font-size: 11px;
-    color: var(--text-tertiary);
-    text-decoration: none;
-    white-space: nowrap;
-  }
-  .view-link:hover { color: var(--text-primary); }
 {% endblock %}
 
 {% block content %}
+<!-- Metrics -->
 <div class="summary-strip">
-  <div class="summary-tile">
+  <div class="summary-tile win-rate-tile">
     <div class="summary-tile__label">Win Rate</div>
-    <div class="summary-tile__value">{{ win_rate }}%</div>
+    <div class="summary-tile__value c-green-val">{{ win_rate }}%</div>
     <div class="summary-tile__sub">last 90 days</div>
   </div>
   <div class="summary-tile">
@@ -128,51 +42,66 @@
   </div>
   <div class="summary-tile">
     <div class="summary-tile__label">Outstanding</div>
-    <div class="summary-tile__value">{{ proposals_outstanding }}</div>
+    <div class="summary-tile__value{% if proposals_outstanding > 0 %} c-amber-val{% endif %}">
+      {{ proposals_outstanding }}
+    </div>
     <div class="summary-tile__sub">pending / sent</div>
   </div>
 </div>
 
+<!-- Estimates list -->
 <div class="card">
   <div class="card-header">
     <span style="display:flex;align-items:center;gap:10px">
-      <span class="card-title">Estimates</span>
+      <span class="card-title">Estimates — Last 90 Days</span>
       <span class="card-count">{{ proposals|length }}</span>
     </span>
-    <a href="/dashboard/estimates/new" style="font-family:'DM Mono',monospace;font-size:10px;font-weight:500;padding:4px 12px;border-radius:4px;border:none;background:#f59e0b;color:#fff;text-decoration:none;letter-spacing:0.04em;transition:opacity 0.12s;display:inline-block"
-       onmouseover="this.style.opacity='0.85'" onmouseout="this.style.opacity='1'">+ New Estimate</a>
+    <a href="/dashboard/estimates/new" class="btn btn-primary">+ New Estimate</a>
   </div>
   <div class="card-body-flush">
     {% if proposals %}
-    {% for p in proposals[:25] %}
-      {% set cust = cust_map.get(p.customer_id, {}) if p.customer_id else {} %}
-      <a href="/dashboard/proposal/{{ p.id }}" class="list-row">
-        <div>
-          <div class="list-row__name">{{ cust.get('customer_name', 'Customer') }}</div>
-          <div class="list-row__meta">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Customer</th>
+          <th>Date</th>
+          <th style="text-align:right">Amount</th>
+          <th>Status</th>
+          <th style="width:24px"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in proposals %}
+        {% set cust = cust_map.get(p.customer_id, {}) if p.customer_id else {} %}
+        <tr style="cursor:pointer" onclick="window.location='/dashboard/proposal/{{ p.id }}'">
+          <td style="font-weight:500">{{ cust.get('customer_name', '—') }}</td>
+          <td style="font-family:'DM Mono',monospace;font-size:11px;color:var(--text-tertiary)">
             {{ fmt_short_date(p.created_at) }}
-            {% if p.status == 'sent' and p.sent_at %}<span data-sent="{{ p.sent_at }}"></span>{% endif %}
-          </div>
-        </div>
-        <div class="list-row__right">
-          <div class="list-row__amount">${{ "%.0f"|format(p.amount_estimate|float) if p.amount_estimate else '—' }}</div>
-          <div class="list-row__actions">
-            {% if p.status == 'accepted' %}
-              <span class="badge badge-accepted">accepted</span>
-            {% elif p.status == 'sent' %}
-              <span class="badge badge-sent">sent</span>
-            {% elif p.status == 'declined' %}
-              <span class="badge badge-declined">declined</span>
-            {% else %}
-              <span class="badge badge-draft">{{ p.status or 'draft' }}</span>
+            {% if p.status == 'sent' and p.sent_at %}
+              <span data-sent="{{ p.sent_at }}"></span>
             {% endif %}
-            <span class="view-link">View &rarr;</span>
-          </div>
-        </div>
-      </a>
-    {% endfor %}
+          </td>
+          <td style="text-align:right;font-family:'Barlow Condensed',sans-serif;font-size:17px;font-weight:700">
+            ${{ "%.0f"|format(p.amount_estimate|float) if p.amount_estimate else '—' }}
+          </td>
+          <td>
+            {% if p.status == 'accepted' %}<span class="badge badge-green">accepted</span>
+            {% elif p.status == 'sent'    %}<span class="badge badge-amber">sent</span>
+            {% elif p.status == 'declined'%}<span class="badge badge-red">declined</span>
+            {% else %}<span class="badge badge-gray">{{ p.status or 'draft' }}</span>{% endif %}
+          </td>
+          <td style="color:var(--text-tertiary);font-size:13px">→</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
     {% else %}
-    <div class="empty-state">No estimates in the last 90 days.</div>
+    <div class="empty-state">
+      No estimates in the last 90 days.<br>
+      <a href="/dashboard/estimates/new" style="font-size:12px;color:var(--blue);text-decoration:none;margin-top:4px;display:inline-block">
+        Create your first estimate →
+      </a>
+    </div>
     {% endif %}
   </div>
 </div>
@@ -182,12 +111,10 @@
 <script>
 document.querySelectorAll('[data-sent]').forEach(function(el) {
   var sent = el.getAttribute('data-sent');
-  if (!sent || sent === '') return;
+  if (!sent) return;
   var days = Math.floor((Date.now() - new Date(sent).getTime()) / 86400000);
   if (days < 0) return;
-  var cls = days >= 7 ? 'age-pill--red'
-          : days >= 3 ? 'age-pill--amber'
-          : 'age-pill--gray';
+  var cls = days >= 7 ? 'age-pill--red' : days >= 3 ? 'age-pill--amber' : 'age-pill--gray';
   var pill = document.createElement('span');
   pill.className = 'age-pill ' + cls;
   pill.textContent = days + 'd';

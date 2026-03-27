@@ -1,120 +1,134 @@
 {% extends "base.html" %}
 
-{% block title %}Job Detail{% endblock %}
+{% block title %}{{ job.job_type|capitalize if job.job_type else 'Job' }} — Job Detail{% endblock %}
 {% block page_title %}Job Detail{% endblock %}
 {% block topbar_meta %}{{ fmt_date(job.scheduled_date) if job.scheduled_date else today }}{% endblock %}
 
 {% block extra_css %}
-  .detail-back { font-size: 13px; color: var(--text-secondary); text-decoration: none; margin-bottom: 14px; display: inline-block; }
-  .detail-back:hover { color: var(--blue); }
-  .status-banner {
-    padding: 10px 16px;
-    border-radius: 8px;
+  .job-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 18px;
+    flex-wrap: wrap;
+  }
+  .job-title {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 32px;
+    font-weight: 700;
+    color: var(--text-primary);
+    text-transform: capitalize;
+    line-height: 1;
+    margin-bottom: 4px;
+  }
+  .job-subtitle {
     font-family: 'DM Mono', monospace;
-    font-size: 12px;
+    font-size: 11px;
+    color: var(--text-tertiary);
+  }
+  .job-header-right {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-shrink: 0;
+  }
+
+  .stat-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
     font-weight: 500;
     text-transform: uppercase;
-    letter-spacing: 0.06em;
-    margin-bottom: 16px;
+    letter-spacing: 0.05em;
+    padding: 4px 10px;
+    border-radius: 20px;
+    border: 1px solid var(--border-strong);
+    color: var(--text-secondary);
+    background: var(--bg-card);
   }
-  .detail-dl { margin: 0; }
-  .detail-dl dt {
-    font-family: 'DM Mono', monospace;
-    font-size: 10px;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    color: var(--text-tertiary);
-    margin-top: 12px;
-  }
-  .detail-dl dt:first-child { margin-top: 0; }
-  .detail-dl dd {
-    font-size: 14px;
-    color: var(--text-primary);
-    margin: 2px 0 0 0;
-  }
-  .sms-dot {
-    display: inline-block;
-    width: 7px;
-    height: 7px;
+  .stat-pill-dot {
+    width: 6px; height: 6px;
     border-radius: 50%;
-    vertical-align: middle;
-    margin-right: 4px;
+    flex-shrink: 0;
   }
-  .mini-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-  .mini-table td {
-    padding: 8px 10px;
-    border-bottom: 1px solid var(--border);
-    vertical-align: middle;
+
+  .amount-large {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--text-primary);
   }
-  .mini-table tr:last-child td { border-bottom: none; }
-  .mini-table tr { cursor: pointer; transition: background 0.1s; }
-  .mini-table tr:hover td { background: #f8fafc; }
-  .activity-item {
-    padding: 10px 16px;
-    border-bottom: 1px solid var(--border);
-    font-size: 13px;
-  }
-  .activity-item:last-child { border-bottom: none; }
-  .activity-agent {
-    font-family: 'DM Mono', monospace;
-    font-size: 11px;
-    color: var(--text-tertiary);
-  }
-  .activity-time {
-    font-family: 'DM Mono', monospace;
-    font-size: 10px;
-    color: var(--text-tertiary);
-    float: right;
-  }
-  .activity-summary { color: var(--text-secondary); margin-top: 2px; }
-  .detail-link {
-    font-family: 'DM Mono', monospace;
-    font-size: 11px;
-    color: var(--text-tertiary);
-    text-decoration: none;
-  }
-  .detail-link:hover { color: var(--text-primary); }
 {% endblock %}
 
 {% block content %}
-<a href="/dashboard/" class="detail-back">&larr; Control Board</a>
+<a href="/dashboard/" class="back-link">&larr; Control Board</a>
 
+<!-- Job header -->
 {% set st = job.status or 'new' %}
-{% if st == 'in_progress' %}
-<div class="status-banner" style="background:#FAEEDA;color:#854F0B;">{{ st|replace('_',' ')|upper }}</div>
-{% elif st == 'completed' %}
-<div class="status-banner" style="background:#EAF3DE;color:#3B6D11;">{{ st|upper }}</div>
-{% elif st == 'cancelled' %}
-<div class="status-banner" style="background:#FCEBEB;color:#A32D2D;">{{ st|upper }}</div>
-{% else %}
-<div class="status-banner" style="background:#dbeafe;color:#1d4ed8;">{{ st|replace('_',' ')|upper }}</div>
-{% endif %}
+<div class="job-header">
+  <div>
+    <div class="job-title">{{ job.job_type or 'Job' }}</div>
+    <div class="job-subtitle">
+      Job #{{ job.id[:8] if job.id else '—' }}
+      {% if job.scheduled_date %} · {{ fmt_date(job.scheduled_date) }}{% endif %}
+    </div>
+  </div>
+  <div class="job-header-right">
+    <span class="stat-pill">
+      <span class="stat-pill-dot"
+        style="background:
+          {% if st == 'completed' %}var(--green)
+          {% elif st == 'in_progress' %}var(--amber)
+          {% elif st == 'cancelled' %}var(--red)
+          {% else %}var(--blue){% endif %}">
+      </span>
+      {{ st|replace('_',' ') }}
+    </span>
+    {% if job.estimated_amount %}
+    <span class="amount-large">${{ "%.0f"|format(job.estimated_amount|float) }}</span>
+    {% endif %}
+  </div>
+</div>
 
 <div class="grid-2" style="margin-bottom:16px">
   <!-- Job Details -->
   <div class="card">
-    <div class="card-header">
-      <span class="card-title">Job Details</span>
-    </div>
+    <div class="card-header"><span class="card-title">Job Details</span></div>
     <div class="card-body">
       <dl class="detail-dl">
         <dt>Type</dt>
-        <dd style="font-family:'Barlow Condensed',sans-serif;font-size:18px;font-weight:700;text-transform:capitalize">{{ job.job_type or '—' }}</dd>
+        <dd style="font-family:'Barlow Condensed',sans-serif;font-size:18px;font-weight:700;text-transform:capitalize">
+          {{ job.job_type or '—' }}
+        </dd>
+
+        {% if job.scheduled_date %}
         <dt>Scheduled</dt>
-        <dd>{{ fmt_date(job.scheduled_date) if job.scheduled_date else '—' }}</dd>
+        <dd>{{ fmt_date(job.scheduled_date) }}</dd>
+        {% endif %}
+
         <dt>Address</dt>
         <dd>{{ job.job_description or customer.customer_address or '—' }}</dd>
+
         {% if job.job_notes %}
         <dt>Notes</dt>
-        <dd>{{ job.job_notes }}</dd>
+        <dd style="color:var(--text-secondary)">{{ job.job_notes }}</dd>
         {% endif %}
+
         {% if job.estimated_amount %}
         <dt>Estimated</dt>
-        <dd>${{ "%.0f"|format(job.estimated_amount|float) }}</dd>
+        <dd style="font-family:'Barlow Condensed',sans-serif;font-size:17px;font-weight:700">
+          ${{ "%.0f"|format(job.estimated_amount|float) }}
+        </dd>
         {% endif %}
+
         {% if job.actual_amount %}
         <dt>Actual</dt>
-        <dd>${{ "%.0f"|format(job.actual_amount|float) }}</dd>
+        <dd style="font-family:'Barlow Condensed',sans-serif;font-size:17px;font-weight:700;color:var(--green)">
+          ${{ "%.0f"|format(job.actual_amount|float) }}
+        </dd>
         {% endif %}
       </dl>
     </div>
@@ -124,22 +138,29 @@
   <div class="card">
     <div class="card-header">
       <span class="card-title">Customer</span>
-      {% if customer.id %}<a href="/dashboard/customers/{{ customer.id }}" class="detail-link">View &rarr;</a>{% endif %}
+      {% if customer.id %}
+      <a href="/dashboard/customers/{{ customer.id }}" class="view-link">View profile →</a>
+      {% endif %}
     </div>
     <div class="card-body">
       {% if customer.customer_name %}
       <dl class="detail-dl">
         <dt>Name</dt>
-        <dd style="font-weight:500">{{ customer.customer_name }}</dd>
+        <dd style="font-weight:600;font-size:15px">{{ customer.customer_name }}</dd>
+
         <dt>Phone</dt>
         <dd style="font-family:'DM Mono',monospace;font-size:13px">{{ fmt_phone(customer.customer_phone) }}</dd>
+
         {% if customer.customer_address %}
         <dt>Address</dt>
         <dd>{{ customer.customer_address }}</dd>
         {% endif %}
-        <dt>SMS Opt-in</dt>
+
+        <dt>SMS Consent</dt>
         <dd>
-          <span class="sms-dot" style="background:{% if customer.sms_consent %}var(--green){% else %}#d1d5db{% endif %}"></span>
+          <span class="sms-dot"
+                style="background:{% if customer.sms_consent %}var(--green){% else %}#d1d5db{% endif %}">
+          </span>
           {{ 'Opted in' if customer.sms_consent else 'Not opted in' }}
         </dd>
       </dl>
@@ -150,27 +171,33 @@
   </div>
 </div>
 
+<!-- Proposals + Invoices -->
 <div class="grid-2" style="margin-bottom:16px">
-  <!-- Proposals -->
   <div class="card">
     <div class="card-header">
-      <span class="card-title">Proposals</span>
-      <span class="card-count">{{ proposals|length }}</span>
+      <span style="display:flex;align-items:center;gap:10px">
+        <span class="card-title">Proposals</span>
+        <span class="card-count">{{ proposals|length }}</span>
+      </span>
     </div>
     <div class="card-body-flush">
       {% if proposals %}
       <table class="mini-table">
         {% for p in proposals %}
         <tr onclick="window.location='/dashboard/proposal/{{ p.id }}'">
-          <td>${{ "%.0f"|format(p.amount_estimate|float) if p.amount_estimate else '—' }}</td>
-          <td>{{ fmt_short_date(p.created_at) }}</td>
+          <td style="font-family:'Barlow Condensed',sans-serif;font-size:16px;font-weight:700">
+            ${{ "%.0f"|format(p.amount_estimate|float) if p.amount_estimate else '—' }}
+          </td>
+          <td style="font-family:'DM Mono',monospace;font-size:11px;color:var(--text-tertiary)">
+            {{ fmt_short_date(p.created_at) }}
+          </td>
           <td>
             {% if p.status == 'accepted' %}<span class="badge badge-green">accepted</span>
-            {% elif p.status == 'sent' %}<span class="badge badge-amber">sent</span>
-            {% elif p.status == 'declined' %}<span class="badge badge-red">declined</span>
+            {% elif p.status == 'sent'    %}<span class="badge badge-amber">sent</span>
+            {% elif p.status == 'declined'%}<span class="badge badge-red">declined</span>
             {% else %}<span class="badge badge-gray">{{ p.status or 'draft' }}</span>{% endif %}
           </td>
-          <td style="color:var(--text-tertiary);font-family:'DM Mono',monospace;font-size:11px">&rarr;</td>
+          <td style="color:var(--text-tertiary);font-size:13px">→</td>
         </tr>
         {% endfor %}
       </table>
@@ -180,26 +207,31 @@
     </div>
   </div>
 
-  <!-- Invoices -->
   <div class="card">
     <div class="card-header">
-      <span class="card-title">Invoices</span>
-      <span class="card-count">{{ invoices|length }}</span>
+      <span style="display:flex;align-items:center;gap:10px">
+        <span class="card-title">Invoices</span>
+        <span class="card-count">{{ invoices|length }}</span>
+      </span>
     </div>
     <div class="card-body-flush">
       {% if invoices %}
       <table class="mini-table">
         {% for inv in invoices %}
         <tr onclick="window.location='/dashboard/invoice/{{ inv.id }}'">
-          <td>${{ "%.2f"|format(inv.amount_due|float) if inv.amount_due else '—' }}</td>
-          <td>{{ fmt_short_date(inv.created_at) }}</td>
+          <td style="font-family:'Barlow Condensed',sans-serif;font-size:16px;font-weight:700">
+            ${{ "%.2f"|format(inv.amount_due|float) if inv.amount_due else '—' }}
+          </td>
+          <td style="font-family:'DM Mono',monospace;font-size:11px;color:var(--text-tertiary)">
+            {{ fmt_short_date(inv.created_at) }}
+          </td>
           <td>
-            {% if inv.status == 'paid' %}<span class="badge badge-green">paid</span>
-            {% elif inv.status == 'sent' %}<span class="badge badge-amber">sent</span>
-            {% elif inv.status == 'overdue' %}<span class="badge badge-red">overdue</span>
+            {% if inv.status == 'paid'    %}<span class="badge badge-green">paid</span>
+            {% elif inv.status == 'sent'  %}<span class="badge badge-amber">sent</span>
+            {% elif inv.status == 'overdue'%}<span class="badge badge-red">overdue</span>
             {% else %}<span class="badge badge-gray">{{ inv.status or 'draft' }}</span>{% endif %}
           </td>
-          <td style="color:var(--text-tertiary);font-family:'DM Mono',monospace;font-size:11px">&rarr;</td>
+          <td style="color:var(--text-tertiary);font-size:13px">→</td>
         </tr>
         {% endfor %}
       </table>
@@ -210,19 +242,25 @@
   </div>
 </div>
 
-{% if activity %}
 <!-- Agent Activity -->
+{% if activity %}
 <div class="card">
   <div class="card-header">
-    <span class="card-title">Agent Activity</span>
-    <span class="card-count">{{ activity|length }}</span>
+    <span style="display:flex;align-items:center;gap:10px">
+      <span class="card-title">Agent Activity</span>
+      <span class="card-count">{{ activity|length }}</span>
+    </span>
   </div>
   <div class="card-body-flush">
     {% for a in activity[:10] %}
     <div class="activity-item">
-      <span class="activity-time">{{ fmt_activity_time(a.created_at) }}</span>
-      <div class="activity-agent">{{ a.agent_name }}</div>
-      <div class="activity-summary">{{ a.output_summary or a.action_taken }}</div>
+      <div class="activity-row">
+        <div>
+          <div class="activity-agent">{{ a.agent_name or 'agent' }}</div>
+          <div class="activity-summary">{{ a.output_summary or a.action_taken or '—' }}</div>
+        </div>
+        <div class="activity-time">{{ fmt_activity_time(a.created_at) }}</div>
+      </div>
     </div>
     {% endfor %}
   </div>

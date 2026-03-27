@@ -10,31 +10,41 @@
   <style>
     /* ── Variables ────────────────────────────────────────────── */
     :root {
-      /* Layout */
-      --sidebar-w:           220px;
-      --topbar-h:            48px;
+      --sidebar-w:           224px;
+      --topbar-h:            50px;
 
-      /* Sidebar — Bolts11 navy */
-      --sidebar-bg:          #111e31;
-      --sidebar-border:      rgba(255,255,255,0.07);
-      --sidebar-text:        rgba(255,255,255,0.50);
-      --sidebar-text-hover:  rgba(255,255,255,0.85);
-      --sidebar-active-bg:   rgba(245,158,11,0.12);
+      --sidebar-bg:          #0d1829;
+      --sidebar-border:      rgba(255,255,255,0.06);
+      --sidebar-text:        rgba(255,255,255,0.42);
+      --sidebar-text-hover:  rgba(255,255,255,0.82);
+      --sidebar-active-bg:   rgba(245,158,11,0.13);
       --sidebar-active-text: #f59e0b;
 
-      /* Page surface */
-      --bg-page:             #F1EFE8;
+      --bg-page:             #EEECEA;
       --bg-card:             #ffffff;
-      --border:              rgba(0,0,0,0.09);
-      --text-primary:        #1a1a18;
-      --text-secondary:      #5F5E5A;
-      --text-tertiary:       #888780;
+      --border:              rgba(0,0,0,0.08);
+      --border-strong:       rgba(0,0,0,0.14);
+      --text-primary:        #171714;
+      --text-secondary:      #58574F;
+      --text-tertiary:       #8C8B84;
 
-      /* Status colors */
-      --green:               #639922;
-      --amber:               #BA7517;
-      --red:                 #E24B4A;
+      --green:               #4a8017;
+      --green-bg:            #EBF5DF;
+      --green-text:          #2E5B0A;
+      --amber:               #B87314;
+      --amber-bg:            #FEF0D8;
+      --amber-text:          #7C4E0A;
+      --red:                 #D94140;
+      --red-bg:              #FDECEC;
+      --red-text:            #9B1F1F;
       --blue:                #2563eb;
+      --blue-bg:             #DBEAFE;
+      --blue-text:           #1E40AF;
+
+      --shadow-sm:  0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+      --shadow-md:  0 4px 12px rgba(0,0,0,0.08), 0 1px 3px rgba(0,0,0,0.04);
+      --radius:     10px;
+      --radius-sm:  6px;
     }
 
     /* ── Reset ────────────────────────────────────────────────── */
@@ -45,6 +55,7 @@
       background: var(--bg-page);
       color: var(--text-primary);
       display: flex;
+      -webkit-font-smoothing: antialiased;
     }
 
     /* ── Sidebar ──────────────────────────────────────────────── */
@@ -56,157 +67,100 @@
       flex-direction: column;
       flex-shrink: 0;
       overflow-y: auto;
+      overflow-x: hidden;
       z-index: 50;
+      scrollbar-width: none;
+    }
+    #sidebar::-webkit-scrollbar { display: none; }
+
+    .sidebar-brand-wrap {
+      padding: 20px 18px 18px;
+      border-bottom: 1px solid var(--sidebar-border);
+      margin-bottom: 8px;
     }
     .sidebar-brand {
-      padding: 20px 18px 6px;
       font-family: 'Barlow Condensed', sans-serif;
-      font-size: 22px;
+      font-size: 21px;
       font-weight: 700;
       color: #fff;
       text-transform: uppercase;
-      letter-spacing: 0.04em;
+      letter-spacing: 0.05em;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+    }
+    .sidebar-bolt {
+      color: #f59e0b;
+      font-size: 18px;
+      filter: drop-shadow(0 0 6px rgba(245,158,11,0.45));
     }
     .sidebar-sub {
-      padding: 0 18px 16px;
       font-family: 'DM Mono', monospace;
       font-size: 10px;
-      color: var(--sidebar-text);
+      color: rgba(255,255,255,0.27);
       text-transform: uppercase;
-      letter-spacing: 0.08em;
+      letter-spacing: 0.09em;
+      margin-top: 4px;
     }
-    .sidebar-section {
+
+    .sidebar-section-label {
       font-family: 'DM Mono', monospace;
       font-size: 9px;
       text-transform: uppercase;
-      letter-spacing: 0.1em;
-      color: #4b4f63;
-      padding: 14px 18px 6px;
-    }
-    .sidebar-link {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      padding: 9px 18px;
-      font-size: 13px;
-      font-weight: 500;
-      color: var(--sidebar-text);
-      text-decoration: none;
-      transition: all 0.12s;
-      border-left: 3px solid transparent;
-    }
-    .sidebar-link:hover {
-      color: var(--sidebar-text-hover);
-      background: rgba(255,255,255,0.04);
-    }
-    .sidebar-link.active {
-      color: var(--sidebar-active-text);
-      background: var(--sidebar-active-bg);
-      border-left-color: var(--sidebar-active-text);
-    }
-    .sidebar-icon {
-      width: 18px;
-      text-align: center;
-      font-size: 14px;
-      flex-shrink: 0;
-    }
-    .sidebar-spacer { flex: 1; }
-    .sidebar-logout {
-      display: block;
-      padding: 10px 18px;
-      font-size: 13px;
-      color: #64748b;
-      text-decoration: none;
-      border-top: 1px solid var(--sidebar-border);
-    }
-    .sidebar-logout:hover { color: #f1f5f9; }
-    .sidebar-footer {
-      padding: 12px 18px;
-      font-family: 'DM Mono', monospace;
-      font-size: 10px;
-      color: #3d4057;
-      border-top: 1px solid var(--sidebar-border);
+      letter-spacing: 0.12em;
+      color: rgba(255,255,255,0.18);
+      padding: 14px 18px 5px;
     }
 
     /* ── Collapsible nav ──────────────────────────────────────── */
-    .nav-section { }
-
     .nav-section-header {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 9px 18px 9px 18px;
+      padding: 8px 14px 8px 18px;
       cursor: pointer;
       user-select: none;
-      transition: background 0.1s;
-      border-left: 3px solid transparent;
+      transition: background 0.12s;
+      border-left: 2px solid transparent;
+      margin: 1px 0;
     }
-    .nav-section-header:hover {
-      background: rgba(255,255,255,0.04);
-    }
+    .nav-section-header:hover { background: rgba(255,255,255,0.04); }
     .nav-section-header.active {
-      color: var(--sidebar-active-text);
-      background: var(--sidebar-active-bg);
       border-left-color: var(--sidebar-active-text);
+      background: var(--sidebar-active-bg);
     }
-
     .nav-section-label {
       display: flex;
       align-items: center;
-      gap: 10px;
+      gap: 9px;
       font-size: 13px;
       font-weight: 500;
       color: var(--sidebar-text);
     }
-    .nav-section-header:hover .nav-section-label {
-      color: var(--sidebar-text-hover);
-    }
-    .nav-section-header.active .nav-section-label {
-      color: var(--sidebar-active-text);
-    }
-
-    .nav-section-icon {
-      width: 18px;
-      text-align: center;
-      font-size: 13px;
-      flex-shrink: 0;
-    }
-
+    .nav-section-header:hover .nav-section-label { color: var(--sidebar-text-hover); }
+    .nav-section-header.active .nav-section-label { color: var(--sidebar-active-text); }
+    .nav-section-icon { width: 16px; text-align: center; font-size: 13px; flex-shrink: 0; opacity: 0.8; }
     .nav-chevron {
-      font-size: 9px;
-      color: var(--sidebar-text);
+      font-size: 8px;
+      color: rgba(255,255,255,0.2);
       transition: transform 0.18s ease;
-      flex-shrink: 0;
     }
-    .nav-section-header.open .nav-chevron {
-      transform: rotate(180deg);
-    }
-
-    .nav-children {
-      display: none;
-      flex-direction: column;
-      padding-bottom: 4px;
-    }
-    .nav-children.open {
-      display: flex;
-    }
+    .nav-section-header.open .nav-chevron { transform: rotate(180deg); }
+    .nav-children { display: none; flex-direction: column; padding-bottom: 2px; }
+    .nav-children.open { display: flex; }
 
     .nav-child-link {
       display: flex;
       align-items: center;
-      justify-content: space-between;
-      padding: 7px 18px 7px 46px;
+      padding: 6px 18px 6px 44px;
       font-size: 12.5px;
       color: var(--sidebar-text);
       text-decoration: none;
       transition: color 0.1s, background 0.1s;
-      border-left: 3px solid transparent;
+      border-left: 2px solid transparent;
+      margin: 1px 0;
     }
-    .nav-child-link:hover {
-      color: var(--sidebar-text-hover);
-      background: rgba(255,255,255,0.03);
-      text-decoration: none;
-    }
+    .nav-child-link:hover { color: var(--sidebar-text-hover); background: rgba(255,255,255,0.03); text-decoration: none; }
     .nav-child-link.active {
       color: var(--sidebar-active-text);
       background: var(--sidebar-active-bg);
@@ -217,53 +171,43 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 10px;
-      padding: 9px 18px;
+      gap: 9px;
+      padding: 8px 14px 8px 18px;
       font-size: 13px;
       font-weight: 500;
       color: var(--sidebar-text);
       text-decoration: none;
       transition: all 0.12s;
-      border-left: 3px solid transparent;
+      border-left: 2px solid transparent;
+      margin: 1px 0;
     }
-    .nav-single-link:hover {
-      color: var(--sidebar-text-hover);
-      background: rgba(255,255,255,0.04);
-      text-decoration: none;
-    }
+    .nav-single-link:hover { color: var(--sidebar-text-hover); background: rgba(255,255,255,0.04); text-decoration: none; }
     .nav-single-link.active {
       color: var(--sidebar-active-text);
       background: var(--sidebar-active-bg);
       border-left-color: var(--sidebar-active-text);
     }
-    .nav-single-link.disabled {
-      opacity: 0.38;
-      cursor: default;
-      pointer-events: none;
-    }
+    .nav-single-link.disabled { opacity: 0.32; cursor: default; pointer-events: none; }
+    .nav-single-inner { display: flex; align-items: center; gap: 9px; }
 
     .nav-coming-soon {
       font-family: 'DM Mono', monospace;
       font-size: 9px;
-      font-weight: 500;
       padding: 1px 5px;
       border-radius: 3px;
-      background: rgba(245,158,11,0.15);
-      color: #f59e0b;
+      background: rgba(245,158,11,0.12);
+      color: rgba(245,158,11,0.55);
       letter-spacing: 0.03em;
       white-space: nowrap;
-      flex-shrink: 0;
     }
 
     /* ── Hamburger (mobile only) ──────────────────────────────── */
     #hamburger {
       display: none;
       position: fixed;
-      top: 12px;
-      left: 12px;
+      top: 12px; left: 12px;
       z-index: 60;
-      width: 36px;
-      height: 36px;
+      width: 36px; height: 36px;
       border-radius: 6px;
       border: none;
       background: var(--sidebar-bg);
@@ -273,334 +217,534 @@
       justify-content: center;
       gap: 4px;
     }
-    #hamburger span {
-      display: block;
-      width: 18px;
-      height: 2px;
-      background: #fff;
-      border-radius: 1px;
-      transition: transform 0.2s;
-    }
+    #hamburger span { display: block; width: 18px; height: 2px; background: #fff; border-radius: 1px; }
     #sidebar-overlay {
       display: none;
       position: fixed;
-      top: 0; left: 0; right: 0; bottom: 0;
+      inset: 0;
       background: rgba(0,0,0,0.5);
       z-index: 45;
     }
 
     @media (max-width: 768px) {
       #hamburger { display: flex; }
-      #sidebar {
-        position: fixed;
-        top: 0; left: 0;
-        transform: translateX(-100%);
-        transition: transform 0.25s ease;
-      }
+      #sidebar { position: fixed; top: 0; left: 0; transform: translateX(-100%); transition: transform 0.25s ease; }
       #sidebar.open { transform: translateX(0); }
       #sidebar.open ~ #sidebar-overlay { display: block; }
     }
 
-    /* ── Main content ─────────────────────────────────────────── */
-    #main {
-      flex: 1;
+    .sidebar-spacer { flex: 1; min-height: 20px; }
+    .sidebar-bottom { border-top: 1px solid var(--sidebar-border); padding: 12px 18px; }
+    .sidebar-logout {
       display: flex;
-      flex-direction: column;
-      overflow: hidden;
-      min-width: 0;
+      align-items: center;
+      gap: 8px;
+      padding: 7px 0;
+      font-size: 13px;
+      color: rgba(255,255,255,0.28);
+      text-decoration: none;
+      transition: color 0.12s;
     }
+    .sidebar-logout:hover { color: rgba(255,255,255,0.65); text-decoration: none; }
+    .sidebar-version {
+      font-family: 'DM Mono', monospace;
+      font-size: 9px;
+      color: rgba(255,255,255,0.14);
+      letter-spacing: 0.06em;
+      margin-top: 6px;
+    }
+
+    /* ── Main content ─────────────────────────────────────────── */
+    #main { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-width: 0; }
 
     /* ── Top bar ──────────────────────────────────────────────── */
     #topbar {
       height: var(--topbar-h);
       flex-shrink: 0;
-      background: #1a2e4a;
-      border-bottom: 0.5px solid rgba(255,255,255,0.08);
+      background: #132038;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 0 20px;
+      padding: 0 22px;
     }
     @media (max-width: 768px) { #topbar { padding-left: 56px; } }
+    .topbar-left { display: flex; align-items: center; gap: 12px; }
     .topbar-title {
       font-family: 'Barlow Condensed', sans-serif;
-      font-size: 14px;
+      font-size: 15px;
       font-weight: 600;
       text-transform: uppercase;
-      letter-spacing: 0.06em;
-      color: rgba(255,255,255,0.70);
+      letter-spacing: 0.07em;
+      color: rgba(255,255,255,0.65);
     }
     .topbar-meta {
       font-family: 'DM Mono', monospace;
       font-size: 10px;
-      color: rgba(255,255,255,0.35);
+      color: rgba(255,255,255,0.27);
+      padding-top: 1px;
     }
 
     /* ── Content scroll area ──────────────────────────────────── */
     #content {
       flex: 1;
       overflow-y: auto;
-      padding: 20px;
+      padding: 20px 22px;
+      scrollbar-width: thin;
+      scrollbar-color: rgba(0,0,0,0.10) transparent;
     }
+    #content::-webkit-scrollbar { width: 5px; }
+    #content::-webkit-scrollbar-track { background: transparent; }
+    #content::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.10); border-radius: 3px; }
 
-    /* ── Shared card styles ───────────────────────────────────── */
+    /* ── Card ─────────────────────────────────────────────────── */
     .card {
       background: var(--bg-card);
       border: 1px solid var(--border);
-      border-radius: 8px;
+      border-radius: var(--radius);
       overflow: hidden;
+      box-shadow: var(--shadow-sm);
     }
     .card-header {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 12px 16px;
+      padding: 13px 16px;
       border-bottom: 1px solid var(--border);
+      background: #FDFCFB;
     }
     .card-title {
       font-family: 'DM Mono', monospace;
-      font-size: 11px;
+      font-size: 10.5px;
       font-weight: 500;
       text-transform: uppercase;
-      letter-spacing: 0.06em;
+      letter-spacing: 0.07em;
       color: var(--text-secondary);
     }
-    .card-count {
-      font-family: 'DM Mono', monospace;
-      font-size: 11px;
-      color: var(--text-tertiary);
-    }
+    .card-count { font-family: 'DM Mono', monospace; font-size: 11px; color: var(--text-tertiary); }
     .card-body { padding: 16px; }
     .card-body-flush { padding: 0; }
 
     /* ── Metrics row ──────────────────────────────────────────── */
     .metrics-row {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
       gap: 12px;
-      margin-bottom: 16px;
+      margin-bottom: 18px;
     }
     .metric {
       background: var(--bg-card);
       border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 14px 16px;
+      border-radius: var(--radius);
+      padding: 15px 17px;
+      box-shadow: var(--shadow-sm);
     }
     .metric-label {
       font-family: 'DM Mono', monospace;
-      font-size: 10px;
+      font-size: 9.5px;
       font-weight: 500;
       text-transform: uppercase;
-      letter-spacing: 0.08em;
+      letter-spacing: 0.09em;
       color: var(--text-tertiary);
     }
     .metric-value {
       font-family: 'Barlow Condensed', sans-serif;
-      font-size: 28px;
+      font-size: 30px;
       font-weight: 700;
       line-height: 1.1;
-      margin-top: 4px;
+      margin-top: 5px;
+      color: var(--text-primary);
     }
-    .metric-sub {
-      font-size: 11px;
-      color: var(--text-tertiary);
-      margin-top: 2px;
-    }
+    .metric-sub { font-size: 11px; color: var(--text-tertiary); margin-top: 3px; }
+
     .c-green { color: var(--green); }
     .c-amber { color: var(--amber); }
-    .c-red { color: var(--red); }
-    .c-blue { color: var(--blue); }
+    .c-red   { color: var(--red); }
+    .c-blue  { color: var(--blue); }
+
+    /* ── Summary strip (4-col) ───────────────────────────────── */
+    .summary-strip {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+      margin-bottom: 18px;
+    }
+    @media (max-width: 640px) { .summary-strip { grid-template-columns: repeat(2, 1fr); } }
+    .summary-tile {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 15px 17px;
+      box-shadow: var(--shadow-sm);
+      transition: box-shadow 0.15s, transform 0.15s;
+    }
+    .summary-tile:hover { box-shadow: var(--shadow-md); transform: translateY(-1px); }
+    .summary-tile__label {
+      font-family: 'DM Mono', monospace;
+      font-size: 9.5px;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.09em;
+      color: var(--text-tertiary);
+      margin-bottom: 7px;
+    }
+    .summary-tile__value {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 34px;
+      font-weight: 700;
+      line-height: 1;
+      color: var(--text-primary);
+    }
+    .summary-tile__sub { font-size: 11px; color: var(--text-tertiary); margin-top: 5px; }
+    .c-amber-val { color: var(--amber); }
+    .c-green-val { color: var(--green); }
 
     /* ── Data table ───────────────────────────────────────────── */
     .data-table { width: 100%; border-collapse: collapse; font-size: 13px; }
     .data-table th {
       font-family: 'DM Mono', monospace;
-      font-size: 10px;
+      font-size: 9.5px;
       text-transform: uppercase;
-      letter-spacing: 0.06em;
+      letter-spacing: 0.07em;
       color: var(--text-tertiary);
       text-align: left;
-      padding: 8px 12px;
+      padding: 9px 14px;
       border-bottom: 1px solid var(--border);
       font-weight: 500;
+      background: #FDFCFB;
     }
-    .data-table td {
-      padding: 10px 12px;
-      border-bottom: 1px solid var(--border);
-      vertical-align: middle;
-    }
+    .data-table td { padding: 11px 14px; border-bottom: 1px solid var(--border); vertical-align: middle; }
     .data-table tr:last-child td { border-bottom: none; }
-    .data-table tr:hover td { background: #ECEAE3; }
+    .data-table tbody tr { transition: background 0.1s; }
+    .data-table tbody tr:hover td { background: #F5F3EE; }
+
+    /* ── List row (flex) ──────────────────────────────────────── */
+    .list-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 13px 16px;
+      border-bottom: 1px solid var(--border);
+      transition: background 0.1s;
+      text-decoration: none;
+      color: inherit;
+      cursor: pointer;
+    }
+    .list-row:last-child { border-bottom: none; }
+    .list-row:hover { background: #F5F3EE; text-decoration: none; }
+    .list-row__name { font-size: 14px; font-weight: 500; color: var(--text-primary); }
+    .list-row__meta { font-family: 'DM Mono', monospace; font-size: 11px; color: var(--text-tertiary); margin-top: 2px; }
+    .list-row__right { text-align: right; flex-shrink: 0; margin-left: 16px; }
+    .list-row__amount {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 19px;
+      font-weight: 700;
+      color: var(--text-primary);
+      line-height: 1;
+    }
+    .list-row__actions { display: flex; align-items: center; gap: 8px; margin-top: 4px; justify-content: flex-end; }
 
     /* ── Badge ────────────────────────────────────────────────── */
     .badge {
       font-family: 'DM Mono', monospace;
-      font-size: 10px;
+      font-size: 9.5px;
       font-weight: 500;
       padding: 2px 8px;
       border-radius: 4px;
       text-transform: uppercase;
       letter-spacing: 0.04em;
       display: inline-block;
+      white-space: nowrap;
     }
-    .badge-green { background: #EAF3DE; color: #3B6D11; }
-    .badge-amber { background: #FAEEDA; color: #854F0B; }
-    .badge-red { background: #FCEBEB; color: #A32D2D; }
-    .badge-blue { background: #dbeafe; color: #1d4ed8; }
-    .badge-gray { background: #F1EFE8; color: #5F5E5A; }
+    .badge-green  { background: var(--green-bg);  color: var(--green-text); }
+    .badge-amber  { background: var(--amber-bg);  color: var(--amber-text); }
+    .badge-red    { background: var(--red-bg);    color: var(--red-text); }
+    .badge-blue   { background: var(--blue-bg);   color: var(--blue-text); }
+    .badge-gray   { background: #F0EFEB;           color: var(--text-secondary); }
+    .badge-paid     { background: var(--green-bg); color: var(--green-text); }
+    .badge-sent     { background: var(--amber-bg); color: var(--amber-text); }
+    .badge-overdue  { background: var(--red-bg);   color: var(--red-text); }
+    .badge-draft    { background: #F0EFEB;          color: var(--text-secondary); }
+    .badge-accepted { background: var(--green-bg); color: var(--green-text); }
+    .badge-declined { background: var(--red-bg);   color: var(--red-text); }
+    .badge-scheduled   { background: var(--blue-bg);  color: var(--blue-text); }
+    .badge-in_progress { background: var(--amber-bg); color: var(--amber-text); }
+    .badge-completed   { background: var(--green-bg); color: var(--green-text); }
+    .badge-cancelled   { background: var(--red-bg);   color: var(--red-text); }
+    .badge-estimated   { background: var(--amber-bg); color: var(--amber-text); }
+    .badge-new         { background: #F0EFEB;          color: var(--text-secondary); }
 
-    /* ── Two-column grid ──────────────────────────────────────── */
+    /* ── Age pill ─────────────────────────────────────────────── */
+    .age-pill {
+      font-family: 'DM Mono', monospace;
+      font-size: 9.5px;
+      padding: 1px 6px;
+      border-radius: 4px;
+      display: inline-block;
+      margin-left: 5px;
+    }
+    .age-pill--gray  { background: #F0EFEB; color: var(--text-tertiary); }
+    .age-pill--amber { background: var(--amber-bg); color: var(--amber-text); }
+    .age-pill--red   { background: var(--red-bg); color: var(--red-text); }
+
+    /* ── Two-col grid ─────────────────────────────────────────── */
     .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
     @media (max-width: 900px) { .grid-2 { grid-template-columns: 1fr; } }
 
-    /* ── ID short ─────────────────────────────────────────────── */
-    .id-short {
-      font-family: 'DM Mono', monospace;
-      font-size: 11px;
-      color: var(--text-tertiary);
-    }
-
-    /* ── Empty state ──────────────────────────────────────────── */
+    /* ── Utility ──────────────────────────────────────────────── */
+    .id-short { font-family: 'DM Mono', monospace; font-size: 11px; color: var(--text-tertiary); }
     .empty-state {
-      padding: 24px;
+      padding: 30px 20px;
       text-align: center;
       color: var(--text-tertiary);
       font-size: 13px;
     }
+    .view-link {
+      font-family: 'DM Mono', monospace;
+      font-size: 11px;
+      color: var(--text-tertiary);
+      text-decoration: none;
+      white-space: nowrap;
+      transition: color 0.1s;
+    }
+    .view-link:hover { color: var(--text-primary); }
+
+    /* ── Buttons ──────────────────────────────────────────────── */
+    .btn {
+      font-family: 'DM Mono', monospace;
+      font-size: 10px;
+      font-weight: 500;
+      letter-spacing: 0.04em;
+      padding: 5px 13px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border-strong);
+      background: transparent;
+      color: var(--text-secondary);
+      text-decoration: none;
+      transition: all 0.12s;
+      display: inline-block;
+      cursor: pointer;
+    }
+    .btn:hover { background: var(--text-primary); color: #fff; border-color: var(--text-primary); text-decoration: none; }
+    .btn-primary { background: #f59e0b; color: #fff; border-color: #f59e0b; }
+    .btn-primary:hover { background: #d97706; border-color: #d97706; color: #fff; }
+    .btn-navy { background: #132038; color: #fff; border-color: #132038; }
+    .btn-navy:hover { background: #1a2e4a; border-color: #1a2e4a; color: #fff; }
+
+    /* ── Export btn ───────────────────────────────────────────── */
+    .export-btn {
+      font-family: 'DM Mono', monospace;
+      font-size: 10px;
+      padding: 5px 12px;
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius-sm);
+      background: transparent;
+      color: var(--text-secondary);
+      text-decoration: none;
+      transition: all 0.12s;
+    }
+    .export-btn:hover { background: var(--text-primary); color: #fff; border-color: var(--text-primary); text-decoration: none; }
+
+    /* ── Search bar ───────────────────────────────────────────── */
+    .search-bar {
+      font-family: 'Barlow', sans-serif;
+      font-size: 13px;
+      padding: 9px 14px;
+      border: none;
+      border-bottom: 1px solid var(--border);
+      background: #FDFCFB;
+      color: var(--text-primary);
+      outline: none;
+      width: 100%;
+      transition: background 0.12s;
+    }
+    .search-bar:focus { background: #fff; }
+    .search-bar::placeholder { color: var(--text-tertiary); }
+
+    /* ── Back link ────────────────────────────────────────────── */
+    .back-link {
+      font-size: 13px;
+      color: var(--text-tertiary);
+      text-decoration: none;
+      margin-bottom: 14px;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      transition: color 0.12s;
+    }
+    .back-link:hover { color: var(--text-primary); text-decoration: none; }
+
+    /* ── Detail DL ────────────────────────────────────────────── */
+    .detail-dl { margin: 0; }
+    .detail-dl dt {
+      font-family: 'DM Mono', monospace;
+      font-size: 9.5px;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: var(--text-tertiary);
+      margin-top: 13px;
+    }
+    .detail-dl dt:first-child { margin-top: 0; }
+    .detail-dl dd { font-size: 14px; color: var(--text-primary); margin: 2px 0 0 0; }
+
+    /* ── SMS dot ──────────────────────────────────────────────── */
+    .sms-dot {
+      display: inline-block;
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      vertical-align: middle;
+      margin-right: 4px;
+    }
+
+    /* ── Mini table ───────────────────────────────────────────── */
+    .mini-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .mini-table td { padding: 9px 12px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+    .mini-table tr:last-child td { border-bottom: none; }
+    .mini-table tr { cursor: pointer; transition: background 0.1s; }
+    .mini-table tr:hover td { background: #F5F3EE; }
+
+    /* ── Activity feed ────────────────────────────────────────── */
+    .activity-item { padding: 11px 16px; border-bottom: 1px solid var(--border); }
+    .activity-item:last-child { border-bottom: none; }
+    .activity-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+    .activity-agent { font-family: 'DM Mono', monospace; font-size: 10px; color: var(--text-tertiary); margin-bottom: 3px; }
+    .activity-time  { font-family: 'DM Mono', monospace; font-size: 10px; color: var(--text-tertiary); white-space: nowrap; flex-shrink: 0; }
+    .activity-summary { font-size: 13px; color: var(--text-secondary); line-height: 1.45; }
+
+    /* ── Status banner ────────────────────────────────────────── */
+    .status-banner {
+      padding: 10px 16px;
+      border-radius: var(--radius);
+      font-family: 'DM Mono', monospace;
+      font-size: 11px;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .status-banner::before {
+      content: '';
+      display: inline-block;
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: currentColor;
+      flex-shrink: 0;
+    }
+
+    /* ── Section divider ──────────────────────────────────────── */
+    .section-divider {
+      font-family: 'DM Mono', monospace;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-tertiary);
+      margin: 18px 0 10px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .section-divider::after { content: ''; flex: 1; height: 1px; background: var(--border); }
 
     {% block extra_css %}{% endblock %}
   </style>
 </head>
 <body>
-  <!-- Hamburger (mobile) -->
   <button id="hamburger" onclick="document.getElementById('sidebar').classList.toggle('open')">
     <span></span><span></span><span></span>
   </button>
   <div id="sidebar-overlay" onclick="document.getElementById('sidebar').classList.remove('open')"></div>
 
-  <!-- Sidebar -->
   <nav id="sidebar">
-    <div class="sidebar-brand"><span style="color:#f59e0b;">&#9889;</span>BOLTS11</div>
-    <div class="sidebar-sub">{{ business_name or 'Dashboard' }}</div>
+    <div class="sidebar-brand-wrap">
+      <div class="sidebar-brand">
+        <span class="sidebar-bolt">⚡</span>BOLTS11
+      </div>
+      <div class="sidebar-sub">{{ business_name or 'Dashboard' }}</div>
+    </div>
 
-    <!-- Dashboard (single) -->
     <a href="/dashboard/" class="nav-single-link {{ 'active' if active_page == 'control' else '' }}">
-      <span style="display:flex;align-items:center;gap:10px;">
-        <span class="nav-section-icon">⊞</span> Dashboard
-      </span>
+      <span class="nav-single-inner"><span class="nav-section-icon">⊞</span> Dashboard</span>
     </a>
 
-    <!-- Sales & Payments -->
     <div class="nav-section">
-      <div class="nav-section-header {% if active_page in ['estimates','invoices','payments','customers'] %}active{% endif %} {% if active_page in ['estimates','invoices','payments','customers'] %}open{% endif %}"
+      <div class="nav-section-header {% if active_page in ['estimates','invoices','payments','customers'] %}active open{% endif %}"
            onclick="toggleNav(this)">
-        <span class="nav-section-label">
-          <span class="nav-section-icon">💳</span> Sales & Payments
-        </span>
+        <span class="nav-section-label"><span class="nav-section-icon">💳</span> Sales & Payments</span>
         <span class="nav-chevron">▼</span>
       </div>
       <div class="nav-children {% if active_page in ['estimates','invoices','payments','customers'] %}open{% endif %}">
-        <a href="/dashboard/estimates/"
-           class="nav-child-link {{ 'active' if active_page == 'estimates' else '' }}">Estimates</a>
-        <a href="/dashboard/invoices/"
-           class="nav-child-link {{ 'active' if active_page == 'invoices' else '' }}">Invoices</a>
-        <a href="/dashboard/payments/"
-           class="nav-child-link {{ 'active' if active_page == 'payments' else '' }}">Payments</a>
-        <a href="/dashboard/customers/"
-           class="nav-child-link {{ 'active' if active_page == 'customers' else '' }}">Customers</a>
+        <a href="/dashboard/estimates/" class="nav-child-link {{ 'active' if active_page == 'estimates' else '' }}">Estimates</a>
+        <a href="/dashboard/invoices/"  class="nav-child-link {{ 'active' if active_page == 'invoices'  else '' }}">Invoices</a>
+        <a href="/dashboard/payments/"  class="nav-child-link {{ 'active' if active_page == 'payments'  else '' }}">Payments</a>
+        <a href="/dashboard/customers/" class="nav-child-link {{ 'active' if active_page == 'customers' else '' }}">Customers</a>
       </div>
     </div>
 
-    <!-- Purchases -->
     <div class="nav-section">
-      <div class="nav-section-header {{ 'open' if active_page == 'purchases' else '' }}"
-           onclick="toggleNav(this)">
-        <span class="nav-section-label">
-          <span class="nav-section-icon">🛒</span> Purchases
-        </span>
+      <div class="nav-section-header {{ 'open' if active_page == 'purchases' else '' }}" onclick="toggleNav(this)">
+        <span class="nav-section-label"><span class="nav-section-icon">🛒</span> Purchases</span>
         <span class="nav-chevron">▼</span>
       </div>
       <div class="nav-children {{ 'open' if active_page == 'purchases' else '' }}">
-        <a href="/dashboard/purchases/#bills" class="nav-child-link">Bills</a>
+        <a href="/dashboard/purchases/#bills"   class="nav-child-link">Bills</a>
         <a href="/dashboard/purchases/#vendors" class="nav-child-link">Vendors</a>
       </div>
     </div>
 
-    <!-- Receipts (single) -->
     <a href="/dashboard/receipts/" class="nav-single-link {{ 'active' if active_page == 'receipts' else '' }}">
-      <span style="display:flex;align-items:center;gap:10px;">
-        <span class="nav-section-icon">🧾</span> Receipts
-      </span>
+      <span class="nav-single-inner"><span class="nav-section-icon">🧾</span> Receipts</span>
     </a>
 
-    <!-- Accounting -->
     <div class="nav-section">
-      <div class="nav-section-header {{ 'open' if active_page == 'accounting' else '' }}"
-           onclick="toggleNav(this)">
-        <span class="nav-section-label">
-          <span class="nav-section-icon">⚖</span> Accounting
-        </span>
+      <div class="nav-section-header {{ 'open' if active_page == 'accounting' else '' }}" onclick="toggleNav(this)">
+        <span class="nav-section-label"><span class="nav-section-icon">⚖</span> Accounting</span>
         <span class="nav-chevron">▼</span>
       </div>
       <div class="nav-children {{ 'open' if active_page == 'accounting' else '' }}">
-        <a href="/api/invoices/export-csv" class="nav-child-link" download>
-          Export to QuickBooks
-        </a>
-        <a href="/dashboard/accounting/" class="nav-child-link">Transactions</a>
+        <a href="/api/invoices/export-csv" class="nav-child-link" download>Export to QuickBooks</a>
+        <a href="/dashboard/accounting/"   class="nav-child-link">Transactions</a>
       </div>
     </div>
 
-    <!-- Banking (coming soon) -->
     <a href="#" class="nav-single-link disabled">
-      <span style="display:flex;align-items:center;gap:10px;">
-        <span class="nav-section-icon">🏦</span> Banking
-      </span>
+      <span class="nav-single-inner"><span class="nav-section-icon">🏦</span> Banking</span>
+      <span class="nav-coming-soon">soon</span>
+    </a>
+    <a href="#" class="nav-single-link disabled">
+      <span class="nav-single-inner"><span class="nav-section-icon">👥</span> Payroll</span>
+      <span class="nav-coming-soon">soon</span>
+    </a>
+    <a href="#" class="nav-single-link disabled">
+      <span class="nav-single-inner"><span class="nav-section-icon">📅</span> Schedule</span>
       <span class="nav-coming-soon">soon</span>
     </a>
 
-    <!-- Payroll (coming soon) -->
-    <a href="#" class="nav-single-link disabled">
-      <span style="display:flex;align-items:center;gap:10px;">
-        <span class="nav-section-icon">👥</span> Payroll
-      </span>
-      <span class="nav-coming-soon">soon</span>
+    <div class="sidebar-section-label" style="margin-top:4px">System</div>
+    <a href="/dashboard/command.html"    class="nav-single-link {{ 'active' if active_page == 'command'    else '' }}">
+      <span class="nav-single-inner"><span class="nav-section-icon">▶</span> Command Center</span>
     </a>
-
-    <!-- Schedule (coming soon — our differentiator) -->
-    <a href="#" class="nav-single-link disabled">
-      <span style="display:flex;align-items:center;gap:10px;">
-        <span class="nav-section-icon">📅</span> Schedule
-      </span>
-      <span class="nav-coming-soon">soon</span>
-    </a>
-
-    <!-- System section (keep existing) -->
-    <div class="sidebar-section">System</div>
-    <a href="/dashboard/command.html"
-       class="nav-single-link {{ 'active' if active_page == 'command' else '' }}">
-      <span style="display:flex;align-items:center;gap:10px;">
-        <span class="nav-section-icon">▶</span> Command Center
-      </span>
-    </a>
-    <a href="/dashboard/onboarding.html"
-       class="nav-single-link {{ 'active' if active_page == 'onboarding' else '' }}">
-      <span style="display:flex;align-items:center;gap:10px;">
-        <span class="nav-section-icon">✚</span> Onboarding
-      </span>
+    <a href="/dashboard/onboarding.html" class="nav-single-link {{ 'active' if active_page == 'onboarding' else '' }}">
+      <span class="nav-single-inner"><span class="nav-section-icon">✚</span> Onboarding</span>
     </a>
 
     <div class="sidebar-spacer"></div>
-    <a href="/logout" class="sidebar-logout">Sign out</a>
-    <div class="sidebar-footer">
-      Bolts11 &middot; AI Back Office
+    <div class="sidebar-bottom">
+      <a href="/logout" class="sidebar-logout">
+        <span style="font-size:12px;opacity:0.6">↩</span> Sign out
+      </a>
+      <div class="sidebar-version">Bolts11 · AI Back Office</div>
     </div>
   </nav>
 
-  <!-- Main -->
   <div id="main">
     <div id="topbar">
-      <span class="topbar-title">{% block page_title %}Dashboard{% endblock %}</span>
-      <span class="topbar-meta">{% block topbar_meta %}{% endblock %}</span>
+      <div class="topbar-left">
+        <span class="topbar-title">{% block page_title %}Dashboard{% endblock %}</span>
+        <span class="topbar-meta">{% block topbar_meta %}{% endblock %}</span>
+      </div>
     </div>
     <div id="content">
       {% block content %}{% endblock %}
@@ -612,19 +756,15 @@
   <script>
   function toggleNav(header) {
     var isOpen = header.classList.contains('open');
-    // Close all other open sections
     document.querySelectorAll('.nav-section-header.open').forEach(function(h) {
       if (h !== header) {
         h.classList.remove('open');
         h.nextElementSibling.classList.remove('open');
       }
     });
-    // Toggle this one
     header.classList.toggle('open', !isOpen);
     header.nextElementSibling.classList.toggle('open', !isOpen);
   }
-
-  // Mobile: close sidebar when a nav link is clicked
   document.querySelectorAll('.nav-single-link, .nav-child-link').forEach(function(link) {
     link.addEventListener('click', function() {
       document.getElementById('sidebar').classList.remove('open');
