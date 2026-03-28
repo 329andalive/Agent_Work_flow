@@ -361,24 +361,29 @@ def run(client_phone: str, raw_input: str, customer_phone: str | None = None) ->
     # Step 3: Parse the raw input
     # ------------------------------------------------------------------
     actual_hours    = parse_hours(raw_input)
-    flat_rate       = parse_flat_rate(raw_input)
     materials_desc, materials_cost = parse_materials(raw_input)
 
-    # Multi-amount detection: sum ALL dollar amounts in the text
-    # "pump out $350 and tank repair $400" → $750.0
-    if flat_rate is None:
-        all_amounts = re.findall(r'\$(\d+(?:,\d{3})*(?:\.\d{1,2})?)', raw_input)
-        if all_amounts:
-            amounts = [float(a.replace(',', '')) for a in all_amounts]
-            flat_rate = sum(amounts)
-            if len(amounts) > 1:
-                print(f"[{timestamp()}] INFO invoice_agent: Multi-amount detected — {' + '.join(f'${a:.2f}' for a in amounts)} = ${flat_rate:.2f}")
-            else:
-                print(f"[{timestamp()}] INFO invoice_agent: Single amount detected — ${flat_rate:.2f}")
+    # Multi-amount detection FIRST — count all dollar amounts in the text
+    # This prevents parse_flat_rate from grabbing one amount while
+    # parse_materials grabs another, causing double-counting.
+    all_amounts = re.findall(r'\$(\d+(?:,\d{3})*(?:\.\d{1,2})?)', raw_input)
+    amounts = [float(a.replace(',', '')) for a in all_amounts] if all_amounts else []
+    print(f"[{timestamp()}] INFO invoice_agent: Dollar amounts found in text: {amounts}")
 
-    # If no hours but a flat rate was specified, use it directly — no clarification needed
+    if len(amounts) > 1:
+        # Multiple amounts — sum them ALL, skip parse_flat_rate entirely
+        flat_rate = sum(amounts)
+        materials_cost = 0  # Don't double-count — flat_rate IS the total
+        print(f"[{timestamp()}] INFO invoice_agent: Multi-amount sum — {' + '.join(f'${a:.2f}' for a in amounts)} = ${flat_rate:.2f}")
+    elif len(amounts) == 1:
+        flat_rate = amounts[0]
+        print(f"[{timestamp()}] INFO invoice_agent: Single amount — ${flat_rate:.2f}")
+    else:
+        flat_rate = parse_flat_rate(raw_input)
+
+    # If no hours but a flat rate was specified, use it directly
     if actual_hours is None and flat_rate is not None:
-        print(f"[{timestamp()}] INFO invoice_agent: Flat rate detected — ${flat_rate} (no hours required)")
+        print(f"[{timestamp()}] INFO invoice_agent: Flat rate detected — ${flat_rate:.2f} (no hours required)")
         actual_hours   = 0.0
         materials_cost = flat_rate   # pass flat rate as the billable amount
         materials_desc = materials_desc or "services rendered"
