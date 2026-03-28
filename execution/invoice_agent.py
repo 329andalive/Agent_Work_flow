@@ -367,9 +367,9 @@ def run(client_phone: str, raw_input: str, customer_phone: str | None = None) ->
     # Multi-amount detection: sum ALL dollar amounts in the text
     # "pump out $350 and tank repair $400" → $750.0
     if flat_rate is None:
-        all_amounts = re.findall(r'\$(\d+(?:\.\d+)?)', raw_input)
+        all_amounts = re.findall(r'\$(\d+(?:,\d{3})*(?:\.\d{1,2})?)', raw_input)
         if all_amounts:
-            amounts = [float(a) for a in all_amounts]
+            amounts = [float(a.replace(',', '')) for a in all_amounts]
             flat_rate = sum(amounts)
             if len(amounts) > 1:
                 print(f"[{timestamp()}] INFO invoice_agent: Multi-amount detected — {' + '.join(f'${a:.2f}' for a in amounts)} = ${flat_rate:.2f}")
