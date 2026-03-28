@@ -101,8 +101,8 @@ def create_payment_link(
 
         print(f"[{timestamp()}] INFO square_agent: Creating payment link for invoice {invoice_id} amount={amount_cents}¢")
 
-        # v44 API: client.checkout.create_payment_link()
-        result = client.checkout.create_payment_link(
+        # v44 API: client.checkout.payment_links.create()
+        result = client.checkout.payment_links.create(
             idempotency_key=idempotency_key,
             quick_pay={
                 "name": description or "Invoice Payment",
