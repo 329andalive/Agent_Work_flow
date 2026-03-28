@@ -873,6 +873,18 @@ def invoice_view(invoice_id):
     tax_amount = round(subtotal * tax_rate, 2)
     total = round(subtotal + tax_amount, 2) or float(invoice.get("amount_due") or 0)
 
+    # Get payment link URL (from invoice row or invoice_links)
+    payment_link_url = invoice.get("payment_link_url")
+    if not payment_link_url and invoice.get("job_id"):
+        try:
+            link = sb.table("invoice_links").select("payment_link_url").eq(
+                "job_id", invoice["job_id"]
+            ).eq("type", "invoice").order("created_at", desc=True).limit(1).execute()
+            if link.data and link.data[0].get("payment_link_url"):
+                payment_link_url = link.data[0]["payment_link_url"]
+        except Exception:
+            pass
+
     ctx.update({
         "invoice": invoice,
         "job": job,
@@ -882,6 +894,7 @@ def invoice_view(invoice_id):
         "tax_rate": tax_rate,
         "tax_amount": tax_amount,
         "total": total,
+        "payment_link_url": payment_link_url,
         "fmt_date": fmt_date,
         "fmt_phone": fmt_phone,
     })

@@ -143,6 +143,13 @@
           Email Invoice
         </a>
         {% endif %}
+
+        {% if payment_link_url and not invoice.paid_at %}
+        <a class="doc-btn doc-btn-green" href="{{ payment_link_url }}" target="_blank"
+           style="font-weight:700;letter-spacing:0.03em">
+          💳 PAY NOW — ${{ "%.2f"|format(total) }}
+        </a>
+        {% endif %}
       </div>
     </div>
 
