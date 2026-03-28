@@ -711,24 +711,30 @@ def run(client_phone: str, raw_input: str, customer_phone: str | None = None) ->
             print(f"[{timestamp()}] WARN invoice_agent: Could not fetch edit_token — {e}")
 
     # ------------------------------------------------------------------
-    # Step 8b: Create Square payment link using the SAVED invoice total.
-    # Read amount_due back from DB after line items are stored — this is
-    # the canonical total, not the pre-parsed flat_rate guess.
+    # Step 8b: Create Square payment link using the LINE ITEMS total.
+    # Calculate directly from line_items_data — the list we just stored.
+    # This is the real multi-item total, not the single parsed amount.
     # ------------------------------------------------------------------
+    square_total = sum(
+        float(item.get("total", 0))
+        for item in line_items_data
+    ) if line_items_data else final_amount
+    print(f"[{timestamp()}] INFO invoice_agent: Square link using line items total ${square_total:.2f} ({len(line_items_data)} items)")
+
+    # Also update amount_due on the invoice to match line items
+    if line_items_data and abs(square_total - final_amount) > 0.01:
+        try:
+            from execution.db_connection import get_client as _get_sb_amt
+            _get_sb_amt().table("invoices").update({
+                "amount_due": square_total,
+            }).eq("id", invoice_id).execute()
+            print(f"[{timestamp()}] INFO invoice_agent: Updated invoice amount_due ${final_amount:.2f} → ${square_total:.2f}")
+        except Exception:
+            pass
+
     if invoice_id and os.environ.get("SQUARE_ACCESS_TOKEN"):
         try:
             from execution.token_generator import generate_token, attach_payment_link
-
-            # Read the saved total from DB — this is the truth
-            saved_total = final_amount
-            try:
-                from execution.db_connection import get_client as _get_sb_total
-                inv_total = _get_sb_total().table("invoices").select("amount_due").eq("id", invoice_id).execute()
-                if inv_total.data and inv_total.data[0].get("amount_due"):
-                    saved_total = float(inv_total.data[0]["amount_due"])
-                    print(f"[{timestamp()}] INFO invoice_agent: Square link using saved total ${saved_total:.2f}")
-            except Exception:
-                pass  # Fall back to final_amount
 
             invoice_token = generate_token(
                 job_id=job_id,
@@ -737,7 +743,7 @@ def run(client_phone: str, raw_input: str, customer_phone: str | None = None) ->
             )
             if invoice_token:
                 from execution.square_agent import create_payment_link
-                amount_cents = int(round(saved_total * 100))
+                amount_cents = int(round(square_total * 100))
                 square_result = create_payment_link(
                     invoice_id=invoice_id,
                     amount_cents=amount_cents,
