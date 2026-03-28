@@ -72,6 +72,44 @@
   }
   .data-table tbody tr:hover .customer-arrow { color: var(--text-primary); transform: translateX(2px); }
 
+  .btn-edit-inline {
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+    background: var(--bg-card);
+    color: var(--text-tertiary);
+    cursor: pointer;
+    transition: all 0.1s;
+  }
+  .btn-edit-inline:hover { border-color: var(--blue); color: var(--blue); }
+  .missing-dot {
+    display: inline-block;
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: #f59e0b;
+    margin-left: 4px;
+    vertical-align: middle;
+    title: "Missing data";
+  }
+
+  /* Edit modal */
+  .edit-bg { position:fixed; inset:0; background:rgba(0,0,0,0.35); z-index:100; display:none; }
+  .edit-bg.open { display:block; }
+  .edit-box { position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); background:var(--bg-card); border-radius:10px; width:90%; max-width:420px; z-index:101; display:none; box-shadow:0 16px 48px rgba(0,0,0,0.15); }
+  .edit-box.open { display:block; }
+  .edit-head { padding:14px 18px; border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between; }
+  .edit-title { font-size:15px; font-weight:700; color:#1a2e4a; }
+  .edit-close { background:none; border:none; font-size:16px; color:var(--text-tertiary); cursor:pointer; }
+  .edit-body { padding:16px 18px; }
+  .edit-foot { padding:10px 18px 14px; border-top:1px solid var(--border); display:flex; justify-content:flex-end; gap:8px; }
+  .edit-err { background:#FCEBEB; color:#A32D2D; border-radius:5px; padding:6px 10px; font-size:12px; margin-top:8px; display:none; }
+  .ef { margin-bottom:12px; }
+  .ef-label { font-family:'DM Mono',monospace; font-size:10px; font-weight:500; text-transform:uppercase; letter-spacing:0.06em; color:var(--text-tertiary); margin-bottom:4px; display:block; }
+  .ef-input { width:100%; padding:7px 10px; border-radius:6px; border:1px solid var(--border); font-size:13px; color:var(--text-primary); background:var(--bg-card); font-family:'Barlow',sans-serif; outline:none; }
+  .ef-input:focus { border-color:#1a2e4a; }
+
   .metrics-row-3 {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
@@ -187,7 +225,13 @@
                     style="background:{% if c.sms_consent %}var(--green){% else %}#d1d5db{% endif %}"
                     title="{{ 'SMS opted in' if c.sms_consent else 'No SMS consent' }}"></span>
             </td>
-            <td><span class="customer-arrow">→</span></td>
+            <td style="display:flex;align-items:center;gap:4px">
+              {% if not c.customer_phone or not c.customer_email or not c.customer_address %}
+              <span class="missing-dot" title="Missing data"></span>
+              {% endif %}
+              <button class="btn-edit-inline" onclick="event.stopPropagation();openEdit({{ c|tojson }})">Edit</button>
+              <span class="customer-arrow">→</span>
+            </td>
           </tr>
           {% endfor %}
         </tbody>
@@ -200,6 +244,27 @@
       </div>
       {% endif %}
     </div>
+  </div>
+</div>
+<!-- Edit Customer Modal -->
+<div class="edit-bg" id="edit-bg" onclick="closeEdit()"></div>
+<div class="edit-box" id="edit-box">
+  <div class="edit-head">
+    <span class="edit-title">Edit Customer</span>
+    <button class="edit-close" onclick="closeEdit()">&times;</button>
+  </div>
+  <div class="edit-body">
+    <input type="hidden" id="e-id">
+    <div class="ef"><label class="ef-label">Name</label><input type="text" class="ef-input" id="e-name"></div>
+    <div class="ef"><label class="ef-label">Phone</label><input type="tel" class="ef-input" id="e-phone"></div>
+    <div class="ef"><label class="ef-label">Email</label><input type="email" class="ef-input" id="e-email"></div>
+    <div class="ef"><label class="ef-label">Address</label><input type="text" class="ef-input" id="e-address"></div>
+    <div class="ef"><label class="ef-label">Notes</label><input type="text" class="ef-input" id="e-notes"></div>
+    <div class="edit-err" id="e-err"></div>
+  </div>
+  <div class="edit-foot">
+    <button class="btn btn-outline" onclick="closeEdit()" style="padding:6px 14px;font-size:12px">Cancel</button>
+    <button class="btn btn-navy" id="e-save" onclick="saveEdit()" style="padding:6px 14px;font-size:12px">Save</button>
   </div>
 </div>
 {% endblock %}
@@ -266,6 +331,55 @@ async function saveCustomer() {
     btn.textContent = 'Save Customer';
   }
 }
+
+function openEdit(c) {
+  document.getElementById('e-id').value = c.id || '';
+  document.getElementById('e-name').value = c.customer_name || '';
+  document.getElementById('e-phone').value = c.customer_phone || '';
+  document.getElementById('e-email').value = c.customer_email || '';
+  document.getElementById('e-address').value = c.customer_address || '';
+  document.getElementById('e-notes').value = c.notes || '';
+  document.getElementById('e-err').style.display = 'none';
+  document.getElementById('edit-bg').classList.add('open');
+  document.getElementById('edit-box').classList.add('open');
+}
+function closeEdit() {
+  document.getElementById('edit-bg').classList.remove('open');
+  document.getElementById('edit-box').classList.remove('open');
+}
+async function saveEdit() {
+  var btn = document.getElementById('e-save');
+  btn.disabled = true; btn.textContent = 'Saving…';
+  document.getElementById('e-err').style.display = 'none';
+  try {
+    var resp = await fetch('/api/customers/update', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        customer_id:      document.getElementById('e-id').value,
+        customer_name:    document.getElementById('e-name').value.trim(),
+        customer_phone:   document.getElementById('e-phone').value.trim(),
+        customer_email:   document.getElementById('e-email').value.trim(),
+        customer_address: document.getElementById('e-address').value.trim(),
+        notes:            document.getElementById('e-notes').value.trim(),
+      })
+    });
+    var data = await resp.json();
+    if (data.success) { location.reload(); }
+    else {
+      var e = document.getElementById('e-err');
+      e.textContent = data.error || 'Save failed.';
+      e.style.display = 'block';
+      btn.disabled = false; btn.textContent = 'Save';
+    }
+  } catch(err) {
+    var e = document.getElementById('e-err');
+    e.textContent = 'Network error.';
+    e.style.display = 'block';
+    btn.disabled = false; btn.textContent = 'Save';
+  }
+}
+document.addEventListener('keydown', function(e) { if (e.key === 'Escape') closeEdit(); });
 
 function showMsg(type, text) {
   var msg = document.getElementById('form-msg');

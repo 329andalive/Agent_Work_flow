@@ -296,7 +296,7 @@ def office_billing():
     cust_map = {}
     if customer_ids:
         try:
-            custs = sb.table("customers").select("id, customer_name, customer_phone").in_("id", customer_ids).execute().data or []
+            custs = sb.table("customers").select("id, customer_name, customer_phone, customer_email, customer_address").in_("id", customer_ids).execute().data or []
             cust_map = {c["id"]: c for c in custs}
         except Exception as e:
             print(f"[{_ts()}] ERROR dashboard_routes: customer map query — {e}")
@@ -352,7 +352,7 @@ def estimates_page():
     cust_map = {}
     if customer_ids:
         try:
-            custs = sb.table("customers").select("id, customer_name, customer_phone").in_("id", customer_ids).execute().data or []
+            custs = sb.table("customers").select("id, customer_name, customer_phone, customer_email, customer_address").in_("id", customer_ids).execute().data or []
             cust_map = {c["id"]: c for c in custs}
         except Exception as e:
             print(f"[{_ts()}] ERROR dashboard_routes: estimates cust map — {e}")
@@ -514,7 +514,7 @@ def invoices_page():
     cust_map = {}
     if customer_ids:
         try:
-            custs = sb.table("customers").select("id, customer_name, customer_phone").in_("id", customer_ids).execute().data or []
+            custs = sb.table("customers").select("id, customer_name, customer_phone, customer_email, customer_address").in_("id", customer_ids).execute().data or []
             cust_map = {c["id"]: c for c in custs}
         except Exception as e:
             print(f"[{_ts()}] ERROR dashboard_routes: invoices cust map — {e}")
@@ -677,7 +677,7 @@ def payments_page():
     cust_map = {}
     if customer_ids:
         try:
-            custs = sb.table("customers").select("id, customer_name, customer_phone").in_("id", customer_ids).execute().data or []
+            custs = sb.table("customers").select("id, customer_name, customer_phone, customer_email, customer_address").in_("id", customer_ids).execute().data or []
             cust_map = {c["id"]: c for c in custs}
         except Exception as e:
             print(f"[{_ts()}] ERROR dashboard_routes: payments cust map — {e}")
@@ -1027,6 +1027,61 @@ def api_create_customer():
         "customer_name": new_cust.get("customer_name", ""),
         "customer_address": new_cust.get("customer_address", ""),
     })
+
+
+# ---------------------------------------------------------------------------
+# POST /api/customers/update — Edit customer record
+# ---------------------------------------------------------------------------
+
+@dashboard_bp.route("/api/customers/update", methods=["POST"])
+def api_update_customer():
+    client_id = _resolve_client_id()
+    if not client_id:
+        return jsonify({"success": False, "error": "Not authenticated"}), 401
+
+    data = request.get_json(silent=True)
+    if not data:
+        return jsonify({"success": False, "error": "Invalid JSON body"}), 400
+
+    customer_id = data.get("customer_id")
+    if not customer_id:
+        return jsonify({"success": False, "error": "customer_id is required"}), 400
+
+    sb = _get_supabase()
+
+    # Verify customer belongs to this client
+    try:
+        check = sb.table("customers").select("id").eq("id", customer_id).eq("client_id", client_id).execute()
+        if not check.data:
+            return jsonify({"success": False, "error": "Customer not found"}), 404
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+    # Build update dict from provided fields
+    updates = {}
+    if "customer_name" in data:
+        updates["customer_name"] = data["customer_name"].strip() or None
+    if "customer_phone" in data:
+        raw = data["customer_phone"].strip()
+        if raw:
+            updates["customer_phone"] = _normalize_phone(raw)
+    if "customer_email" in data:
+        updates["customer_email"] = data["customer_email"].strip() or None
+    if "customer_address" in data:
+        updates["customer_address"] = data["customer_address"].strip() or None
+    if "notes" in data:
+        updates["notes"] = data["notes"].strip() or None
+
+    if not updates:
+        return jsonify({"success": False, "error": "Nothing to update"})
+
+    try:
+        sb.table("customers").update(updates).eq("id", customer_id).eq("client_id", client_id).execute()
+        print(f"[{_ts()}] INFO dashboard_routes: Updated customer {customer_id[:8]} fields={list(updates.keys())}")
+        return jsonify({"success": True})
+    except Exception as e:
+        print(f"[{_ts()}] ERROR dashboard_routes: customer update failed — {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
 
 
 # ---------------------------------------------------------------------------

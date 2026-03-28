@@ -74,7 +74,12 @@
         {% for p in proposals %}
         {% set cust = cust_map.get(p.customer_id, {}) if p.customer_id else {} %}
         <tr style="cursor:pointer" onclick="window.location='/dashboard/proposal/{{ p.id }}'">
-          <td style="font-weight:500">{{ cust.get('customer_name', '—') }}</td>
+          <td style="font-weight:500">
+            {{ cust.get('customer_name', '—') }}
+            {% if cust and (not cust.get('customer_phone') or not cust.get('customer_email') or not cust.get('customer_address')) %}
+            <span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#f59e0b;margin-left:4px;vertical-align:middle" title="Missing: {{ 'phone ' if not cust.get('customer_phone') else '' }}{{ 'email ' if not cust.get('customer_email') else '' }}{{ 'address' if not cust.get('customer_address') else '' }}"></span>
+            {% endif %}
+          </td>
           <td style="font-family:'DM Mono',monospace;font-size:11px;color:var(--text-tertiary)">
             {{ fmt_short_date(p.created_at) }}
             {% if p.status == 'sent' and p.sent_at %}
