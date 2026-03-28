@@ -128,9 +128,10 @@ def save_document():
             original_notes = document.get("invoice_text", "") or ""
             original_total = float(document.get("amount_due") or 0)
 
-        # Step 3: Compute totals
+        # Step 3: Compute totals — tax only on items marked taxable
         subtotal = sum(float(item.get("total", 0)) for item in line_items)
-        tax_amount = round(subtotal * tax_rate, 2)
+        taxable_subtotal = sum(float(item.get("total", 0)) for item in line_items if item.get("taxable"))
+        tax_amount = round(taxable_subtotal * tax_rate, 2)
         total = round(subtotal + tax_amount, 2)
 
         # Step 4: Diff and log changes

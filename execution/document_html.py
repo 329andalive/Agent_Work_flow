@@ -86,12 +86,16 @@ def build_document_html(
         line_total = item.get("total", 0)
 
         if edit_mode:
+            taxable = item.get("taxable", False)
+            tax_cls = "tax-on" if taxable else ""
+            tax_label = "TAX ✓" if taxable else "TAX"
             line_items_html += f"""
-            <tr data-row="{i}">
+            <tr data-row="{i}" data-taxable="{'true' if taxable else 'false'}">
               <td contenteditable="true" class="editable" data-field="description">{_esc(desc)}</td>
               <td contenteditable="true" class="editable num" data-field="qty">{qty}</td>
               <td contenteditable="true" class="editable num" data-field="unit_price">{unit_price:.2f}</td>
               <td class="num line-total">{line_total:.2f}</td>
+              <td class="tax-cell"><button class="tax-btn {tax_cls}" onclick="toggleTax(this)">{tax_label}</button></td>
               <td class="remove-cell"><button class="remove-btn" onclick="removeRow(this)" aria-label="Remove line">&times;</button></td>
             </tr>"""
         else:
@@ -106,19 +110,17 @@ def build_document_html(
     # If no line items, add one empty row in edit mode
     if not line_items and edit_mode:
         line_items_html = f"""
-        <tr data-row="0">
+        <tr data-row="0" data-taxable="false">
           <td contenteditable="true" class="editable" data-field="description">Service description</td>
           <td contenteditable="true" class="editable num" data-field="qty">1</td>
           <td contenteditable="true" class="editable num" data-field="unit_price">0.00</td>
           <td class="num line-total">0.00</td>
+          <td class="tax-cell"><button class="tax-btn" onclick="toggleTax(this)">TAX</button></td>
           <td class="remove-cell"><button class="remove-btn" onclick="removeRow(this)" aria-label="Remove line">&times;</button></td>
         </tr>"""
 
-    # Tax dropdown options
-    tax_options = ""
-    for rate_val, rate_label in [(0, "0% — No tax"), (0.055, "5.5% — Maine standard")]:
-        selected = "selected" if abs(tax_rate - rate_val) < 0.001 else ""
-        tax_options += f'<option value="{rate_val}" {selected}>{rate_label}</option>'
+    # Tax column header for edit mode
+    tax_col_header = '<th class="tax-cell" style="width:50px">Tax</th>' if edit_mode else ""
 
     # Remove column header for edit mode
     remove_col_header = '<th class="remove-cell"></th>' if edit_mode else ""
@@ -318,12 +320,23 @@ def build_document_html(
       font-weight: 700;
       color: #2d6a4f;
     }}
-    .tax-select {{
-      font-size: 0.85rem;
+    .tax-cell {{ width: 50px; text-align: center; }}
+    .tax-btn {{
+      font-size: 0.7rem;
+      font-weight: 700;
       padding: 2px 6px;
-      border: 1px solid #d1d5db;
       border-radius: 4px;
+      border: 1px solid #d1d5db;
       background: #fff;
+      color: #888;
+      cursor: pointer;
+      letter-spacing: 0.03em;
+    }}
+    .tax-btn:hover {{ border-color: #f59e0b; color: #f59e0b; }}
+    .tax-btn.tax-on {{
+      background: #FAEEDA;
+      color: #854F0B;
+      border-color: #d4a844;
     }}
 
     /* Notes */
@@ -472,6 +485,7 @@ def build_document_html(
               <th class="num">Qty</th>
               <th class="num">Unit Price</th>
               <th class="num">Total</th>
+              {tax_col_header}
               {remove_col_header}
             </tr>
           </thead>
@@ -488,7 +502,7 @@ def build_document_html(
           <span id="subtotal">${subtotal:.2f}</span>
         </div>
         <div class="total-line">
-          <span>Tax {"<select id='tax-rate' class='tax-select' onchange='recalculate()'>" + tax_options + "</select>" if edit_mode else f"({tax_rate*100:.0f}%)"}</span>
+          <span>Tax (5.5% Maine — on marked items)</span>
           <span id="tax-amount">${tax_amount:.2f}</span>
         </div>
         <div class="total-line grand">
@@ -524,9 +538,19 @@ def build_document_html(
     }}
 
     // --- Recalculate totals ---
+    function toggleTax(btn) {{
+      var row = btn.closest('tr');
+      var isTaxed = row.getAttribute('data-taxable') === 'true';
+      row.setAttribute('data-taxable', isTaxed ? 'false' : 'true');
+      btn.classList.toggle('tax-on', !isTaxed);
+      btn.textContent = isTaxed ? 'TAX' : 'TAX ✓';
+      recalculate();
+    }}
+
     function recalculate() {{
       var rows = document.querySelectorAll('#items-body tr');
       var subtotal = 0;
+      var taxableTotal = 0;
       rows.forEach(function(row) {{
         var qtyEl = row.querySelector('[data-field="qty"]');
         var priceEl = row.querySelector('[data-field="unit_price"]');
@@ -537,11 +561,13 @@ def build_document_html(
         var lineTotal = Math.round(qty * price * 100) / 100;
         totalEl.textContent = lineTotal.toFixed(2);
         subtotal += lineTotal;
+        if (row.getAttribute('data-taxable') === 'true') {{
+          taxableTotal += lineTotal;
+        }}
       }});
 
-      var taxRateEl = document.getElementById('tax-rate');
-      var taxRate = taxRateEl ? parseFloat(taxRateEl.value) || 0 : 0;
-      var taxAmount = Math.round(subtotal * taxRate * 100) / 100;
+      var taxRate = 0.055; // Maine 5.5%
+      var taxAmount = Math.round(taxableTotal * taxRate * 100) / 100;
       var grandTotal = Math.round((subtotal + taxAmount) * 100) / 100;
 
       document.getElementById('subtotal').textContent = '$' + subtotal.toFixed(2);
@@ -558,7 +584,8 @@ def build_document_html(
         var qty = parseFloat((row.querySelector('[data-field="qty"]') || {{}}).textContent) || 0;
         var unitPrice = parseFloat((row.querySelector('[data-field="unit_price"]') || {{}}).textContent) || 0;
         var total = Math.round(qty * unitPrice * 100) / 100;
-        items.push({{ description: desc.trim(), qty: qty, unit_price: unitPrice, total: total }});
+        var taxable = row.getAttribute('data-taxable') === 'true';
+        items.push({{ description: desc.trim(), qty: qty, unit_price: unitPrice, total: total, taxable: taxable }});
       }});
       return items;
     }}
@@ -569,10 +596,12 @@ def build_document_html(
       var idx = tbody.rows.length;
       var tr = document.createElement('tr');
       tr.setAttribute('data-row', idx);
+      tr.setAttribute('data-taxable', 'false');
       tr.innerHTML = '<td contenteditable="true" class="editable" data-field="description">New item</td>' +
         '<td contenteditable="true" class="editable num" data-field="qty">1</td>' +
         '<td contenteditable="true" class="editable num" data-field="unit_price">0.00</td>' +
         '<td class="num line-total">0.00</td>' +
+        '<td class="tax-cell"><button class="tax-btn" onclick="toggleTax(this)">TAX</button></td>' +
         '<td class="remove-cell"><button class="remove-btn" onclick="removeRow(this)">&times;</button></td>';
       tbody.appendChild(tr);
       attachListeners(tr);
@@ -600,14 +629,17 @@ def build_document_html(
       btn.textContent = 'Saving...';
       btn.disabled = true;
 
-      var taxRateEl = document.getElementById('tax-rate');
       var notesEl = document.getElementById('notes');
+      var items = collectLineItems();
+      // Calculate tax_rate: if any item is taxable, rate is 0.055 (Maine 5.5%)
+      var hasTaxable = items.some(function(it) {{ return it.taxable; }});
+      var taxRate = hasTaxable ? 0.055 : 0;
 
       var payload = {{
         edit_token: editToken,
         doc_type: docType,
-        line_items: collectLineItems(),
-        tax_rate: taxRateEl ? parseFloat(taxRateEl.value) || 0 : 0,
+        line_items: items,
+        tax_rate: taxRate,
         notes: notesEl ? notesEl.value : ''
       }};
 
