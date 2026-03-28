@@ -602,8 +602,8 @@ def _handle_worker_status_reply(
                     }).execute()
                     if inv_result.data:
                         invoice_id = inv_result.data[0]["id"]
-                        print(f"[{timestamp()}] INFO sms_router: Auto-invoice created id={invoice_id[:8]} amount=${estimated_amount:.0f}")
-                        job_name = f"{job_name} — invoice ${estimated_amount:.0f} created"
+                        print(f"[{timestamp()}] INFO sms_router: Auto-invoice created id={invoice_id[:8]} amount=${estimated_amount:.2f}")
+                        job_name = f"{job_name} — invoice ${estimated_amount:.2f} created"
                     else:
                         print(f"[{timestamp()}] WARN sms_router: Auto-invoice insert returned no data")
                 else:

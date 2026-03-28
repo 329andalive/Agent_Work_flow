@@ -485,8 +485,8 @@ def worker_action():
             }).execute()
             if inv_result.data:
                 inv_id = inv_result.data[0]["id"]
-                print(f"[{timestamp()}] INFO dispatch: Auto-invoice created id={inv_id[:8]} amount=${estimated_amount:.0f}")
-                result_msg += f" — invoice ${estimated_amount:.0f} created"
+                print(f"[{timestamp()}] INFO dispatch: Auto-invoice created id={inv_id[:8]} amount=${estimated_amount:.2f}")
+                result_msg += f" — invoice ${estimated_amount:.2f} created"
         except Exception as e:
             print(f"[{timestamp()}] WARN dispatch: Auto-invoice failed — {e}")
 

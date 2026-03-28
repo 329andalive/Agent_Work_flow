@@ -372,9 +372,9 @@ def run(client_phone: str, raw_input: str, customer_phone: str | None = None) ->
             amounts = [float(a) for a in all_amounts]
             flat_rate = sum(amounts)
             if len(amounts) > 1:
-                print(f"[{timestamp()}] INFO invoice_agent: Multi-amount detected — {' + '.join(f'${a:.0f}' for a in amounts)} = ${flat_rate:.0f}")
+                print(f"[{timestamp()}] INFO invoice_agent: Multi-amount detected — {' + '.join(f'${a:.0f}' for a in amounts)} = ${flat_rate:.2f}")
             else:
-                print(f"[{timestamp()}] INFO invoice_agent: Single amount detected — ${flat_rate:.0f}")
+                print(f"[{timestamp()}] INFO invoice_agent: Single amount detected — ${flat_rate:.2f}")
 
     # If no hours but a flat rate was specified, use it directly — no clarification needed
     if actual_hours is None and flat_rate is not None:
@@ -683,38 +683,52 @@ def run(client_phone: str, raw_input: str, customer_phone: str | None = None) ->
             })
 
     # Save line_items to invoice record
-    # Detect taxable parts — Maine 5.5% sales tax on materials/parts
+    # Detect taxable items: "part " or "tax " prefix, or material keywords
     TAXABLE_KEYWORDS = [
-        "baffle", "pipe", "fitting", "part", "material", "supply",
+        "baffle", "pipe", "fitting", "material", "supply",
         "component", "riser", "cover", "lid", "filter", "adapter",
-        "coupling", "elbow", "tee", "valve", "pump", "hose",
+        "coupling", "elbow", "tee", "valve", "hose",
     ]
-    # "pump" alone (pump-out service) is NOT taxable, but "pump" as a part IS
+    taxable_subtotal = 0.0
+    labor_subtotal = 0.0
     has_taxable_parts = False
+
     for item in line_items_data:
-        desc_lower = (item.get("description") or "").lower()
-        # Skip labor-only items
-        if "labor" in desc_lower or "hrs" in desc_lower or "hour" in desc_lower:
-            continue
-        if any(kw in desc_lower for kw in TAXABLE_KEYWORDS):
+        desc = (item.get("description") or "")
+        desc_lower = desc.lower().strip()
+        amount = float(item.get("total", 0))
+
+        is_taxable = False
+        # "part " or "parts " prefix → taxable, strip prefix
+        if desc_lower.startswith("part ") or desc_lower.startswith("parts "):
+            is_taxable = True
+            item["description"] = desc.split(" ", 1)[1] if " " in desc else desc
+        elif desc_lower.startswith("tax "):
+            is_taxable = True
+            item["description"] = desc[4:].strip()
+        elif any(kw in desc_lower for kw in TAXABLE_KEYWORDS):
+            if not ("labor" in desc_lower or "hrs" in desc_lower or "hour" in desc_lower):
+                is_taxable = True
+
+        if is_taxable:
+            taxable_subtotal += amount
             has_taxable_parts = True
-            break
+        else:
+            labor_subtotal += amount
 
     tax_rate = 0.0
     tax_amount = 0.0
     if has_taxable_parts:
         tax_rate = 0.055  # Maine 5.5%
-        subtotal_for_tax = sum(float(item.get("total", 0)) for item in line_items_data)
-        tax_amount = round(subtotal_for_tax * tax_rate, 2)
-        print(f"[{timestamp()}] INFO invoice_agent: Taxable parts detected — tax_rate=5.5% tax_amount=${tax_amount:.2f}")
+        tax_amount = round(taxable_subtotal * tax_rate, 2)
+        print(f"[{timestamp()}] INFO invoice_agent: Taxable=${taxable_subtotal:.2f} Labor=${labor_subtotal:.2f} Tax={tax_rate*100:.1f}%=${tax_amount:.2f}")
 
-        # Notify owner about taxable parts
         try:
             send_sms(
                 to_number=owner_mobile,
                 message_body=(
-                    f"Heads up — this invoice may have taxable parts. "
-                    f"Review tax rate before sending. Tax at 5.5% = ${tax_amount:.2f}"
+                    f"Heads up — taxable parts ${taxable_subtotal:.2f}. "
+                    f"Maine 5.5% tax = ${tax_amount:.2f}. Review before sending."
                 ),
                 from_number=client_phone,
             )
@@ -830,7 +844,7 @@ def run(client_phone: str, raw_input: str, customer_phone: str | None = None) ->
     # ------------------------------------------------------------------
     if edit_url:
         combined_sms = (
-            f"Invoice ready for {customer_name} — ${final_amount:.0f}\n"
+            f"Invoice ready for {customer_name} — ${final_amount:.2f}\n"
             f"Edit & send: {edit_url}\n\n"
             f"---\n"
             f"JOB COST (owner only)\n"
@@ -861,7 +875,7 @@ def run(client_phone: str, raw_input: str, customer_phone: str | None = None) ->
             customer_phone != owner_mobile and
             customer_phone != client_phone):
         tech_confirm = (
-            f"Invoice sent — {customer_name} ${final_amount:.0f}. "
+            f"Invoice sent — {customer_name} ${final_amount:.2f}. "
             f"Job marked complete."
         )
         send_sms(to_number=customer_phone, message_body=tech_confirm, from_number=client_phone)

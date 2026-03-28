@@ -9,17 +9,17 @@
 <div class="summary-strip">
   <div class="summary-tile">
     <div class="summary-tile__label">Total Billed</div>
-    <div class="summary-tile__value">${{ "%.0f"|format(total_billed) }}</div>
+    <div class="summary-tile__value">${{ "%.2f"|format(total_billed) }}</div>
     <div class="summary-tile__sub">last 90 days</div>
   </div>
   <div class="summary-tile">
     <div class="summary-tile__label">Collected</div>
-    <div class="summary-tile__value c-green-val">${{ "%.0f"|format(total_paid) }}</div>
+    <div class="summary-tile__value c-green-val">${{ "%.2f"|format(total_paid) }}</div>
     <div class="summary-tile__sub">paid</div>
   </div>
   <div class="summary-tile">
     <div class="summary-tile__label">Outstanding</div>
-    <div class="summary-tile__value{% if total_outstanding > 0 %} c-amber-val{% endif %}">${{ "%.0f"|format(total_outstanding) }}</div>
+    <div class="summary-tile__value{% if total_outstanding > 0 %} c-amber-val{% endif %}">${{ "%.2f"|format(total_outstanding) }}</div>
     <div class="summary-tile__sub">owed</div>
   </div>
   <div class="summary-tile">

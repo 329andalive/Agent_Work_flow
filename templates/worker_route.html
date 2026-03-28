@@ -139,7 +139,7 @@
       {{ job_count }} job{{ 's' if job_count != 1 else '' }}
       {% set total_quoted = namespace(value=0) %}
       {% for j in jobs %}{% if j.estimated_amount %}{% set total_quoted.value = total_quoted.value + j.estimated_amount|float %}{% endif %}{% endfor %}
-      {% if total_quoted.value %} &middot; ${{ "%.0f"|format(total_quoted.value) }}{% endif %}
+      {% if total_quoted.value %} &middot; ${{ "%.2f"|format(total_quoted.value) }}{% endif %}
     </span>
   </div>
 </div>
@@ -176,7 +176,7 @@
       {% endif %}
 
       {% if j.estimated_amount %}
-      <div class="job-card__amount">${{ "%.0f"|format(j.estimated_amount|float) }}</div>
+      <div class="job-card__amount">${{ "%.2f"|format(j.estimated_amount|float) }}</div>
       {% endif %}
 
       <div class="job-card__badges">

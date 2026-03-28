@@ -87,7 +87,7 @@
             {% endif %}
           </td>
           <td style="text-align:right;font-family:'Barlow Condensed',sans-serif;font-size:17px;font-weight:700">
-            ${{ "%.0f"|format(p.amount_estimate|float) if p.amount_estimate else '—' }}
+            ${{ "%.2f"|format(p.amount_estimate|float) if p.amount_estimate else '—' }}
           </td>
           <td>
             {% if p.status == 'accepted' %}<span class="badge badge-green">accepted</span>

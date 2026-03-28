@@ -155,7 +155,7 @@
       {{ st|replace('_',' ') }}
     </span>
     {% if job.estimated_amount %}
-    <span class="amount-large">${{ "%.0f"|format(job.estimated_amount|float) }}</span>
+    <span class="amount-large">${{ "%.2f"|format(job.estimated_amount|float) }}</span>
     {% endif %}
   </div>
 </div>
@@ -187,14 +187,14 @@
         {% if job.estimated_amount %}
         <dt>Estimated</dt>
         <dd style="font-family:'Barlow Condensed',sans-serif;font-size:17px;font-weight:700">
-          ${{ "%.0f"|format(job.estimated_amount|float) }}
+          ${{ "%.2f"|format(job.estimated_amount|float) }}
         </dd>
         {% endif %}
 
         {% if job.actual_amount %}
         <dt>Actual</dt>
         <dd style="font-family:'Barlow Condensed',sans-serif;font-size:17px;font-weight:700;color:var(--green)">
-          ${{ "%.0f"|format(job.actual_amount|float) }}
+          ${{ "%.2f"|format(job.actual_amount|float) }}
         </dd>
         {% endif %}
       </dl>
@@ -253,7 +253,7 @@
         {% for p in proposals %}
         <tr onclick="window.location='/dashboard/proposal/{{ p.id }}'">
           <td style="font-family:'Barlow Condensed',sans-serif;font-size:16px;font-weight:700">
-            ${{ "%.0f"|format(p.amount_estimate|float) if p.amount_estimate else '—' }}
+            ${{ "%.2f"|format(p.amount_estimate|float) if p.amount_estimate else '—' }}
           </td>
           <td style="font-family:'DM Mono',monospace;font-size:11px;color:var(--text-tertiary)">
             {{ fmt_short_date(p.created_at) }}
