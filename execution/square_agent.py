@@ -29,13 +29,23 @@ from datetime import datetime
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from dotenv import load_dotenv
+
+# squareup v44 SDK — try all known import paths
+SQUARE_AVAILABLE = False
+Client = None
 try:
-    from square import Client
+    from squareup.client import Client
+    SQUARE_AVAILABLE = True
 except ImportError:
     try:
         from square.client import Client
+        SQUARE_AVAILABLE = True
     except ImportError:
-        Client = None
+        try:
+            from square import Client
+            SQUARE_AVAILABLE = True
+        except ImportError:
+            print(f"[square_agent] WARN: squareup SDK not found — payment links disabled")
 
 load_dotenv()
 

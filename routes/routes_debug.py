@@ -388,6 +388,12 @@ def debug_dashboard():
 
         ts = now.strftime("%Y-%m-%d %H:%M UTC")
 
+        # Check Square SDK availability
+        try:
+            from execution.square_agent import SQUARE_AVAILABLE
+        except ImportError:
+            SQUARE_AVAILABLE = False
+
         return render_template_string(
             DEBUG_PAGE,
             jobs=jobs,
@@ -398,6 +404,7 @@ def debug_dashboard():
             messages=messages,
             ts=ts,
             key=provided_key,
+            square_sdk=SQUARE_AVAILABLE,
         )
 
     except Exception as e:
