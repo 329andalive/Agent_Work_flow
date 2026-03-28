@@ -14,9 +14,9 @@ Where:
               phone, owner_mobile, and optionally timezone)
 
 Returns a string summary for the cron log:
-    "Sent to 3 recipients for Holt Sewer & Drain"
-    "Skipped — no jobs for Holt Sewer & Drain"
-    "Error — skipped Holt Sewer & Drain"
+    "Sent to 3 recipients for B&B Septic"
+    "Skipped — no jobs for B&B Septic"
+    "Error — skipped B&B Septic"
 """
 
 import os

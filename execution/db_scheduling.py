@@ -403,7 +403,7 @@ if __name__ == "__main__":
     from dotenv import load_dotenv
     load_dotenv()
 
-    # Test with Holt Sewer & Drain client_id
+    # Test with B&B Septic client_id
     test_client_id = "8aafcd73-b41c-4f1a-bd01-3e7955798367"
 
     print("--- get_workers ---")

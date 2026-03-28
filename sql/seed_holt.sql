@@ -1,8 +1,8 @@
--- seed_holt.sql — Seed dispatch data for Holt Sewer & Drain
+-- seed_holt.sql — Seed dispatch data for B&B Septic
 -- Run in Supabase SQL editor AFTER scheduling columns exist on jobs table.
 -- Safe to run multiple times — uses ON CONFLICT or checks before insert.
 --
--- Client: Holt Sewer & Drain
+-- Client: B&B Septic
 -- Client ID: 8aafcd73-b41c-4f1a-bd01-3e7955798367
 -- Client phone: +12074190986
 
@@ -78,7 +78,7 @@ CREATE INDEX IF NOT EXISTS idx_route_tokens_token
   ON route_tokens (token);
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- Step 4: Seed 3 employees (workers) for Holt Sewer & Drain
+-- Step 4: Seed 3 employees (workers) for B&B Septic
 -- ═══════════════════════════════════════════════════════════════════════════
 
 -- Check if employees already exist before inserting

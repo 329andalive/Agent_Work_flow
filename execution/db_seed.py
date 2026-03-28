@@ -1,7 +1,7 @@
 """
 db_seed.py — Insert the test client record
 
-Inserts Jeremy Holt / Holt Sewer & Drain as the first client.
+Inserts Jeremy Holt / B&B Septic as the first client.
 Safe to run multiple times — skips insert if the phone number already exists.
 
 Run:
@@ -22,10 +22,10 @@ def timestamp():
 
 
 # ---------------------------------------------------------------------------
-# Test client data — Jeremy Holt, Holt Sewer & Drain
+# Test client data — Jeremy Holt, B&B Septic
 # ---------------------------------------------------------------------------
 TEST_CLIENT = {
-    "business_name":  "Holt Sewer & Drain",
+    "business_name":  "B&B Septic",
     "owner_name":     "Jeremy Holt",
     "phone":          "+12074190986",   # Telnyx number customers text in to
     "owner_mobile":   "+12076538819",   # Jeremy's real cell — proposals sent here
@@ -33,7 +33,7 @@ TEST_CLIENT = {
     "trade_vertical": "sewer_drain",
     "active":         True,
     "personality": (
-        "I am Jeremy Holt, owner of Holt Sewer and Drain serving rural Maine. "
+        "I am Jeremy Holt, owner of B&B Septic serving rural Maine. "
         "I have been in the trades my whole life. I talk straight, I price fair, "
         "and I show up when I say I will. My customers are mostly farmers, camp owners, "
         "and rural homeowners who have been burned by contractors before. I earn their "

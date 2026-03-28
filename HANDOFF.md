@@ -32,7 +32,7 @@ Build status:  ✅ GREEN as of March 23, 2026 — gunicorn 25.1.0 booting clean
 - [x] Add Customer form `/dashboard/customers/new` — POSTs to `/api/customers/create`
 - [x] Export CSV `/api/invoices/export-csv` — QuickBooks-compatible download
 - [x] Job detail route `/dashboard/job/<id>` — customer, proposals, invoices, activity
-- [x] 25 test customers imported for Holt Sewer & Drain
+- [x] 25 test customers imported for B&B Septic
 - [x] `squareup==44.0.1.20260122` installed and pinned — Square SDK available on Railway
 - [x] All 66 dependencies fully pinned in requirements.txt — no floating versions
 
@@ -328,7 +328,7 @@ Railway URL:    https://web-production-043dc.up.railway.app
 API domain:     https://api.bolts11.com (DNS may not be pointed yet)
 GitHub repo:    329andalive/Agent_Work_flow
 Client ID:      8aafcd73-b41c-4f1a-bd01-3e7955798367
-Business:       Holt Sewer & Drain
+Business:       B&B Septic
 Owner phone:    +12074190986 (Telnyx number)
 Owner mobile:   +12076538819 (Jeremy's cell)
 Supabase URL:   https://wczzlvhpryufohjwmxwd.supabase.co

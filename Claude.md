@@ -150,7 +150,7 @@ Each agent has a directive in `directives/agents/{agent_name}.md`
 │   └── scheduling_migration.sql
 ├── directives/                        # SOPs and context docs
 │   ├── agents/proposal_agent.md      # Proposal architecture + line item rules
-│   └── clients/personality.md        # Holt Sewer & Drain voice + pricing
+│   └── clients/personality.md        # B&B Septic voice + pricing
 └── tests/                             # Test scripts
 ```
 

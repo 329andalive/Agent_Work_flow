@@ -158,13 +158,13 @@ def main():
             client_id=client_id,
             customer_id=customer_id,
             proposal_text=(
-                "Mike, Jeremy here from Holt Sewer and Drain.\n\n"
+                "Mike, Jeremy here from B&B Septic.\n\n"
                 "For the baffle replacement at your place on Route 9:\n"
                 "Labor: 2 hrs x $125 = $250.00\n"
                 "Baffle and fittings: ~$85.00\n"
                 "Estimate: $335.00\n\n"
                 "I can get there Tuesday. Just confirm and I'll be there.\n\n"
-                "Jeremy Holt\nHolt Sewer and Drain\n207-419-0986"
+                "Jeremy Holt\nB&B Septic\n207-419-0986"
             ),
             amount=335.00,
         )

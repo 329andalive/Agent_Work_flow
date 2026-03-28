@@ -2,7 +2,7 @@
 db_client.py — Client table queries
 
 A "client" is the business owner using the system (e.g. Jeremy Holt,
-owner of Holt Sewer & Drain). Every inbound SMS gets matched to a
+owner of B&B Septic). Every inbound SMS gets matched to a
 client by phone number — this is step 1 of every agent flow.
 
 Usage:
