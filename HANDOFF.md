@@ -70,6 +70,54 @@ ALTER TABLE jobs ADD COLUMN IF NOT EXISTS scope_hold boolean DEFAULT false;
 UPDATE clients SET business_name = 'B&B Septic' WHERE id = '8aafcd73-b41c-4f1a-bd01-3e7955798367';
 ```
 
+### End-of-Day Status — Full Invoice Pipeline Working
+
+Confirmed end-to-end at 6:26 PM:
+```
+1. SMS: "inv (207) 555-6161 pump out $350 and tank repair $400 and baffle replacement $175.25"
+2. Dollar amounts found: [350.0, 400.0, 175.25] ✅
+3. Multi-amount sum = $925.25 ✅
+4. Square payment link created at $925.25 (no tax yet) ✅
+5. Jeremy opens edit URL, marks baffle as taxable, selects 5.5% ✅
+6. Tax calculated on taxable items only: $925.25 → $934.62 total ✅
+7. Document saved, Square link regenerated at $934.62 ✅
+8. Square regen confirmed: $934.62 → 93462¢ ✅
+9. New Square link live: https://sandbox.square.link/u/OP82geIO ✅
+10. Invoice HTML uploaded to Supabase storage ✅
+11. Style notes learned from edit (Haiku learning loop) ✅
+12. All delivery webhooks confirmed — sent and finalized ✅
+```
+
+### What's Working Now — Full Scorecard
+- [x] SMS command parsing — EST, INV, JOBS, CLOCK IN/OUT, ADD CUSTOMER
+- [x] Customer lookup by phone number or name (end-of-string resolver)
+- [x] Phone normalization — any format resolves to correct DB record
+- [x] Multi-amount invoices — $350 + $400 + $175.25 = $925.25
+- [x] Cents preserved throughout — $175.25 not $175.00
+- [x] Square SDK v44 — payment links generating correctly in sandbox
+- [x] Per-line-item tax — TAX button per row, 5.5% Maine on marked items only
+- [x] Square link regenerates on edit with tax-inclusive total
+- [x] Invoice HTML saved to Supabase storage
+- [x] Customer SMS confirmation — normalized E.164 format
+- [x] Payment follow-up scheduled automatically
+- [x] Job cost tracking saving to DB
+- [x] Style learning loop — Haiku analyzes edits, updates client preferences
+- [x] All delivery webhooks confirmed — sent and finalized
+- [x] Dispatch board with drag-drop, worker columns, state persistence
+- [x] Worker route page with SMS status buttons (DONE/BACK/PARTS/NOSHOW/SCOPE)
+- [x] Auto-invoice on DONE — creates draft from estimated_amount
+- [x] Scope hold system — worker flags, owner reviews before invoice sends
+- [x] End-of-day carry-forward sweep for unfinished jobs
+- [x] AI dispatch apprentice logging (dispatch_decisions table)
+
+### Still Pending — Not Code, Just Waiting
+- [ ] **10DLC approval from Telnyx** — outbound SMS to real customers blocked until approved
+- [ ] **Square production credentials** — flip env vars when ready for real money
+
+### Next Session Priority
+- Vertical config layer — the unlock for every trade after sewer and drain
+- Multi-tenant onboarding flow that generates personality.md per business
+
 ---
 
 ## Current Production Status
