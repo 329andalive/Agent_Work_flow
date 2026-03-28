@@ -268,18 +268,56 @@ def _resolve_customer_from_text(text: str, client_id: str) -> tuple:
             print(f"[{timestamp()}] WARN command: Phone lookup failed — {e}")
         return (phone, None)
 
-    # Try name extraction from text
-    name = _extract_customer_name(text)
+    # ── Name resolution: try END of string first, then beginning ──
+    # Field workers say: "Pumped 1000 gallon tank Beverly Whitaker"
+    # The customer name is at the END, not the beginning.
+    _JOB_WORDS = {
+        "pumped", "pump", "snake", "snaked", "snaking", "jetted", "jetting",
+        "camera", "inspect", "inspected", "repair", "repaired", "replaced",
+        "installed", "install", "cleaned", "clean", "fixed", "dug", "hauled",
+        "tank", "gallon", "gal", "line", "main", "septic", "drain", "sewer",
+        "pipe", "baffle", "riser", "cover", "lid", "grease", "trap", "field",
+        "leach", "road", "street", "drive", "lane", "avenue", "route",
+        "labor", "hour", "hrs", "hr", "travel", "parts", "materials",
+    }
+    _CMD_WORDS = {
+        "invoice", "inv", "bill", "estimate", "est", "proposal", "quote",
+        "bid", "schedule", "book", "done", "complete", "finished", "clock",
+        "report", "for", "the", "at", "her", "him", "them", "this", "a", "an",
+    }
 
-    # Also try leading word as a surname — handles "Wentworth needs..."
+    def _is_name_candidate(word):
+        """True if this word could be part of a person's name."""
+        return (len(word) > 1
+                and word[0].isupper()
+                and word.lower() not in _JOB_WORDS
+                and word.lower() not in _CMD_WORDS
+                and not word.replace("$", "").replace(",", "").replace(".", "").isdigit())
+
+    words = text.strip().split()
+    name = None
+
+    # Strategy 1: Try last 2 words as "First Last" (most natural for field workers)
+    if len(words) >= 2:
+        last2 = f"{words[-2]} {words[-1]}"
+        if _is_name_candidate(words[-2]) and _is_name_candidate(words[-1]):
+            name = last2
+            print(f"[{timestamp()}] INFO command: Trying end-of-string name: '{name}'")
+
+    # Strategy 2: Try last 1 word as surname
+    if not name and words:
+        if _is_name_candidate(words[-1]):
+            name = words[-1]
+            print(f"[{timestamp()}] INFO command: Trying last word as name: '{name}'")
+
+    # Strategy 3: Fall back to regex extraction (beginning of string patterns)
     if not name:
-        leading_word = text.strip().split()[0] if text.strip() else ""
-        if leading_word and leading_word[0].isupper() and len(leading_word) > 2:
-            # Check it's not a command keyword
-            if leading_word.upper() not in {"INVOICE", "BILL", "ESTIMATE", "PROPOSAL",
-                                             "QUOTE", "BID", "SCHEDULE", "BOOK", "DONE",
-                                             "COMPLETE", "FINISHED", "CLOCK", "REPORT"}:
-                name = leading_word
+        name = _extract_customer_name(text)
+
+    # Strategy 4: Try leading word as surname ("Wentworth needs...")
+    if not name and words:
+        if _is_name_candidate(words[0]):
+            name = words[0]
 
     if name:
         try:
