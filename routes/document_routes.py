@@ -179,6 +179,53 @@ def save_document():
         except Exception as e:
             print(f"[{timestamp()}] WARN document_routes: HTML upload failed — {e}")
 
+        # Step 6b: Regenerate Square payment link if invoice total changed
+        if doc_type == "invoice" and abs(original_total - total) > 0.01 and total > 0:
+            try:
+                import os as _os
+                if _os.environ.get("SQUARE_ACCESS_TOKEN"):
+                    from execution.token_generator import generate_token, attach_payment_link
+                    from execution.square_agent import create_payment_link
+
+                    # Get client_phone for token generation
+                    client_record = get_client_by_id(client_id) if client_id else None
+                    client_phone = (client_record or {}).get("phone", "")
+
+                    if client_phone:
+                        job_id = document.get("job_id", "")
+                        invoice_token = generate_token(
+                            job_id=job_id or doc_id,
+                            client_phone=client_phone,
+                            link_type="invoice",
+                        )
+                        if invoice_token:
+                            amount_cents = int(round(total * 100))
+                            customer_name = (get_customer_by_id(document.get("customer_id")) or {}).get("customer_name", "Customer")
+                            biz_name = (client_record or {}).get("business_name", "")
+                            square_result = create_payment_link(
+                                invoice_id=doc_id,
+                                amount_cents=amount_cents,
+                                description=f"Invoice — {biz_name}",
+                                customer_name=customer_name,
+                            )
+                            if square_result.get("success"):
+                                attach_payment_link(
+                                    token=invoice_token,
+                                    payment_link_url=square_result["payment_link_url"],
+                                    square_order_id=square_result.get("square_order_id"),
+                                    square_payment_link_id=square_result.get("square_payment_link_id"),
+                                )
+                                # Update payment_link_url on invoice
+                                from execution.db_connection import get_client as _get_sb2
+                                _get_sb2().table("invoices").update({
+                                    "payment_link_url": square_result["payment_link_url"],
+                                }).eq("id", doc_id).execute()
+                                print(f"[{timestamp()}] INFO document_routes: Square link regenerated for ${total:.2f} → {square_result['payment_link_url']}")
+                            else:
+                                print(f"[{timestamp()}] WARN document_routes: Square link regen failed — {square_result.get('error')}")
+            except Exception as e:
+                print(f"[{timestamp()}] WARN document_routes: Square link regeneration error — {e}")
+
         # Step 7: Trigger learning update
         try:
             _run_learning_update(client_id, doc_type)

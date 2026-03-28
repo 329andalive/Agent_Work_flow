@@ -364,12 +364,17 @@ def run(client_phone: str, raw_input: str, customer_phone: str | None = None) ->
     flat_rate       = parse_flat_rate(raw_input)
     materials_desc, materials_cost = parse_materials(raw_input)
 
-    # Last resort — any dollar amount in the text is the flat rate
-    if actual_hours is None and flat_rate is None:
-        any_amount = re.search(r'\$(\d+(?:\.\d+)?)', raw_input)
-        if any_amount:
-            flat_rate = float(any_amount.group(1))
-            print(f"[{timestamp()}] INFO invoice_agent: Fallback amount detection — ${flat_rate}")
+    # Multi-amount detection: sum ALL dollar amounts in the text
+    # "pump out $350 and tank repair $400" → $750.0
+    if flat_rate is None:
+        all_amounts = re.findall(r'\$(\d+(?:\.\d+)?)', raw_input)
+        if all_amounts:
+            amounts = [float(a) for a in all_amounts]
+            flat_rate = sum(amounts)
+            if len(amounts) > 1:
+                print(f"[{timestamp()}] INFO invoice_agent: Multi-amount detected — {' + '.join(f'${a:.0f}' for a in amounts)} = ${flat_rate:.0f}")
+            else:
+                print(f"[{timestamp()}] INFO invoice_agent: Single amount detected — ${flat_rate:.0f}")
 
     # If no hours but a flat rate was specified, use it directly — no clarification needed
     if actual_hours is None and flat_rate is not None:
