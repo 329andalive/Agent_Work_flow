@@ -592,8 +592,7 @@ def run(client_phone: str, raw_input: str, customer_phone: str | None = None) ->
             f"- Separate labor and materials as separate line items\n"
             f"- qty for labor = hours worked, unit_price = hourly rate\n"
             f"- qty for flat rate = 1\n"
-            f"- ALL dollar amounts must be floats with 2 decimal places (175.25 not 175)\n"
-            f"- Items starting with 'part ' are taxable materials at Maine 5.5% sales tax"
+            f"- ALL dollar amounts must be floats with 2 decimal places (175.25 not 175)"
         )
         raw_line_items = call_claude(
             "You extract structured data from invoices. "
@@ -700,66 +699,17 @@ def run(client_phone: str, raw_input: str, customer_phone: str | None = None) ->
             })
 
     # Save line_items to invoice record
-    # Detect taxable items: "part " or "tax " prefix, or material keywords
-    TAXABLE_KEYWORDS = [
-        "baffle", "pipe", "fitting", "material", "supply",
-        "component", "riser", "cover", "lid", "filter", "adapter",
-        "coupling", "elbow", "tee", "valve", "hose",
-    ]
-    taxable_subtotal = 0.0
-    labor_subtotal = 0.0
-    has_taxable_parts = False
-
+    # Clean up numeric values — force 2 decimal floats
     for item in line_items_data:
-        desc = (item.get("description") or "")
-        desc_lower = desc.lower().strip()
-        # Force float with 2 decimal precision — catches any remaining int values
         raw_total = item.get("total", 0)
-        amount = round(float(raw_total), 2)
-        item["total"] = amount  # Write back the corrected value
+        item["total"] = round(float(raw_total), 2)
         if item.get("unit_price") is not None:
             item["unit_price"] = round(float(item["unit_price"]), 2)
-        print(f"[{timestamp()}] INFO invoice_agent: Line item: '{desc[:40]}' total={raw_total}→{amount}")
 
-        is_taxable = False
-        # "part " or "parts " prefix → taxable, strip prefix
-        if desc_lower.startswith("part ") or desc_lower.startswith("parts "):
-            is_taxable = True
-            item["description"] = desc.split(" ", 1)[1] if " " in desc else desc
-        elif desc_lower.startswith("tax "):
-            is_taxable = True
-            item["description"] = desc[4:].strip()
-        elif any(kw in desc_lower for kw in TAXABLE_KEYWORDS):
-            if not ("labor" in desc_lower or "hrs" in desc_lower or "hour" in desc_lower):
-                is_taxable = True
-
-        if is_taxable:
-            taxable_subtotal += amount
-            has_taxable_parts = True
-        else:
-            labor_subtotal += amount
-
-    taxable_subtotal = round(taxable_subtotal, 2)
-    labor_subtotal = round(labor_subtotal, 2)
-
+    # Tax is NOT set by the agent — Jeremy sets it on the edit page.
+    # Agent creates invoice at subtotal only. Square link uses subtotal.
     tax_rate = 0.0
     tax_amount = 0.0
-    if has_taxable_parts:
-        tax_rate = 0.055  # Maine 5.5%
-        tax_amount = round(taxable_subtotal * tax_rate, 2)
-        print(f"[{timestamp()}] INFO invoice_agent: Taxable=${taxable_subtotal:.2f} Labor=${labor_subtotal:.2f} Tax={tax_rate*100:.1f}%=${tax_amount:.2f}")
-
-        try:
-            send_sms(
-                to_number=owner_mobile,
-                message_body=(
-                    f"Heads up — taxable parts ${taxable_subtotal:.2f}. "
-                    f"Maine 5.5% tax = ${tax_amount:.2f}. Review before sending."
-                ),
-                from_number=client_phone,
-            )
-        except Exception:
-            pass
 
     try:
         from execution.db_connection import get_client as get_supabase
