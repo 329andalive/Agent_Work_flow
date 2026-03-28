@@ -200,6 +200,7 @@ def save_document():
                         )
                         if invoice_token:
                             amount_cents = int(round(total * 100))
+                            print(f"[{timestamp()}] INFO document_routes: Square regen total=${total:.2f} → {amount_cents}¢")
                             customer_name = (get_customer_by_id(document.get("customer_id")) or {}).get("customer_name", "Customer")
                             biz_name = (client_record or {}).get("business_name", "")
                             square_result = create_payment_link(
