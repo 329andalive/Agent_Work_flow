@@ -415,11 +415,32 @@ def run(client_phone: str, raw_input: str, customer_phone: str | None = None) ->
         customer_name = customer["customer_name"]
         customer_address = customer.get("customer_address", "")
     else:
-        # Customer genuinely not in system — do NOT create junk record
-        extracted_name = _extract_name_from_text(raw_input)
-        customer_name = extracted_name or "Customer"
-        customer_id = None
-        print(f"[{timestamp()}] WARN invoice_agent: Customer not found — invoicing as '{customer_name}' with no customer record")
+        # Customer not found — HARD STOP. Do not create phantom records.
+        extracted_name = _extract_name_from_text(raw_input) or "that customer"
+        print(f"[{timestamp()}] WARN invoice_agent: Customer '{extracted_name}' not found — aborting invoice")
+
+        send_sms(
+            to_number=owner_mobile,
+            message_body=(
+                f"Couldn't find {extracted_name}. Try: INV +12075558806 [job notes] "
+                f"or add them first with: ADD CUSTOMER [Name] [phone]"
+            ),
+            from_number=client_phone,
+        )
+
+        try:
+            log_activity(
+                client_phone=client_phone,
+                agent_name="invoice_agent",
+                action_taken="invoice_failed",
+                input_summary=raw_input[:120],
+                output_summary=f"Customer '{extracted_name}' not found — invoice aborted",
+                sms_sent=True,
+            )
+        except Exception:
+            pass
+
+        return None
 
     # Find the most recent job for this customer that needs invoicing
     job = None

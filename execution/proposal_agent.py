@@ -283,7 +283,7 @@ def run(client_phone: str, customer_phone: str, raw_input: str) -> str | None:
         print(f"[{timestamp()}] ERROR proposal_agent: customer_phone {customer_phone} matches owner — aborting")
         send_sms(
             to_number=owner_mobile,
-            message_body="I couldn't identify the customer for that job. Reply with their name or phone number.",
+            message_body="Couldn't find that customer. Try: EST +12075558806 [job description] or add them: ADD CUSTOMER [Name] [phone]",
             from_number=client_phone,
         )
         return None
@@ -332,9 +332,23 @@ def run(client_phone: str, customer_phone: str, raw_input: str) -> str | None:
                 print(f"[{timestamp()}] ERROR proposal_agent: Could not resolve customer — no phone, name search failed")
                 send_sms(
                     to_number=owner_mobile,
-                    message_body="I couldn't identify the customer for that job. Reply with their name or phone number.",
+                    message_body=(
+                        f"Couldn't find that customer. Try: EST +12075558806 [job description] "
+                        f"or add them first with: ADD CUSTOMER [Name] [phone]"
+                    ),
                     from_number=client_phone,
                 )
+                try:
+                    log_activity(
+                        client_phone=client_phone,
+                        agent_name="proposal_agent",
+                        action_taken="proposal_failed",
+                        input_summary=raw_input[:120],
+                        output_summary=f"Customer not found — proposal aborted",
+                        sms_sent=True,
+                    )
+                except Exception:
+                    pass
                 return None
     except Exception as e:
         print(f"[{timestamp()}] ERROR proposal_agent: Customer lookup/create failed — {e}")
