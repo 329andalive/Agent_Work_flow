@@ -10,9 +10,22 @@ Or run directly:
 """
 
 import os
+import re
 import requests
 from datetime import datetime
 from dotenv import load_dotenv
+
+
+def _normalize_phone(phone):
+    """Normalize any phone format to E.164 (+12075558806)."""
+    if not phone:
+        return phone
+    digits = re.sub(r'\D', '', str(phone))
+    if len(digits) == 10:
+        return f'+1{digits}'
+    if len(digits) == 11 and digits.startswith('1'):
+        return f'+{digits}'
+    return f'+{digits}'
 
 # Load credentials from .env
 load_dotenv()
@@ -111,6 +124,11 @@ def send_sms(to_number: str, message_body: str, from_number: str = None,
             message_id (str or None)
             error (str or None)
     """
+    # Normalize phone numbers to E.164 — fixes Telnyx 40310 errors
+    to_number = _normalize_phone(to_number)
+    if from_number:
+        from_number = _normalize_phone(from_number)
+
     # Fall back to the .env default if no from_number provided
     sender = from_number or TELNYX_PHONE_NUMBER
 
