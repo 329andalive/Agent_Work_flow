@@ -116,7 +116,7 @@ def build_document_html(
 
     # Tax dropdown options
     tax_options = ""
-    for rate_val, rate_label in [(0, "0%"), (0.05, "5%"), (0.08, "8%"), (0.10, "10%")]:
+    for rate_val, rate_label in [(0, "0% — No tax"), (0.055, "5.5% — Maine standard")]:
         selected = "selected" if abs(tax_rate - rate_val) < 0.001 else ""
         tax_options += f'<option value="{rate_val}" {selected}>{rate_label}</option>'
 
