@@ -147,7 +147,16 @@ def handle_command():
                  ["CLOCK IN", "CLOCK OUT", "CLOCKIN", "CLOCKOUT",
                   "CLOCKED IN", "CLOCKED OUT"]):
             from execution.clock_agent import handle_clock
-            owner_employee = {"name": client.get("owner_name", "Owner"), "role": "owner", "phone": owner_mobile, "id": "owner"}
+            # Look up actual employee UUID — "owner" string breaks Supabase UUID columns
+            _owner_emp_id = None
+            try:
+                _sb = _get_supabase()
+                _emp = _sb.table("employees").select("id").eq("client_id", client_id).eq("phone", owner_mobile).eq("active", True).limit(1).execute()
+                if _emp.data:
+                    _owner_emp_id = _emp.data[0]["id"]
+            except Exception:
+                pass
+            owner_employee = {"name": client.get("owner_name", "Owner"), "role": "owner", "phone": owner_mobile, "id": _owner_emp_id}
             output = handle_clock(client=client, employee=owner_employee, raw_input=text, from_number=owner_mobile)
             result = {"agent": "clock_agent", "status": "ok", "message": output or "Clock event recorded."}
 

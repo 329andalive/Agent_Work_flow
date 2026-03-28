@@ -291,9 +291,18 @@ def handle_clock(
     client_id    = client["id"]
     client_phone = client.get("phone") or client.get("telnyx_number")
     owner_phone  = client.get("owner_mobile") or client.get("phone")
-    employee_id  = employee["id"]
+    employee_id  = employee.get("id")
     emp_name     = employee.get("name", "there")
     emp_first    = emp_name.split()[0]
+
+    if not employee_id:
+        print(f"[{timestamp()}] ERROR clock_agent: No employee UUID — cannot clock in/out")
+        send_sms(
+            to_number=from_number,
+            message_body="Clock in/out failed — you're not set up as a worker yet. Ask your dispatcher to add you.",
+            from_number=client_phone,
+        )
+        return "error"
 
     tz          = _get_tz(client)
     now_utc     = datetime.now(timezone.utc)
