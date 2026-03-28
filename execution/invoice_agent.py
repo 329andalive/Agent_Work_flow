@@ -624,9 +624,12 @@ def run(client_phone: str, raw_input: str, customer_phone: str | None = None) ->
 
     # ------------------------------------------------------------------
     # Step 7: Save invoice to Supabase
+    # Use actual_amount (calculated from raw SMS dollar amounts) as the
+    # source of truth — NOT parse_invoice_total which reads Claude's text
+    # and may round off cents ($925 instead of $925.25).
     # ------------------------------------------------------------------
-    parsed_total = parse_invoice_total(invoice_text)
-    final_amount = parsed_total if parsed_total > 0 else actual_amount
+    final_amount = actual_amount
+    print(f"[{timestamp()}] INFO invoice_agent: final_amount=${final_amount:.2f} (from actual_amount, not Claude text)")
 
     invoice_id = save_invoice(
         job_id=job_id,
@@ -749,6 +752,10 @@ def run(client_phone: str, raw_input: str, customer_phone: str | None = None) ->
         float(item.get("total", 0))
         for item in line_items_data
     ) if line_items_data else final_amount
+    # Safety: if Haiku rounded off cents in line items, use actual_amount instead
+    if line_items_data and abs(square_subtotal - actual_amount) > 0.01:
+        print(f"[{timestamp()}] WARN invoice_agent: Line items total ${square_subtotal:.2f} != actual_amount ${actual_amount:.2f} — using actual_amount")
+        square_subtotal = actual_amount
     square_total = round(square_subtotal + tax_amount, 2)
     print(f"[{timestamp()}] INFO invoice_agent: Square link using total ${square_total:.2f} (subtotal=${square_subtotal:.2f} + tax=${tax_amount:.2f}, {len(line_items_data)} items)")
 
