@@ -30,22 +30,21 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from dotenv import load_dotenv
 
-# squareup v44 SDK — try all known import paths
+# squareup v44 SDK — the pip package is "squareup" but the module is "square"
+# v44 exports Square (not Client) from square.client
 SQUARE_AVAILABLE = False
-Client = None
+Square = None
+SquareEnvironment = None
+
 try:
-    from squareup.client import Client
+    from square.client import Square, SquareEnvironment
     SQUARE_AVAILABLE = True
 except ImportError:
     try:
-        from square.client import Client
+        from square import Square
         SQUARE_AVAILABLE = True
     except ImportError:
-        try:
-            from square import Client
-            SQUARE_AVAILABLE = True
-        except ImportError:
-            print(f"[square_agent] WARN: squareup SDK not found — payment links disabled")
+        print("[square_agent] WARN: squareup SDK not found — payment links disabled")
 
 load_dotenv()
 
@@ -56,13 +55,20 @@ def timestamp():
 
 def get_square_client():
     """Return an initialised Square SDK client."""
-    if Client is None:
+    if Square is None:
         raise ImportError("Square SDK (squareup) is not installed — run: pip install squareup")
-    environment = os.environ.get("SQUARE_ENVIRONMENT", "sandbox")
     access_token = os.environ.get("SQUARE_ACCESS_TOKEN")
     if not access_token:
         raise EnvironmentError("SQUARE_ACCESS_TOKEN is not set in .env")
-    return Client(access_token=access_token, environment=environment)
+
+    # v44 uses SquareEnvironment enum, not a string
+    env_str = os.environ.get("SQUARE_ENVIRONMENT", "sandbox").lower()
+    if SquareEnvironment:
+        environment = SquareEnvironment.SANDBOX if env_str == "sandbox" else SquareEnvironment.PRODUCTION
+        return Square(token=access_token, environment=environment)
+    else:
+        # Fallback for unknown SDK version
+        return Square(token=access_token)
 
 
 def create_payment_link(
@@ -93,9 +99,12 @@ def create_payment_link(
 
         idempotency_key = f"bolts11-{invoice_id}-{uuid.uuid4().hex[:8]}"
 
-        body = {
-            "idempotency_key": idempotency_key,
-            "quick_pay": {
+        print(f"[{timestamp()}] INFO square_agent: Creating payment link for invoice {invoice_id} amount={amount_cents}¢")
+
+        # v44 API: client.checkout.create_payment_link()
+        result = client.checkout.create_payment_link(
+            idempotency_key=idempotency_key,
+            quick_pay={
                 "name": description or "Invoice Payment",
                 "price_money": {
                     "amount": amount_cents,
@@ -103,17 +112,28 @@ def create_payment_link(
                 },
                 "location_id": location_id,
             },
-            "checkout_options": {
+            checkout_options={
                 "allow_tipping": False,
                 "ask_for_shipping_address": False,
             },
-            "payment_note": f"Bolts11 Invoice {invoice_id} — {customer_name}",
-        }
+            payment_note=f"Bolts11 Invoice {invoice_id} — {customer_name}",
+        )
 
-        print(f"[{timestamp()}] INFO square_agent: Creating payment link for invoice {invoice_id} amount={amount_cents}¢")
-        result = client.payment_links.create_payment_link(body=body)
-
-        if result.is_success():
+        # v44 returns the response object directly (not wrapped in is_success)
+        if hasattr(result, 'payment_link'):
+            link = result.payment_link
+            url = getattr(link, 'url', None) or getattr(link, 'long_url', None)
+            order_id = getattr(link, 'order_id', None)
+            link_id = getattr(link, 'id', None)
+            print(f"[{timestamp()}] INFO square_agent: Payment link created → {url}")
+            return {
+                "success": True,
+                "payment_link_url": url,
+                "square_order_id": order_id,
+                "square_payment_link_id": link_id,
+            }
+        elif hasattr(result, 'body'):
+            # Older SDK style
             link = result.body.get("payment_link", {})
             url = link.get("url")
             print(f"[{timestamp()}] INFO square_agent: Payment link created → {url}")
@@ -124,12 +144,8 @@ def create_payment_link(
                 "square_payment_link_id": link.get("id"),
             }
         else:
-            errors = result.errors
-            error_msg = "; ".join(
-                f"{e.get('code')}: {e.get('detail')}" for e in errors
-            )
-            print(f"[{timestamp()}] ERROR square_agent: Square API error — {error_msg}")
-            return {"success": False, "error": error_msg}
+            print(f"[{timestamp()}] ERROR square_agent: Unexpected response type: {type(result)}")
+            return {"success": False, "error": f"Unexpected response: {result}"}
 
     except EnvironmentError as e:
         print(f"[{timestamp()}] ERROR square_agent: {e}")
