@@ -47,12 +47,14 @@ def split_message(text, max_length=MAX_SMS_LENGTH):
 def _log_sms(client_phone: str, recipient_phone: str, message_type: str,
              body: str, telnyx_message_id: str = None, status: str = "sent") -> None:
     """
-    Log an outbound SMS to the sms_message_log table.
+    Log an outbound SMS to both sms_message_log AND messages tables.
     Never raises — a failed log must never block SMS delivery.
     """
     try:
         from execution.db_connection import get_client as get_supabase
         sb = get_supabase()
+
+        # Log to sms_message_log (analytics/audit)
         sb.table("sms_message_log").insert({
             "client_phone": client_phone,
             "recipient_phone": recipient_phone,
@@ -61,8 +63,30 @@ def _log_sms(client_phone: str, recipient_phone: str, message_type: str,
             "telnyx_message_id": telnyx_message_id,
             "status": status,
         }).execute()
+
+        # Also log to messages table (conversation history + webhook matching)
+        # This fixes the "No message row for telnyx_id" warning on delivery webhooks
+        try:
+            # Resolve client_id from client_phone
+            client_id = None
+            cr = sb.table("clients").select("id").eq("phone", client_phone).limit(1).execute()
+            if cr.data:
+                client_id = cr.data[0]["id"]
+
+            if client_id:
+                sb.table("messages").insert({
+                    "client_id": client_id,
+                    "direction": "outbound",
+                    "from_number": client_phone,
+                    "to_number": recipient_phone,
+                    "body": (body or "")[:4000],
+                    "telnyx_message_id": telnyx_message_id,
+                    "agent_used": message_type,
+                }).execute()
+        except Exception:
+            pass  # Non-fatal — sms_message_log is the primary record
+
     except Exception as e:
-        # Log but never block — SMS delivery is more important than the audit log
         print(f"[{timestamp()}] WARN sms_send: sms_message_log insert failed — {e}")
 
 
