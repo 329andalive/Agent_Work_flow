@@ -372,7 +372,7 @@ def run(client_phone: str, raw_input: str, customer_phone: str | None = None) ->
             amounts = [float(a) for a in all_amounts]
             flat_rate = sum(amounts)
             if len(amounts) > 1:
-                print(f"[{timestamp()}] INFO invoice_agent: Multi-amount detected — {' + '.join(f'${a:.0f}' for a in amounts)} = ${flat_rate:.2f}")
+                print(f"[{timestamp()}] INFO invoice_agent: Multi-amount detected — {' + '.join(f'${a:.2f}' for a in amounts)} = ${flat_rate:.2f}")
             else:
                 print(f"[{timestamp()}] INFO invoice_agent: Single amount detected — ${flat_rate:.2f}")
 
@@ -738,9 +738,11 @@ def run(client_phone: str, raw_input: str, customer_phone: str | None = None) ->
     try:
         from execution.db_connection import get_client as get_supabase
         sb = get_supabase()
+        line_items_subtotal = sum(float(item.get("total", 0)) for item in line_items_data) if line_items_data else final_amount
         sb.table("invoices").update({
             "line_items": line_items_data,
-            "subtotal": final_amount,
+            "subtotal": line_items_subtotal,
+            "amount_due": round(line_items_subtotal + tax_amount, 2),
             "tax_rate": tax_rate,
             "tax_amount": tax_amount,
         }).eq("id", invoice_id).execute()
@@ -844,7 +846,7 @@ def run(client_phone: str, raw_input: str, customer_phone: str | None = None) ->
     # ------------------------------------------------------------------
     if edit_url:
         combined_sms = (
-            f"Invoice ready for {customer_name} — ${final_amount:.2f}\n"
+            f"Invoice ready for {customer_name} — ${square_total:.2f}\n"
             f"Edit & send: {edit_url}\n\n"
             f"---\n"
             f"JOB COST (owner only)\n"
@@ -875,7 +877,7 @@ def run(client_phone: str, raw_input: str, customer_phone: str | None = None) ->
             customer_phone != owner_mobile and
             customer_phone != client_phone):
         tech_confirm = (
-            f"Invoice sent — {customer_name} ${final_amount:.2f}. "
+            f"Invoice sent — {customer_name} ${square_total:.2f}. "
             f"Job marked complete."
         )
         send_sms(to_number=customer_phone, message_body=tech_confirm, from_number=client_phone)
