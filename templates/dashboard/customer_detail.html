@@ -84,6 +84,12 @@
         <span class="profile-meta-label">Phone</span>
         <span class="phone-val">{{ fmt_phone(customer.customer_phone) }}</span>
       </div>
+      {% if customer.customer_email %}
+      <div class="profile-meta-item">
+        <span class="profile-meta-label">Email</span>
+        <span class="profile-meta-value">{{ customer.customer_email }}</span>
+      </div>
+      {% endif %}
       {% if customer.customer_address %}
       <div class="profile-meta-item">
         <span class="profile-meta-label">Address</span>

@@ -116,6 +116,10 @@
         <input type="tel" id="f-phone" placeholder="(207) 555-1234" autocomplete="off" />
       </div>
       <div class="field">
+        <label>Email</label>
+        <input type="email" id="f-email" placeholder="jane@example.com" autocomplete="off" />
+      </div>
+      <div class="field">
         <label>Address</label>
         <input type="text" id="f-address" placeholder="123 Main St, City, ME" autocomplete="off" />
       </div>
@@ -149,6 +153,7 @@
           <tr>
             <th>Name</th>
             <th>Phone</th>
+            <th>Email</th>
             <th>Address</th>
             <th style="text-align:right">Jobs</th>
             <th>Last Job</th>
@@ -160,9 +165,12 @@
           {% for c in customers %}
           <tr style="cursor:pointer"
               onclick="window.location='/dashboard/customers/{{ c.id }}'"
-              data-search="{{ (c.customer_name or '')|lower }} {{ (c.customer_phone or '')|lower }} {{ (c.customer_address or '')|lower }}">
+              data-search="{{ (c.customer_name or '')|lower }} {{ (c.customer_phone or '')|lower }} {{ (c.customer_email or '')|lower }} {{ (c.customer_address or '')|lower }}">
             <td style="font-weight:500">{{ c.customer_name or '—' }}</td>
             <td style="font-family:'DM Mono',monospace;font-size:12px">{{ fmt_phone(c.customer_phone) }}</td>
+            <td style="font-size:12px;color:var(--text-tertiary);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+              {{ c.customer_email or '—' }}
+            </td>
             <td style="font-size:12px;color:var(--text-tertiary);max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
               {{ c.customer_address or '—' }}
             </td>
@@ -235,6 +243,7 @@ async function saveCustomer() {
       body: JSON.stringify({
         customer_name:    name,
         customer_phone:   phone,
+        customer_email:   document.getElementById('f-email').value.trim(),
         customer_address: document.getElementById('f-address').value.trim(),
         notes:            document.getElementById('f-notes').value.trim(),
       })
@@ -242,7 +251,7 @@ async function saveCustomer() {
     var data = await resp.json();
     if (resp.ok && data.success !== false) {
       showMsg('success', 'Customer saved!');
-      ['f-name','f-phone','f-address','f-notes'].forEach(function(id) {
+      ['f-name','f-phone','f-email','f-address','f-notes'].forEach(function(id) {
         document.getElementById(id).value = '';
       });
       setTimeout(function() { location.reload(); }, 1200);

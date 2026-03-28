@@ -986,6 +986,7 @@ def api_create_customer():
 
     phone = _normalize_phone(raw_phone)
     customer_name = (data.get("customer_name") or "").strip()
+    customer_email = (data.get("customer_email") or "").strip()
     customer_address = (data.get("customer_address") or "").strip()
     notes = (data.get("notes") or "").strip()
 
@@ -1005,6 +1006,7 @@ def api_create_customer():
         "client_id": client_id,
         "customer_phone": phone,
         "customer_name": customer_name or None,
+        "customer_email": customer_email or None,
         "customer_address": customer_address or None,
         "notes": notes or None,
         "sms_consent": False,
@@ -2014,7 +2016,7 @@ def customers():
     customers_list = []
     try:
         result = sb.table("customers").select(
-            "id, customer_name, customer_phone, customer_address, sms_consent, created_at"
+            "id, customer_name, customer_phone, customer_email, customer_address, sms_consent, created_at"
         ).eq("client_id", client_id).order("customer_name").execute()
         customers_list = result.data or []
     except Exception as e:
