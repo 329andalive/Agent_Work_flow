@@ -10,10 +10,23 @@ Usage:
 """
 
 import os
+import re
 import sys
 from datetime import datetime
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+
+def _normalize_phone(phone: str) -> str:
+    """Normalize any phone format to E.164 (+12075558806)."""
+    if not phone:
+        return phone
+    digits = re.sub(r'\D', '', phone)
+    if len(digits) == 10:
+        return f'+1{digits}'
+    if len(digits) == 11 and digits.startswith('1'):
+        return f'+{digits}'
+    return f'+{digits}'
 
 from execution.db_connection import get_client
 
@@ -38,7 +51,7 @@ def get_client_by_phone(phone: str) -> dict | None:
         result = (
             supabase.table("clients")
             .select("*")
-            .eq("phone", phone)
+            .eq("phone", _normalize_phone(phone))
             .eq("active", True)
             .single()
             .execute()

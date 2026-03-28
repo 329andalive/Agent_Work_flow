@@ -10,6 +10,7 @@ Usage:
 """
 
 import os
+import re
 import sys
 from datetime import datetime
 
@@ -20,6 +21,18 @@ from execution.db_connection import get_client
 
 def timestamp():
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _normalize_phone(phone: str) -> str:
+    """Normalize any phone format to E.164 (+12075558806)."""
+    if not phone:
+        return phone
+    digits = re.sub(r'\D', '', phone)
+    if len(digits) == 10:
+        return f'+1{digits}'
+    if len(digits) == 11 and digits.startswith('1'):
+        return f'+{digits}'
+    return f'+{digits}'
 
 
 def get_customer_by_phone(client_id: str, phone: str) -> dict | None:
@@ -40,7 +53,7 @@ def get_customer_by_phone(client_id: str, phone: str) -> dict | None:
             supabase.table("customers")
             .select("*")
             .eq("client_id", client_id)
-            .eq("customer_phone", phone)
+            .eq("customer_phone", _normalize_phone(phone))
             .single()
             .execute()
         )
@@ -88,7 +101,7 @@ def create_customer(
         record = {
             "client_id":        client_id,
             "customer_name":    name,
-            "customer_phone":   phone,
+            "customer_phone":   _normalize_phone(phone),
             "customer_address": address,
             "customer_email":   email,
             "sms_consent":      sms_consent,
@@ -149,7 +162,7 @@ def get_customer_by_phone_any_client(phone: str) -> dict | None:
         result = (
             supabase.table("customers")
             .select("*")
-            .eq("customer_phone", phone)
+            .eq("customer_phone", _normalize_phone(phone))
             .limit(1)
             .execute()
         )
