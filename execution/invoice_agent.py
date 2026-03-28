@@ -586,7 +586,9 @@ def run(client_phone: str, raw_input: str, customer_phone: str | None = None) ->
             f"- Never include raw field notes in description\n"
             f"- Separate labor and materials as separate line items\n"
             f"- qty for labor = hours worked, unit_price = hourly rate\n"
-            f"- qty for flat rate = 1"
+            f"- qty for flat rate = 1\n"
+            f"- ALL dollar amounts must be floats with 2 decimal places (175.25 not 175)\n"
+            f"- Items starting with 'part ' are taxable materials at Maine 5.5% sales tax"
         )
         raw_line_items = call_claude(
             "You extract structured data from invoices. "
@@ -598,6 +600,16 @@ def run(client_phone: str, raw_input: str, customer_phone: str | None = None) ->
                                  raw_line_items).strip()
         parsed_items = _json.loads(raw_line_items)
         if isinstance(parsed_items, list) and len(parsed_items) > 0:
+            # Force all numeric values to 2-decimal floats — Haiku may return ints
+            for item in parsed_items:
+                if "unit_price" in item:
+                    item["unit_price"] = round(float(item["unit_price"]), 2)
+                if "total" in item:
+                    item["total"] = round(float(item["total"]), 2)
+                if "qty" in item:
+                    item["qty"] = round(float(item["qty"]), 2)
+                if "amount" in item:
+                    item["amount"] = round(float(item["amount"]), 2)
             line_items_data = parsed_items
             print(f"[{timestamp()}] INFO invoice_agent: "
                   f"Haiku extracted {len(line_items_data)} clean "
@@ -662,24 +674,24 @@ def run(client_phone: str, raw_input: str, customer_phone: str | None = None) ->
         if actual_hours > 0:
             line_items_data.append({
                 "description": f"Labor — {clean_job_desc}",
-                "qty": actual_hours,
-                "unit_price": hourly_rate,
-                "total": labor_total,
+                "qty": round(float(actual_hours), 2),
+                "unit_price": round(float(hourly_rate), 2),
+                "total": round(float(labor_total), 2),
             })
         if materials_cost > 0:
             line_items_data.append({
                 "description": f"Parts/Materials — {materials_desc or 'as used'}",
                 "qty": 1,
-                "unit_price": materials_cost,
-                "total": materials_cost,
+                "unit_price": round(float(materials_cost), 2),
+                "total": round(float(materials_cost), 2),
             })
         # For flat rate with no labor breakdown, add single line
         if not line_items_data:
             line_items_data.append({
                 "description": clean_job_desc or "Services Rendered",
                 "qty": 1,
-                "unit_price": final_amount,
-                "total": final_amount,
+                "unit_price": round(float(final_amount), 2),
+                "total": round(float(final_amount), 2),
             })
 
     # Save line_items to invoice record
