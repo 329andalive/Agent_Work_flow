@@ -97,12 +97,19 @@ def handle_command():
     text_upper = text.upper()
     result = None
 
+    # Strip leading command keywords before customer resolution
+    # "EST snake main line..." → "snake main line..."
+    # "Inv snaked main line..." → "snaked main line..."
+    import re as _re
+    _CMD_PREFIXES = r'^(EST|INV|ESTIMATE|INVOICE|PROPOSAL|QUOTE|BID|BILL|DONE|COMPLETE|SCHEDULE|BOOK)\s+'
+    text_for_customer = _re.sub(_CMD_PREFIXES, '', text.strip(), count=1, flags=_re.IGNORECASE).strip()
+
     try:
         # ── INVOICE / BILL ──────────────────
         if any(kw in text_upper for kw in
-               ["INVOICE", "BILL ", "SEND HER A BILL",
+               ["INVOICE", "INV ", "BILL ", "SEND HER A BILL",
                 "SEND HIM A BILL", "BILL FOR"]):
-            customer_phone, customer_name = _resolve_customer_from_text(text, client_id)
+            customer_phone, customer_name = _resolve_customer_from_text(text_for_customer, client_id)
             if not customer_phone:
                 extracted_name = _extract_customer_name(text) or "that customer"
                 result = {
@@ -121,8 +128,8 @@ def handle_command():
 
         # ── ESTIMATE / PROPOSAL ─────────────
         elif any(kw in text_upper for kw in
-                 ["ESTIMATE", "PROPOSAL", "QUOTE", "BID"]):
-            customer_phone, customer_name = _resolve_customer_from_text(text, client_id)
+                 ["ESTIMATE", "EST ", "PROPOSAL", "QUOTE", "BID"]):
+            customer_phone, customer_name = _resolve_customer_from_text(text_for_customer, client_id)
             from execution.proposal_agent import run as proposal_run
             output = proposal_run(client_phone=client_phone, customer_phone=customer_phone, raw_input=text)
             result = {"agent": "proposal_agent", "status": "ok", "message": output or "Proposal generated."}
@@ -148,7 +155,7 @@ def handle_command():
         elif any(kw in text_upper for kw in
                  ["DONE", "COMPLETE", "FINISHED", "WRAPPED UP",
                   "ALL DONE", "JOB DONE"]):
-            customer_phone, _ = _resolve_customer_from_text(text, client_id)
+            customer_phone, _ = _resolve_customer_from_text(text_for_customer, client_id)
             if not customer_phone:
                 extracted_name = _extract_customer_name(text) or "that customer"
                 result = {
@@ -359,7 +366,10 @@ def _interpret_and_route(text, client, client_phone, owner_mobile, client_id, ct
     intent = (raw_intent or "UNKNOWN").strip().upper()
     print(f"[{timestamp()}] INFO command: Haiku classified intent={intent}")
 
-    customer_phone, _ = _resolve_customer_from_text(text, client_id)
+    # Strip command prefix before customer resolution
+    import re as _re2
+    _text_clean = _re2.sub(r'^(EST|INV|ESTIMATE|INVOICE|PROPOSAL|QUOTE|BID|BILL|DONE|COMPLETE|SCHEDULE|BOOK)\s+', '', text.strip(), count=1, flags=_re2.IGNORECASE).strip()
+    customer_phone, _ = _resolve_customer_from_text(_text_clean, client_id)
 
     if intent == "INVOICE":
         if not customer_phone:
