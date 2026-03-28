@@ -87,11 +87,23 @@
       {% endfor %}
 
       <div class="doc-totals">
-        <div class="doc-total-row"><span>Subtotal</span><span>${{ "%.2f"|format(subtotal) }}</span></div>
-        {% if tax_amount > 0 %}
-        <div class="doc-total-row"><span>Tax ({{ "%.0f"|format(tax_rate * 100) }}%)</span><span>${{ "%.2f"|format(tax_amount) }}</span></div>
-        {% endif %}
-        <div class="doc-total-row grand"><span>Total Due</span><span>${{ "%.2f"|format(total) }}</span></div>
+        <div class="doc-total-row"><span>Subtotal</span><span id="disp-subtotal">${{ "%.2f"|format(subtotal) }}</span></div>
+        <div class="doc-total-row">
+          <span>
+            Tax
+            <select id="tax-select" style="font-family:'DM Mono',monospace;font-size:11px;padding:1px 4px;border:1px solid var(--border);border-radius:3px;background:var(--bg-card);color:var(--text-secondary);margin-left:4px"
+                    onchange="updateTax()">
+              <option value="0" {% if tax_rate == 0 %}selected{% endif %}>0%</option>
+              <option value="0.055" {% if tax_rate == 0.055 %}selected{% endif %}>5.5% (Maine)</option>
+              <option value="custom">Custom</option>
+            </select>
+            <input type="number" id="tax-custom" step="0.01" min="0" max="30" value="{{ '%.1f'|format(tax_rate * 100) }}"
+                   style="display:none;width:50px;font-family:'DM Mono',monospace;font-size:11px;padding:1px 4px;border:1px solid var(--border);border-radius:3px;margin-left:4px"
+                   onchange="updateTax()">
+          </span>
+          <span id="disp-tax">${{ "%.2f"|format(tax_amount) }}</span>
+        </div>
+        <div class="doc-total-row grand"><span>Total Due</span><span id="disp-total">${{ "%.2f"|format(total) }}</span></div>
       </div>
     </div>
 
@@ -188,6 +200,25 @@ function buildInvoiceText() {
   lines.push('');
   lines.push('{{ business_name }}');
   return lines.join('\n');
+}
+
+var SUBTOTAL = {{ subtotal }};
+
+function updateTax() {
+  var sel = document.getElementById('tax-select');
+  var custom = document.getElementById('tax-custom');
+  var rate;
+  if (sel.value === 'custom') {
+    custom.style.display = 'inline';
+    rate = parseFloat(custom.value) / 100 || 0;
+  } else {
+    custom.style.display = 'none';
+    rate = parseFloat(sel.value) || 0;
+  }
+  var taxAmt = Math.round(SUBTOTAL * rate * 100) / 100;
+  var total = Math.round((SUBTOTAL + taxAmt) * 100) / 100;
+  document.getElementById('disp-tax').textContent = '$' + taxAmt.toFixed(2);
+  document.getElementById('disp-total').textContent = '$' + total.toFixed(2);
 }
 
 function copyInvoice() {

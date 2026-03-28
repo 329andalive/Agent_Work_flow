@@ -683,14 +683,52 @@ def run(client_phone: str, raw_input: str, customer_phone: str | None = None) ->
             })
 
     # Save line_items to invoice record
+    # Detect taxable parts — Maine 5.5% sales tax on materials/parts
+    TAXABLE_KEYWORDS = [
+        "baffle", "pipe", "fitting", "part", "material", "supply",
+        "component", "riser", "cover", "lid", "filter", "adapter",
+        "coupling", "elbow", "tee", "valve", "pump", "hose",
+    ]
+    # "pump" alone (pump-out service) is NOT taxable, but "pump" as a part IS
+    has_taxable_parts = False
+    for item in line_items_data:
+        desc_lower = (item.get("description") or "").lower()
+        # Skip labor-only items
+        if "labor" in desc_lower or "hrs" in desc_lower or "hour" in desc_lower:
+            continue
+        if any(kw in desc_lower for kw in TAXABLE_KEYWORDS):
+            has_taxable_parts = True
+            break
+
+    tax_rate = 0.0
+    tax_amount = 0.0
+    if has_taxable_parts:
+        tax_rate = 0.055  # Maine 5.5%
+        subtotal_for_tax = sum(float(item.get("total", 0)) for item in line_items_data)
+        tax_amount = round(subtotal_for_tax * tax_rate, 2)
+        print(f"[{timestamp()}] INFO invoice_agent: Taxable parts detected — tax_rate=5.5% tax_amount=${tax_amount:.2f}")
+
+        # Notify owner about taxable parts
+        try:
+            send_sms(
+                to_number=owner_mobile,
+                message_body=(
+                    f"Heads up — this invoice may have taxable parts. "
+                    f"Review tax rate before sending. Tax at 5.5% = ${tax_amount:.2f}"
+                ),
+                from_number=client_phone,
+            )
+        except Exception:
+            pass
+
     try:
         from execution.db_connection import get_client as get_supabase
         sb = get_supabase()
         sb.table("invoices").update({
             "line_items": line_items_data,
             "subtotal": final_amount,
-            "tax_rate": 0,
-            "tax_amount": 0,
+            "tax_rate": tax_rate,
+            "tax_amount": tax_amount,
         }).eq("id", invoice_id).execute()
         print(f"[{timestamp()}] INFO invoice_agent: Stored {len(line_items_data)} line items on invoice")
     except Exception as e:
@@ -715,11 +753,12 @@ def run(client_phone: str, raw_input: str, customer_phone: str | None = None) ->
     # Calculate directly from line_items_data — the list we just stored.
     # This is the real multi-item total, not the single parsed amount.
     # ------------------------------------------------------------------
-    square_total = sum(
+    square_subtotal = sum(
         float(item.get("total", 0))
         for item in line_items_data
     ) if line_items_data else final_amount
-    print(f"[{timestamp()}] INFO invoice_agent: Square link using line items total ${square_total:.2f} ({len(line_items_data)} items)")
+    square_total = round(square_subtotal + tax_amount, 2)
+    print(f"[{timestamp()}] INFO invoice_agent: Square link using total ${square_total:.2f} (subtotal=${square_subtotal:.2f} + tax=${tax_amount:.2f}, {len(line_items_data)} items)")
 
     # Also update amount_due on the invoice to match line items
     if line_items_data and abs(square_total - final_amount) > 0.01:
