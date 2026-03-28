@@ -713,7 +713,13 @@ def run(client_phone: str, raw_input: str, customer_phone: str | None = None) ->
     for item in line_items_data:
         desc = (item.get("description") or "")
         desc_lower = desc.lower().strip()
-        amount = float(item.get("total", 0))
+        # Force float with 2 decimal precision — catches any remaining int values
+        raw_total = item.get("total", 0)
+        amount = round(float(raw_total), 2)
+        item["total"] = amount  # Write back the corrected value
+        if item.get("unit_price") is not None:
+            item["unit_price"] = round(float(item["unit_price"]), 2)
+        print(f"[{timestamp()}] INFO invoice_agent: Line item: '{desc[:40]}' total={raw_total}→{amount}")
 
         is_taxable = False
         # "part " or "parts " prefix → taxable, strip prefix
@@ -732,6 +738,9 @@ def run(client_phone: str, raw_input: str, customer_phone: str | None = None) ->
             has_taxable_parts = True
         else:
             labor_subtotal += amount
+
+    taxable_subtotal = round(taxable_subtotal, 2)
+    labor_subtotal = round(labor_subtotal, 2)
 
     tax_rate = 0.0
     tax_amount = 0.0
