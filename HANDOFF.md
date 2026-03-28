@@ -1,8 +1,74 @@
 Response
 
 # HANDOFF.md — Bolts11 Session Log
-> Last updated: March 23, 2026 — Backend Engineer
+> Last updated: March 28, 2026 — Backend Engineer
 > Read CLAUDE.md first every session before touching any code.
+
+---
+
+## Session — March 28, 2026
+
+### Rebrand
+- Holt Sewer & Drain → B&B Septic across entire codebase (24 occurrences, 13 files)
+- NOTE: Also run in Supabase: `UPDATE clients SET business_name = 'B&B Septic' WHERE id = '8aafcd73-...'`
+
+### Square Payment Links — Fully Wired
+- Rewrote square_agent.py for v44 SDK: `Square()` not `Client()`, `token` not `access_token`
+- Correct API path: `client.checkout.payment_links.create()`
+- PAY NOW button wired on invoice_view.html and invoice.html (public)
+- Square link regenerates on invoice edit when total changes
+- Payment link uses line_items sum + tax, not raw parsed amount
+- SQUARE_AVAILABLE flag exposed on /debug page
+
+### Invoice Agent — Cents Preservation
+- Multi-amount parser sums ALL dollar amounts: `$350 + $400 + $175.25 = $925.25`
+- Regex updated: `\$(\d+(?:,\d{3})*(?:\.\d{1,2})?)` handles commas + cents
+- Fixed double-counting: findall runs FIRST, skip parse_flat_rate for multi-amount
+- All `%.0f` replaced with `%.2f` across 7 files (cents everywhere)
+- Haiku line item extraction forces `round(float(), 2)` on all numeric fields
+- final_amount uses actual_amount from SMS parser, not Claude's rounded text
+- Safety: if Haiku line items sum ≠ actual_amount, falls back to actual_amount
+
+### Tax System — Per-Line-Item
+- Removed auto-tax detection from invoice_agent (was taxing subtotal wrong)
+- Tax is now set by owner on invoice edit page — per line item TAX toggle button
+- Each line item has a TAX button: click to mark taxable (amber "TAX ✓")
+- 5.5% Maine tax calculated only on marked items, labor stays exempt
+- document_routes.py calculates taxable_subtotal from items with taxable=true
+- Tax dropdown replaced: was 5%/8%/10%, now "0% — No tax" / "5.5% — Maine"
+
+### Customer System
+- "ADD CUSTOMER" SMS now routes to customer_create (was hitting clarification_agent)
+- Customer edit modal on /dashboard/customers/ — pre-populated, saves via API
+- Missing-data amber dots on customer rows, estimates, and invoices
+- Email field added to customer form, list table, and detail view
+- Phone normalization to E.164 in db_customer.py, db_client.py, and sms_send.py
+- Hard stop: customer not found → helpful SMS with correct shorthand format
+
+### Command Center Fixes
+- Strip command prefix (EST/INV/DONE) before customer name resolution
+- "EST " and "INV " recognized as short-form triggers
+- Name resolver reads end of string first: "INV job desc Beverly Whitaker" works
+- Job description words filtered: "Pumped", "tank", "gallon" never tried as names
+- Clock agent receives actual employee UUID, not string "owner"
+
+### SMS & Logging
+- All outbound SMS normalized to E.164 in sms_send.py (fixes Telnyx 40310)
+- All outbound SMS logged to both sms_message_log AND messages table
+- Delivery webhook no longer warns "No message row for telnyx_id"
+
+### SQL Migrations Needed
+```
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS customer_email TEXT;
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS notes TEXT;
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS payment_link_url TEXT;
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS square_payment_link_id TEXT;
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS square_order_id TEXT;
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS tax_rate numeric(5,4) DEFAULT 0.0;
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS tax_amount numeric(10,2) DEFAULT 0.0;
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS scope_hold boolean DEFAULT false;
+UPDATE clients SET business_name = 'B&B Septic' WHERE id = '8aafcd73-b41c-4f1a-bd01-3e7955798367';
+```
 
 ---
 
