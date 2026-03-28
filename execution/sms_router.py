@@ -710,6 +710,137 @@ def _handle_worker_status_reply(
             pass
 
 
+def _handle_customer_create(client, client_id, from_number, to_number, body):
+    """
+    Parse 'Add customer [name] [address], phone [number]' from SMS
+    and create a customer record. Handles partial data gracefully.
+    """
+    import re
+    from execution.sms_send import send_sms
+
+    client_phone = client.get("phone", to_number)
+
+    # Strip the trigger prefix
+    text = re.sub(r'^(add|new|create)\s+customer\s*', '', body.strip(), flags=re.IGNORECASE).strip()
+
+    if not text:
+        send_sms(
+            to_number=from_number,
+            message_body="Please include the customer name. Example: Add customer Jane Smith 207-555-1234 123 Main St, Belfast ME",
+            from_number=client_phone,
+            message_type="route",
+        )
+        return
+
+    # Extract phone number from the text
+    phone_match = re.search(r'(?:phone\s*(?:number\s*)?(?:is\s*)?)?(\+?1?[\d\-\(\)\s]{7,})', text, re.IGNORECASE)
+    customer_phone = None
+    phone_raw = ""
+    phone_warning = ""
+    if phone_match:
+        phone_raw = re.sub(r'[\s\-\(\)]', '', phone_match.group(1))
+        # Remove the phone from text to isolate name + address
+        text = text[:phone_match.start()].strip().rstrip(',').strip() + " " + text[phone_match.end():].strip()
+        text = re.sub(r'\s*phone\s*(?:number\s*)?(?:is\s*)?\s*', ' ', text, flags=re.IGNORECASE).strip()
+
+        # Normalize phone
+        digits = re.sub(r'\D', '', phone_raw)
+        if len(digits) == 10:
+            customer_phone = f"+1{digits}"
+        elif len(digits) == 11 and digits[0] == '1':
+            customer_phone = f"+{digits}"
+        elif len(digits) >= 7:
+            customer_phone = f"+1{digits}"  # Best effort
+            phone_warning = "phone may be incomplete"
+        else:
+            phone_warning = "phone too short to save"
+
+    # Split remaining text into name + address
+    # Heuristic: address starts at a number (street number) or after a comma
+    name = text
+    address = ""
+
+    # Try to find where address starts (a digit after the name)
+    addr_match = re.search(r'\b(\d+\s+\w+)', text)
+    if addr_match:
+        name = text[:addr_match.start()].strip().rstrip(',').strip()
+        address = text[addr_match.start():].strip().rstrip(',').strip()
+
+    # Clean up name
+    name = re.sub(r'\s+', ' ', name).strip()
+    if not name:
+        name = "Customer"
+
+    # Build the insert
+    try:
+        from execution.db_connection import get_client as get_supabase
+        sb = get_supabase()
+
+        row = {
+            "client_id": client_id,
+            "customer_name": name,
+            "sms_consent": False,
+        }
+        if customer_phone:
+            row["customer_phone"] = customer_phone
+        if address:
+            row["customer_address"] = address
+
+        result = sb.table("customers").insert(row).execute()
+        if result.data:
+            cust_id = result.data[0]["id"]
+            print(f"[{timestamp()}] INFO sms_router: Customer created via SMS — {name} id={cust_id[:8]}")
+
+            # Build confirmation message
+            parts = [f"✓ Saved {name}"]
+            if customer_phone:
+                parts.append(customer_phone)
+            if phone_warning:
+                parts.append(phone_warning)
+            if address:
+                parts.append(address)
+            confirm = " — ".join(parts[:2])
+            if len(parts) > 2:
+                confirm += ". " + ", ".join(parts[2:]) + "."
+            confirm += "\nReply with their email to add it."
+
+            send_sms(
+                to_number=from_number,
+                message_body=confirm,
+                from_number=client_phone,
+                message_type="route",
+            )
+        else:
+            send_sms(
+                to_number=from_number,
+                message_body="Failed to save customer. Try again or use the dashboard.",
+                from_number=client_phone,
+                message_type="route",
+            )
+    except Exception as e:
+        print(f"[{timestamp()}] ERROR sms_router: customer_create failed — {e}")
+        send_sms(
+            to_number=from_number,
+            message_body=f"Error saving customer: {e}",
+            from_number=client_phone,
+            message_type="route",
+        )
+
+    # Log to agent_activity
+    try:
+        from execution.db_agent_activity import log_activity
+        log_activity(
+            client_phone=client_phone,
+            agent_name="customer_create_sms",
+            action_taken="customer_created",
+            input_summary=body[:120],
+            output_summary=f"Created {name}" + (f" — {customer_phone}" if customer_phone else ""),
+            sms_sent=True,
+        )
+    except Exception:
+        pass
+
+
 def route_message(sms_data: dict) -> str:
     """
     Main entry point. Resolves client + employee, priority-detects intent,
@@ -924,6 +1055,12 @@ def route_message(sms_data: dict) -> str:
         if body_upper.startswith("SET OPTIN"):
             handle_optin_command(client, body, from_number, to_number)
             return "optin_set"
+
+        # ── ADD CUSTOMER / NEW CUSTOMER ────────────────────────────────
+        if body_upper.startswith("ADD CUSTOMER") or body_upper.startswith("NEW CUSTOMER") or body_upper.startswith("CREATE CUSTOMER"):
+            print(f"[{timestamp()}] INFO sms_router: Explicit trigger → customer_create")
+            _handle_customer_create(client, client_id, from_number, to_number, body)
+            return "customer_create"
 
         # ------------------------------------------------------------------
         # Step 7: High-confidence keyword routing for unambiguous patterns
