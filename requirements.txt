@@ -63,3 +63,5 @@ websockets==15.0.1
 Werkzeug==3.1.6
 yarl==1.23.0
 zstandard==0.25.0
+pytest==8.3.4
+pytest-mock==3.14.0
