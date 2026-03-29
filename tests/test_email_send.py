@@ -24,7 +24,7 @@ _COMMON_KWARGS = dict(
 
 
 def test_send_invoice_email_no_api_key(monkeypatch):
-    monkeypatch.delenv("SENDGRID_API_KEY", raising=False)
+    monkeypatch.delenv("RESEND_API_KEY", raising=False)
     result = send_invoice_email(
         to_email="test@example.com", invoice_id="abc123", **_COMMON_KWARGS
     )
@@ -33,7 +33,7 @@ def test_send_invoice_email_no_api_key(monkeypatch):
 
 
 def test_send_invoice_email_no_customer_email(monkeypatch):
-    monkeypatch.setenv("SENDGRID_API_KEY", "test-key")
+    monkeypatch.setenv("RESEND_API_KEY", "test-key")
     result = send_invoice_email(
         to_email="", invoice_id="abc123", **_COMMON_KWARGS
     )
@@ -42,7 +42,7 @@ def test_send_invoice_email_no_customer_email(monkeypatch):
 
 
 def test_send_proposal_email_no_api_key(monkeypatch):
-    monkeypatch.delenv("SENDGRID_API_KEY", raising=False)
+    monkeypatch.delenv("RESEND_API_KEY", raising=False)
     result = send_proposal_email(
         to_email="test@example.com", proposal_id="abc123", **_COMMON_KWARGS
     )

@@ -1,8 +1,8 @@
 """
-email_send.py — Send invoices and proposals by email via SendGrid.
+email_send.py — Send invoices and proposals by email via Resend.
 
 Used as a bridge while 10DLC SMS approval is pending.
-Falls back gracefully if SENDGRID_API_KEY is not configured.
+Falls back gracefully if RESEND_API_KEY is not configured.
 
 Usage:
     from execution.email_send import send_invoice_email, send_proposal_email
@@ -26,8 +26,8 @@ import os
 from datetime import datetime
 
 
-def _sendgrid_available() -> bool:
-    return bool(os.environ.get("SENDGRID_API_KEY"))
+def _email_available() -> bool:
+    return bool(os.environ.get("RESEND_API_KEY"))
 
 
 def _timestamp():
@@ -215,21 +215,19 @@ def send_invoice_email(
     doc_url: str = None,
     from_email: str = None,
 ) -> dict:
-    """Send an invoice by email via SendGrid."""
-    if not _sendgrid_available():
-        print(f"[{_timestamp()}] WARN email_send: SENDGRID_API_KEY not set — email not sent")
-        return {"success": False, "error": "Email not configured — set SENDGRID_API_KEY"}
+    """Send an invoice by email via Resend."""
+    if not _email_available():
+        print(f"[{_timestamp()}] WARN email_send: RESEND_API_KEY not set — email not sent")
+        return {"success": False, "error": "Email not configured — set RESEND_API_KEY"}
 
     if not to_email:
         return {"success": False, "error": "No customer email address on file"}
 
     try:
-        import sendgrid
-        from sendgrid.helpers.mail import Mail, To, From, Subject, HtmlContent
+        import resend
+        resend.api_key = os.environ["RESEND_API_KEY"]
 
-        sg = sendgrid.SendGridAPIClient(api_key=os.environ["SENDGRID_API_KEY"])
-
-        sender_email = from_email or os.environ.get("SENDGRID_FROM_EMAIL", "noreply@bolts11.com")
+        sender = from_email or os.environ.get("RESEND_FROM_EMAIL", "noreply@bolts11.com")
 
         html_body = _build_invoice_html(
             customer_name=customer_name,
@@ -243,21 +241,21 @@ def send_invoice_email(
             doc_url=doc_url,
         )
 
-        message = Mail(
-            from_email=From(sender_email, from_name),
-            to_emails=To(to_email, to_name),
-            subject=Subject(f"Invoice from {business_name} — ${total:.2f}"),
-            html_content=HtmlContent(html_body),
-        )
+        params = {
+            "from": f"{from_name} <{sender}>",
+            "to": [to_email],
+            "subject": f"Invoice from {business_name} — ${total:.2f}",
+            "html": html_body,
+        }
 
-        response = sg.client.mail.send.post(request_body=message.get())
+        response = resend.Emails.send(params)
 
-        if response.status_code in (200, 202):
+        if response.get("id"):
             print(f"[{_timestamp()}] INFO email_send: Invoice email sent to {to_email} — ${total:.2f}")
             return {"success": True}
         else:
-            print(f"[{_timestamp()}] WARN email_send: SendGrid returned {response.status_code}")
-            return {"success": False, "error": f"SendGrid error {response.status_code}"}
+            print(f"[{_timestamp()}] WARN email_send: Resend returned no id — {response}")
+            return {"success": False, "error": str(response)}
 
     except Exception as e:
         print(f"[{_timestamp()}] ERROR email_send: Invoice email failed — {e}")
@@ -278,20 +276,18 @@ def send_proposal_email(
     doc_url: str = None,
     from_email: str = None,
 ) -> dict:
-    """Send a proposal/estimate by email via SendGrid."""
-    if not _sendgrid_available():
-        return {"success": False, "error": "Email not configured — set SENDGRID_API_KEY"}
+    """Send a proposal/estimate by email via Resend."""
+    if not _email_available():
+        return {"success": False, "error": "Email not configured — set RESEND_API_KEY"}
 
     if not to_email:
         return {"success": False, "error": "No customer email address on file"}
 
     try:
-        import sendgrid
-        from sendgrid.helpers.mail import Mail, To, From, Subject, HtmlContent
+        import resend
+        resend.api_key = os.environ["RESEND_API_KEY"]
 
-        sg = sendgrid.SendGridAPIClient(api_key=os.environ["SENDGRID_API_KEY"])
-
-        sender_email = from_email or os.environ.get("SENDGRID_FROM_EMAIL", "noreply@bolts11.com")
+        sender = from_email or os.environ.get("RESEND_FROM_EMAIL", "noreply@bolts11.com")
 
         html_body = _build_proposal_html(
             customer_name=customer_name,
@@ -304,20 +300,20 @@ def send_proposal_email(
             doc_url=doc_url,
         )
 
-        message = Mail(
-            from_email=From(sender_email, from_name),
-            to_emails=To(to_email, to_name),
-            subject=Subject(f"Estimate from {business_name} — ${total:.2f}"),
-            html_content=HtmlContent(html_body),
-        )
+        params = {
+            "from": f"{from_name} <{sender}>",
+            "to": [to_email],
+            "subject": f"Estimate from {business_name} — ${total:.2f}",
+            "html": html_body,
+        }
 
-        response = sg.client.mail.send.post(request_body=message.get())
+        response = resend.Emails.send(params)
 
-        if response.status_code in (200, 202):
+        if response.get("id"):
             print(f"[{_timestamp()}] INFO email_send: Proposal email sent to {to_email} — ${total:.2f}")
             return {"success": True}
         else:
-            return {"success": False, "error": f"SendGrid error {response.status_code}"}
+            return {"success": False, "error": str(response)}
 
     except Exception as e:
         print(f"[{_timestamp()}] ERROR email_send: Proposal email failed — {e}")
