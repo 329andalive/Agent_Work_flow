@@ -149,11 +149,11 @@
         </button>
 
         {% if total > 0 %}
-        <a class="doc-btn doc-btn-amber" id="btn-email"
-           href="#" onclick="emailInvoice(); return false;"
-           {% if not has_text %}style="pointer-events:none;opacity:0.4" title="Invoice text not available"{% endif %}>
+        <button class="doc-btn doc-btn-amber" id="btn-email"
+                onclick="emailInvoice()"
+                {% if not has_text %}disabled title="Invoice text not available"{% endif %}>
           Email Invoice
-        </a>
+        </button>
         {% endif %}
 
         {% if payment_link_url and not invoice.paid_at %}
@@ -242,13 +242,44 @@ function copyInvoice() {
 }
 
 function emailInvoice() {
-  var body = buildInvoiceText();
   var to = '{{ customer.customer_email or "" }}';
-  var subject = 'Invoice from {{ business_name }} — ${{ "%.2f"|format(total) }}';
-  var mailto = 'mailto:' + encodeURIComponent(to)
-    + '?subject=' + encodeURIComponent(subject)
-    + '&body=' + encodeURIComponent(body);
-  window.open(mailto, '_blank');
+  if (!to) {
+    to = prompt('Enter customer email address:');
+    if (!to) return;
+  }
+  var btn = document.getElementById('btn-email');
+  btn.disabled = true;
+  btn.textContent = 'Sending...';
+  fetch('/api/invoices/{{ invoice.id }}/send-email', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({email: to})
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    if (data.success) {
+      btn.textContent = 'Sent \u2713';
+      setTimeout(function() { btn.textContent = 'Email Invoice'; btn.disabled = false; }, 3000);
+    } else if (data.error === 'no_email') {
+      var email = prompt('No email on file. Enter customer email:');
+      if (email) {
+        btn.textContent = 'Sending...';
+        fetch('/api/invoices/{{ invoice.id }}/send-email', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({email: email})
+        }).then(function(r) { return r.json(); })
+        .then(function(d2) {
+          if (d2.success) { btn.textContent = 'Sent \u2713'; setTimeout(function() { btn.textContent = 'Email Invoice'; btn.disabled = false; }, 3000); }
+          else { alert('Failed: ' + (d2.error || d2.message || 'Unknown error')); btn.textContent = 'Email Invoice'; btn.disabled = false; }
+        }).catch(function() { alert('Network error'); btn.textContent = 'Email Invoice'; btn.disabled = false; });
+      } else { btn.textContent = 'Email Invoice'; btn.disabled = false; }
+    } else {
+      alert('Failed: ' + (data.error || data.message || 'Unknown error'));
+      btn.textContent = 'Email Invoice'; btn.disabled = false;
+    }
+  })
+  .catch(function() { alert('Network error — could not send email.'); btn.textContent = 'Email Invoice'; btn.disabled = false; });
 }
 </script>
 {% endblock %}

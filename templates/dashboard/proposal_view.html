@@ -33,6 +33,7 @@
   .doc-btn-primary { background: var(--blue); color: #fff; }
   .doc-btn-green { background: #16a34a; color: #fff; }
   .doc-btn-red { background: #dc2626; color: #fff; }
+  .doc-btn-amber { background: #f59e0b; color: #1a2e4a; font-weight: 600; }
   .doc-btn-outline { background: transparent; border: 1px solid var(--border); color: var(--text-secondary); }
   .flash-msg { padding: 10px 16px; border-radius: 6px; font-size: 13px; margin-bottom: 12px; }
   .flash-success { background: #dcfce7; color: #166534; }
@@ -122,9 +123,57 @@
           <input type="hidden" name="action" value="lost">
           <button type="submit" class="doc-btn doc-btn-red">Mark Lost</button>
         </form>
+        <button class="doc-btn doc-btn-amber" id="btn-email-proposal" onclick="emailEstimate()">
+          Email Estimate
+        </button>
         {% endif %}
       </div>
     </div>
   </div>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function emailEstimate() {
+  var to = '{{ customer.customer_email or "" }}';
+  if (!to) {
+    to = prompt('Enter customer email address:');
+    if (!to) return;
+  }
+  var btn = document.getElementById('btn-email-proposal');
+  btn.disabled = true;
+  btn.textContent = 'Sending...';
+  fetch('/api/proposals/{{ proposal.id }}/send-email', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({email: to})
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    if (data.success) {
+      btn.textContent = 'Sent \u2713';
+      setTimeout(function() { btn.textContent = 'Email Estimate'; btn.disabled = false; }, 3000);
+    } else if (data.error === 'no_email') {
+      var email = prompt('No email on file. Enter customer email:');
+      if (email) {
+        btn.textContent = 'Sending...';
+        fetch('/api/proposals/{{ proposal.id }}/send-email', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({email: email})
+        }).then(function(r) { return r.json(); })
+        .then(function(d2) {
+          if (d2.success) { btn.textContent = 'Sent \u2713'; setTimeout(function() { btn.textContent = 'Email Estimate'; btn.disabled = false; }, 3000); }
+          else { alert('Failed: ' + (d2.error || d2.message || 'Unknown error')); btn.textContent = 'Email Estimate'; btn.disabled = false; }
+        }).catch(function() { alert('Network error'); btn.textContent = 'Email Estimate'; btn.disabled = false; });
+      } else { btn.textContent = 'Email Estimate'; btn.disabled = false; }
+    } else {
+      alert('Failed: ' + (data.error || data.message || 'Unknown error'));
+      btn.textContent = 'Email Estimate'; btn.disabled = false;
+    }
+  })
+  .catch(function() { alert('Network error — could not send email.'); btn.textContent = 'Email Estimate'; btn.disabled = false; });
+}
+</script>
 {% endblock %}

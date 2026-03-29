@@ -931,6 +931,219 @@ def invoice_action(invoice_id):
 
 
 # ---------------------------------------------------------------------------
+# POST /api/invoices/<id>/send-email — Email bridge for invoices
+# ---------------------------------------------------------------------------
+
+@dashboard_bp.route("/api/invoices/<invoice_id>/send-email", methods=["POST"])
+def api_send_invoice_email(invoice_id):
+    client_id = _resolve_client_id()
+    if not client_id:
+        return jsonify({"success": False, "error": "Not authenticated"}), 401
+
+    sb = _get_supabase()
+
+    try:
+        result = sb.table("invoices").select("*").eq(
+            "id", invoice_id).eq("client_id", client_id).execute()
+        if not result.data:
+            return jsonify({"success": False, "error": "Invoice not found"}), 404
+        invoice = result.data[0]
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+    customer = {}
+    if invoice.get("customer_id"):
+        try:
+            result = sb.table("customers").select("*").eq(
+                "id", invoice["customer_id"]).execute()
+            if result.data:
+                customer = result.data[0]
+        except Exception:
+            pass
+
+    data = request.get_json(silent=True) or {}
+    to_email = data.get("email") or customer.get("customer_email")
+    if not to_email:
+        return jsonify({
+            "success": False,
+            "error": "no_email",
+            "message": "No email address on file for this customer."
+        }), 400
+
+    # Save email to customer record if provided and not already stored
+    if data.get("email") and not customer.get("customer_email") and customer.get("id"):
+        try:
+            sb.table("customers").update(
+                {"customer_email": data["email"]}
+            ).eq("id", customer["id"]).execute()
+        except Exception:
+            pass
+
+    raw_items = invoice.get("line_items")
+    if isinstance(raw_items, str):
+        try:
+            line_items = json.loads(raw_items)
+        except Exception:
+            line_items = []
+    elif isinstance(raw_items, list):
+        line_items = raw_items
+    else:
+        line_items = []
+
+    if not line_items and invoice.get("amount_due"):
+        line_items = [{"description": (invoice.get("invoice_text") or "Service")[:60],
+                       "amount": float(invoice.get("amount_due") or 0)}]
+
+    subtotal = sum(float(li.get("total") or li.get("amount") or 0) for li in line_items)
+    tax_rate = float(invoice.get("tax_rate") or 0)
+    tax_amount = round(subtotal * tax_rate, 2)
+    total = round(subtotal + tax_amount, 2) or float(invoice.get("amount_due") or 0)
+
+    payment_link_url = invoice.get("payment_link_url")
+    if not payment_link_url and invoice.get("job_id"):
+        try:
+            link = sb.table("invoice_links").select("payment_link_url").eq(
+                "job_id", invoice["job_id"]
+            ).eq("type", "invoice").order("created_at", desc=True).limit(1).execute()
+            if link.data:
+                payment_link_url = link.data[0].get("payment_link_url")
+        except Exception:
+            pass
+
+    client = _load_client(client_id)
+    base_url = os.environ.get("BOLTS11_BASE_URL", "https://web-production-043dc.up.railway.app")
+    doc_url = f"{base_url}/dashboard/invoice/{invoice_id}"
+
+    from execution.email_send import send_invoice_email
+    result = send_invoice_email(
+        to_email=to_email,
+        to_name=customer.get("customer_name", "Customer"),
+        from_name=client.get("business_name", "Bolts11"),
+        invoice_id=invoice_id,
+        customer_name=customer.get("customer_name", "Customer"),
+        business_name=client.get("business_name", "Bolts11"),
+        line_items=line_items,
+        subtotal=subtotal,
+        tax_amount=tax_amount,
+        total=total,
+        payment_link_url=payment_link_url,
+        doc_url=doc_url,
+    )
+
+    if result.get("success"):
+        try:
+            sb.table("invoices").update({
+                "status": "sent",
+                "sent_at": datetime.now(timezone.utc).isoformat()
+            }).eq("id", invoice_id).execute()
+        except Exception:
+            pass
+        return jsonify({"success": True, "email": to_email})
+
+    return jsonify(result), 400
+
+
+# ---------------------------------------------------------------------------
+# POST /api/proposals/<id>/send-email — Email bridge for proposals
+# ---------------------------------------------------------------------------
+
+@dashboard_bp.route("/api/proposals/<proposal_id>/send-email", methods=["POST"])
+def api_send_proposal_email(proposal_id):
+    client_id = _resolve_client_id()
+    if not client_id:
+        return jsonify({"success": False, "error": "Not authenticated"}), 401
+
+    sb = _get_supabase()
+
+    try:
+        result = sb.table("proposals").select("*").eq(
+            "id", proposal_id).eq("client_id", client_id).execute()
+        if not result.data:
+            return jsonify({"success": False, "error": "Proposal not found"}), 404
+        proposal = result.data[0]
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+    customer = {}
+    if proposal.get("customer_id"):
+        try:
+            result = sb.table("customers").select("*").eq(
+                "id", proposal["customer_id"]).execute()
+            if result.data:
+                customer = result.data[0]
+        except Exception:
+            pass
+
+    data = request.get_json(silent=True) or {}
+    to_email = data.get("email") or customer.get("customer_email")
+    if not to_email:
+        return jsonify({
+            "success": False,
+            "error": "no_email",
+            "message": "No email address on file for this customer."
+        }), 400
+
+    if data.get("email") and not customer.get("customer_email") and customer.get("id"):
+        try:
+            sb.table("customers").update(
+                {"customer_email": data["email"]}
+            ).eq("id", customer["id"]).execute()
+        except Exception:
+            pass
+
+    raw_items = proposal.get("line_items")
+    if isinstance(raw_items, str):
+        try:
+            line_items = json.loads(raw_items)
+        except Exception:
+            line_items = []
+    elif isinstance(raw_items, list):
+        line_items = raw_items
+    else:
+        line_items = []
+
+    if not line_items and proposal.get("amount_estimate"):
+        line_items = [{"description": (proposal.get("proposal_text") or "Service")[:60],
+                       "amount": float(proposal.get("amount_estimate") or 0)}]
+
+    subtotal = sum(float(li.get("total") or li.get("amount") or 0) for li in line_items)
+    tax_rate = float(proposal.get("tax_rate") or 0)
+    tax_amount = round(subtotal * tax_rate, 2)
+    total = round(subtotal + tax_amount, 2) or float(proposal.get("amount_estimate") or 0)
+
+    client = _load_client(client_id)
+    base_url = os.environ.get("BOLTS11_BASE_URL", "https://web-production-043dc.up.railway.app")
+    doc_url = f"{base_url}/dashboard/proposal/{proposal_id}"
+
+    from execution.email_send import send_proposal_email
+    result = send_proposal_email(
+        to_email=to_email,
+        to_name=customer.get("customer_name", "Customer"),
+        from_name=client.get("business_name", "Bolts11"),
+        proposal_id=proposal_id,
+        customer_name=customer.get("customer_name", "Customer"),
+        business_name=client.get("business_name", "Bolts11"),
+        line_items=line_items,
+        subtotal=subtotal,
+        tax_amount=tax_amount,
+        total=total,
+        doc_url=doc_url,
+    )
+
+    if result.get("success"):
+        try:
+            sb.table("proposals").update({
+                "status": "sent",
+                "sent_at": datetime.now(timezone.utc).isoformat()
+            }).eq("id", proposal_id).execute()
+        except Exception:
+            pass
+        return jsonify({"success": True, "email": to_email})
+
+    return jsonify(result), 400
+
+
+# ---------------------------------------------------------------------------
 # GET /dashboard/onboarding.html — Onboarding
 # ---------------------------------------------------------------------------
 
