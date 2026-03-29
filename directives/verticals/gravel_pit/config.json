@@ -1,0 +1,98 @@
+{
+  "vertical_key": "gravel_pit",
+  "vertical_label": "Gravel Pit & Materials",
+  "default_job_type": "delivered",
+  "tax_rules": {
+    "parts_rate": 0.055,
+    "labor_rate": 0.0,
+    "tax_label": "Maine 5.5%",
+    "tax_on_delivery": true,
+    "note": "Tax applies to product AND delivery charge combined. Labor/spread/grade is exempt."
+  },
+  "job_types": [
+    "fob", "delivered", "self_load", "spread_grade",
+    "equipment", "install", "site_work"
+  ],
+  "line_item_types": {
+    "product_fob": {
+      "taxable": true,
+      "unit": "yard",
+      "description": "Product picked up at pit — price per yard"
+    },
+    "product_delivered": {
+      "taxable": true,
+      "unit": "yard",
+      "description": "Product delivered — price per yard includes delivery"
+    },
+    "delivery_charge": {
+      "taxable": true,
+      "unit": "yard",
+      "description": "Delivery charge — taxed as part of delivered price"
+    },
+    "spread_grade": {
+      "taxable": false,
+      "unit": "hour",
+      "description": "Spread and grade labor — tax exempt"
+    },
+    "equipment": {
+      "taxable": false,
+      "unit": "hour",
+      "description": "Equipment time — tax exempt"
+    }
+  },
+  "products": [
+    "sand",
+    "bank_run_sand",
+    "inch_minus",
+    "2_inch_minus",
+    "4_inch_minus",
+    "6_inch_minus",
+    "bank_run_gravel",
+    "loam",
+    "crushed_stone",
+    "rip_rap",
+    "mulch",
+    "crushed_gravel"
+  ],
+  "sms_keywords": {
+    "invoice": [
+      "delivered", "deliver", "hauled", "loaded", "got", "took",
+      "picked up", "fob", "self load", "self-load", "yards", "yard",
+      "ton", "tons", "sand", "gravel", "loam", "stone", "rip rap",
+      "minus", "bank run", "spread", "grade", "graded", "hours", "labor"
+    ],
+    "proposal": [
+      "need", "quote", "price", "how much", "deliver", "yards",
+      "sand", "gravel", "loam", "stone", "minus", "bank run", "fill"
+    ],
+    "self_load_triggers": [
+      "got", "took", "loaded", "picked up", "self load", "self-load",
+      "after hours", "loaded myself", "grabbed"
+    ],
+    "job_type_map": {
+      "self_load":    ["got", "took", "loaded myself", "picked up", "after hours", "grabbed"],
+      "delivered":    ["delivered", "deliver", "hauled", "brought", "dropped"],
+      "fob":          ["fob", "picked up", "loaded out", "load out"],
+      "spread_grade": ["spread", "grade", "graded", "grading", "leveled", "level"],
+      "equipment":    ["machine", "excavator", "loader", "dozer", "hours", "equipment"],
+      "site_work":    ["site", "house lot", "septic", "driveway", "pad", "install"]
+    }
+  },
+  "field_keywords": [
+    "yards", "yard", "ton", "tons", "sand", "gravel", "loam",
+    "stone", "minus", "bank run", "rip rap", "mulch", "delivered",
+    "fob", "spread", "grade", "loaded", "hauled", "got", "took"
+  ],
+  "job_type_regex": "deliver|fob|self.?load|spread|grade|excavat|site.?work",
+  "taxable_keywords": [
+    "sand", "gravel", "loam", "stone", "minus", "bank run",
+    "rip rap", "mulch", "crushed", "fill", "material"
+  ],
+  "self_load_workflow": {
+    "enabled": true,
+    "creates_draft": true,
+    "notifies_office": true,
+    "notification_template": "Self-load logged: {customer_name} — {qty} yards {product}. Draft invoice held for review.",
+    "requires_office_approval": true
+  }
+}

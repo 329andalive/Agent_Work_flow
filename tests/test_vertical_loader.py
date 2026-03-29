@@ -61,3 +61,42 @@ def test_landscaping_has_snow_removal():
     _cache.clear()
     config = load_vertical("landscaping")
     assert "snow_removal" in config["job_types"]
+
+
+def test_gravel_pit_config_loads():
+    _cache.clear()
+    config = load_vertical("gravel_pit")
+    assert config, "Gravel pit config should not be empty"
+    assert "job_types" in config
+    assert "delivered" in config["job_types"]
+
+
+def test_gravel_pit_default_job_type():
+    _cache.clear()
+    assert get_default_job_type("gravel_pit") == "delivered"
+
+
+def test_gravel_pit_tax_rate():
+    _cache.clear()
+    assert get_tax_rate("gravel_pit") == 0.055
+
+
+def test_gravel_pit_has_self_load():
+    _cache.clear()
+    config = load_vertical("gravel_pit")
+    assert "self_load" in config["job_types"]
+    assert config["self_load_workflow"]["enabled"] is True
+    assert config["self_load_workflow"]["requires_office_approval"] is True
+
+
+def test_gravel_pit_delivery_is_taxable():
+    _cache.clear()
+    config = load_vertical("gravel_pit")
+    assert config["tax_rules"]["tax_on_delivery"] is True
+
+
+def test_gravel_pit_labor_is_not_taxable():
+    _cache.clear()
+    config = load_vertical("gravel_pit")
+    spread = config["line_item_types"]["spread_grade"]
+    assert spread["taxable"] is False

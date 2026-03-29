@@ -1,0 +1,29 @@
+{
+  "vertical_key": "gravel_pit",
+  "region": "northeast_us",
+  "note": "FOB prices per yard at pit. Delivered adds $8-15/yard depending on distance. Small operator default delivery: $10/yard.",
+  "services": [
+    {"name": "Sand — FOB",                    "low": 8,   "typical": 12,  "high": 18,  "unit": "yard"},
+    {"name": "Sand — Delivered",              "low": 18,  "typical": 22,  "high": 30,  "unit": "yard"},
+    {"name": "Bank Run Sand — FOB",           "low": 6,   "typical": 9,   "high": 14,  "unit": "yard"},
+    {"name": "Bank Run Sand — Delivered",     "low": 16,  "typical": 20,  "high": 28,  "unit": "yard"},
+    {"name": "1-inch Minus — FOB",            "low": 10,  "typical": 14,  "high": 20,  "unit": "yard"},
+    {"name": "1-inch Minus — Delivered",      "low": 20,  "typical": 25,  "high": 35,  "unit": "yard"},
+    {"name": "2-inch Minus — FOB",            "low": 10,  "typical": 14,  "high": 20,  "unit": "yard"},
+    {"name": "2-inch Minus — Delivered",      "low": 20,  "typical": 25,  "high": 35,  "unit": "yard"},
+    {"name": "4-inch Minus — FOB",            "low": 8,   "typical": 12,  "high": 18,  "unit": "yard"},
+    {"name": "4-inch Minus — Delivered",      "low": 18,  "typical": 22,  "high": 30,  "unit": "yard"},
+    {"name": "6-inch Minus — FOB",            "low": 7,   "typical": 10,  "high": 16,  "unit": "yard"},
+    {"name": "6-inch Minus — Delivered",      "low": 17,  "typical": 20,  "high": 28,  "unit": "yard"},
+    {"name": "Bank Run Gravel — FOB",         "low": 6,   "typical": 9,   "high": 14,  "unit": "yard"},
+    {"name": "Bank Run Gravel — Delivered",   "low": 16,  "typical": 20,  "high": 28,  "unit": "yard"},
+    {"name": "Loam — FOB",                    "low": 15,  "typical": 22,  "high": 30,  "unit": "yard"},
+    {"name": "Loam — Delivered",              "low": 25,  "typical": 35,  "high": 45,  "unit": "yard"},
+    {"name": "Crushed Stone — FOB",           "low": 18,  "typical": 24,  "high": 32,  "unit": "yard"},
+    {"name": "Crushed Stone — Delivered",     "low": 28,  "typical": 38,  "high": 50,  "unit": "yard"},
+    {"name": "Rip-Rap — FOB",                 "low": 20,  "typical": 28,  "high": 38,  "unit": "yard"},
+    {"name": "Rip-Rap — Delivered",           "low": 30,  "typical": 42,  "high": 55,  "unit": "yard"},
+    {"name": "Spread and Grade — labor",      "low": 75,  "typical": 100, "high": 125, "unit": "hour"},
+    {"name": "Equipment time",                "low": 100, "typical": 135, "high": 175, "unit": "hour"}
+  ]
+}
