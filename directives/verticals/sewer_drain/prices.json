@@ -1,0 +1,18 @@
+{
+  "vertical_key": "sewer_drain",
+  "region": "northeast_us",
+  "services": [
+    {"name": "Pump-out — 1,000 gal tank",  "low": 275, "typical": 325, "high": 375},
+    {"name": "Pump-out — 1,500 gal tank",  "low": 350, "typical": 400, "high": 450},
+    {"name": "Pump-out — 2,000 gal tank",  "low": 400, "typical": 450, "high": 500},
+    {"name": "Baffle replacement",          "low": 175, "typical": 200, "high": 250},
+    {"name": "Tank inspection — visual",    "low": 150, "typical": 200, "high": 250},
+    {"name": "Tank inspection — full",      "low": 300, "typical": 375, "high": 450},
+    {"name": "Tank locate and mark",        "low": 150, "typical": 175, "high": 200},
+    {"name": "Emergency pump-out",          "low": 450, "typical": 550, "high": 650},
+    {"name": "Camera inspection",           "low": 200, "typical": 275, "high": 350},
+    {"name": "Hydro jetting",               "low": 300, "typical": 400, "high": 500},
+    {"name": "Riser installation",          "low": 150, "typical": 200, "high": 275},
+    {"name": "Drain cleaning — standard",   "low": 150, "typical": 185, "high": 225}
+  ]
+}

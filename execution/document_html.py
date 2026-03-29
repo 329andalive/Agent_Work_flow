@@ -11,6 +11,7 @@ Usage:
 
 import json
 from datetime import datetime
+from execution.vertical_loader import get_tax_rate, get_tax_label
 
 
 def build_document_html(
@@ -72,6 +73,11 @@ def build_document_html(
         subtotal = sum(float(item.get("total", 0)) for item in line_items)
         tax_amount = round(subtotal * tax_rate, 2)
         total_amount = round(subtotal + tax_amount, 2)
+
+    # Vertical config — tax rate and label from config files
+    _vertical_key = client.get("trade_vertical", "sewer_drain") if client else "sewer_drain"
+    _parts_tax_rate = get_tax_rate(_vertical_key)
+    _tax_label = get_tax_label(_vertical_key)
 
     # Label strings
     doc_label = "Estimate" if doc_type == "proposal" else "Invoice"
@@ -502,7 +508,7 @@ def build_document_html(
           <span id="subtotal">${subtotal:.2f}</span>
         </div>
         <div class="total-line">
-          <span>Tax (5.5% Maine — on marked items)</span>
+          <span>Tax ({_tax_label} — on marked items)</span>
           <span id="tax-amount">${tax_amount:.2f}</span>
         </div>
         <div class="total-line grand">
@@ -566,7 +572,7 @@ def build_document_html(
         }}
       }});
 
-      var taxRate = 0.055; // Maine 5.5%
+      var taxRate = {_parts_tax_rate}; // {_tax_label}
       var taxAmount = Math.round(taxableTotal * taxRate * 100) / 100;
       var grandTotal = Math.round((subtotal + taxAmount) * 100) / 100;
 
@@ -633,7 +639,7 @@ def build_document_html(
       var items = collectLineItems();
       // Calculate tax_rate: if any item is taxable, rate is 0.055 (Maine 5.5%)
       var hasTaxable = items.some(function(it) {{ return it.taxable; }});
-      var taxRate = hasTaxable ? 0.055 : 0;
+      var taxRate = hasTaxable ? {_parts_tax_rate} : 0;
 
       var payload = {{
         edit_token: editToken,

@@ -1,0 +1,40 @@
+{
+  "vertical_key": "sewer_drain",
+  "vertical_label": "Septic & Sewer",
+  "default_job_type": "pump",
+  "tax_rules": {
+    "parts_rate": 0.055,
+    "labor_rate": 0.0,
+    "tax_label": "Maine 5.5%"
+  },
+  "job_types": [
+    "pump", "inspect", "repair", "install", "emergency",
+    "camera", "locate", "jetting", "baffle", "riser"
+  ],
+  "sms_keywords": {
+    "invoice": [
+      "a bill for", "bill for", "i pumped", "i ran", "i did",
+      "pump", "tank", "repair", "install", "replace", "drain",
+      "inspect", "baffle", "riser", "clog", "line", "camera",
+      "jetting", "gallon", "labor", "hours", "travel", "cost"
+    ],
+    "proposal": [
+      "baffle", "pump", "repair", "replace", "install", "fix",
+      "inspect", "locate", "camera", "jet", "riser", "clog"
+    ],
+    "job_type_map": {
+      "emergency": ["emergency", "backup", "overflowing", "overflow", "urgent"],
+      "repair":    ["replacement", "replace", "baffle", "install", "installation", "new system"],
+      "pump":      ["pump", "pumped", "pumping", "empty", "emptied", "full", "due", "years"],
+      "inspect":   ["inspect", "inspection", "check", "look", "camera", "locate"],
+      "jetting":   ["jet", "jetting", "hydro", "flush"]
+    }
+  },
+  "field_keywords": [
+    "pumped", "pump", "snake", "snaked", "snaking", "jetted", "jetting",
+    "tank", "gallon", "gal", "line", "main", "septic", "drain", "sewer",
+    "pipe", "baffle", "riser", "cover", "lid", "grease", "trap", "field"
+  ],
+  "job_type_regex": "pump[- ]?out|inspection|baffle|riser|jetting|camera|locate|repair|emergency|install",
+  "taxable_keywords": ["baffle", "kit", "fitting", "part", "riser", "pipe", "material"]
+}
