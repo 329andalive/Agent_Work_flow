@@ -1467,11 +1467,11 @@ def dispatch_board():
         if cid and cid in cust_map:
             j["customer_name"] = cust_map[cid].get("customer_name", "")
             j["customer_phone"] = cust_map[cid].get("customer_phone", "")
-            j["address"] = cust_map[cid].get("customer_address", "") or j.get("job_description", "")
+            j["address"] = j.get("job_address") or cust_map[cid].get("customer_address", "") or ""
         else:
             j["customer_name"] = ""
             j["customer_phone"] = ""
-            j["address"] = j.get("job_description", "")
+            j["address"] = j.get("job_address") or ""
 
     # Phase 2 AI suggestions (returns [] if < 30 sessions)
     suggestions = []

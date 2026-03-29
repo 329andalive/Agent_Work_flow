@@ -61,6 +61,7 @@
 .slip-badge--unknown { background:#f3f4f6; color:#6b7280; }
 .slip-badge--time { background:#FAEEDA; color:#854F0B; }
 .slip-badge--asap { background:#FCEBEB; color:#A32D2D; }
+.slip-card__addr { font-family:'DM Mono',monospace; font-size:10px; color:var(--text-tertiary); margin-top:4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 
 .slip-tab { background:var(--bg-card); border:1px solid var(--border); border-radius:4px; padding:6px 10px; margin-bottom:4px; cursor:grab; display:flex; align-items:center; justify-content:space-between; font-size:12px; gap:4px; }
 .slip-tab:active { cursor:grabbing; }
@@ -212,7 +213,7 @@
     div.dataset.price = job.estimated_amount ? '$' + Math.round(job.estimated_amount) : '';
     var cfFrom = job.carry_forward_from || job.scheduled_date || '';
     var cf = isCF ? '<div class="slip-card__cf">&#8617; carried from ' + cfFrom + '</div>' : '';
-    div.innerHTML = cf + '<div class="slip-card__name">' + (div.dataset.name || 'Customer') + '</div><div class="slip-card__desc">' + (div.dataset.desc || 'No description') + '</div><div class="slip-card__badges"><span class="slip-badge slip-badge--' + zc + '">' + (div.dataset.zone) + '</span>' + (div.dataset.time ? '<span class="slip-badge slip-badge--time">' + div.dataset.time + '</span>' : '') + '</div>';
+    div.innerHTML = cf + '<div class="slip-card__name">' + (div.dataset.name || 'Customer') + '</div><div class="slip-card__desc">' + (div.dataset.desc || 'No description') + '</div><div class="slip-card__badges"><span class="slip-badge slip-badge--' + zc + '">' + (div.dataset.zone) + '</span>' + (div.dataset.time ? '<span class="slip-badge slip-badge--time">' + div.dataset.time + '</span>' : '') + '</div>' + (div.dataset.address ? '<div class="slip-card__addr">\ud83d\udccd ' + div.dataset.address + '</div>' : '');
     div.addEventListener('click', function() { openPreview(div.dataset); });
     bindDrag(div);
     return div;
