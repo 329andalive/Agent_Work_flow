@@ -36,6 +36,7 @@ from execution.db_messages import log_message
 from execution.db_followups import schedule_followup
 from execution.call_claude import call_claude
 from execution.sms_send import send_sms
+from execution.vertical_loader import load_vertical, get_default_job_type
 
 
 def timestamp():
@@ -46,8 +47,11 @@ def timestamp():
 # Job type keyword detection
 # Scans the raw message for job type signals. Returns the most specific
 # match — emergency overrides everything, pump/inspect/repair as appropriate.
+# Loads keywords from the vertical config at runtime.
 # ---------------------------------------------------------------------------
-JOB_TYPE_KEYWORDS = {
+
+# Fallback keywords used when no vertical config is available
+_FALLBACK_JOB_TYPE_KEYWORDS = {
     "emergency": ["emergency", "backup", "overflow", "flooding", "smell", "alarm", "urgent", "asap"],
     "repair":    ["repair", "fix", "broken", "cracked", "collapsed", "failing", "failed",
                   "replacement", "replace", "baffle", "install", "installation", "new system"],
@@ -56,17 +60,28 @@ JOB_TYPE_KEYWORDS = {
     "pump":      ["pump", "pumped", "pumping", "empty", "emptied", "full", "due", "years"],
 }
 
-DEFAULT_JOB_TYPE = "pump"
+
+def _get_job_type_keywords(vertical_key: str) -> dict:
+    """Load job type keywords from vertical config. Falls back to hardcoded defaults."""
+    config = load_vertical(vertical_key)
+    kw_map = config.get("sms_keywords", {}).get("job_type_map", {})
+    return kw_map if kw_map else _FALLBACK_JOB_TYPE_KEYWORDS
 
 
-def detect_job_type(text: str) -> str:
+def _get_default_job_type(vertical_key: str) -> str:
+    """Load default job type from vertical config."""
+    return get_default_job_type(vertical_key)
+
+
+def detect_job_type(text: str, vertical_key: str = "sewer_drain") -> str:
     """Scan message for job type keywords. Emergency overrides all others."""
     text_lower = text.lower()
-    for job_type, keywords in JOB_TYPE_KEYWORDS.items():
+    keywords_map = _get_job_type_keywords(vertical_key)
+    for job_type, keywords in keywords_map.items():
         for kw in keywords:
             if kw in text_lower:
                 return job_type
-    return DEFAULT_JOB_TYPE
+    return _get_default_job_type(vertical_key)
 
 
 def extract_customer_name(text: str) -> str:
@@ -268,7 +283,8 @@ def run(client_phone: str, customer_phone: str, raw_input: str) -> str | None:
     # ------------------------------------------------------------------
     # Step 3: Parse the raw input for key details
     # ------------------------------------------------------------------
-    job_type        = detect_job_type(raw_input)
+    vertical_key    = client.get("trade_vertical", "sewer_drain")
+    job_type        = detect_job_type(raw_input, vertical_key=vertical_key)
     customer_name   = extract_customer_name(raw_input)
     customer_address = extract_address(raw_input)
 

@@ -45,6 +45,7 @@ from execution.db_followups import schedule_followup
 from execution.call_claude import call_claude
 from execution.sms_send import send_sms
 from execution.job_cost_agent import calculate as calculate_job_cost
+from execution.vertical_loader import load_vertical, get_tax_rate
 
 
 def timestamp():
@@ -128,12 +129,20 @@ def parse_hours(text: str) -> float | None:
     return None
 
 
-def parse_flat_rate(text: str) -> float | None:
+def parse_flat_rate(text: str, vertical_key: str = "sewer_drain") -> float | None:
     """
     Detect when the owner specifies a flat total instead of hours.
     Catches: "bill for $275", "service $275", "$275" at end, "for $275"
     Returns the dollar amount as a float, or None if not found.
     """
+    # Build field keyword regex from vertical config
+    config = load_vertical(vertical_key)
+    field_kws = config.get("field_keywords", [])
+    if field_kws:
+        field_kw_pattern = "|".join(re.escape(kw) for kw in field_kws)
+    else:
+        field_kw_pattern = "pump|tank|repair|install|replace|baffle|filter|camera|clean|inspect|haul|dig"
+
     patterns = [
         r'bill\s+(?:her|him|them|for)\s+\$(\d+(?:\.\d+)?)',
         r'(?:a\s+)?bill\s+for\s+\$(\d+(?:\.\d+)?)',
@@ -142,7 +151,7 @@ def parse_flat_rate(text: str) -> float | None:
         r'flat\s+(?:rate\s+)?\$(\d+(?:\.\d+)?)',
         r'total\s+(?:is\s+)?\$(\d+(?:\.\d+)?)',
         # Natural language: "service $275", "pump $350", "tank $275"
-        r'(?:service|job|work|pump|tank|repair|install|replace|baffle|filter|camera|clean|inspect|haul|dig)\s+\$(\d+(?:\.\d+)?)',
+        rf'(?:service|job|work|{field_kw_pattern})\s+\$(\d+(?:\.\d+)?)',
         # "for $275" anywhere
         r'for\s+\$(\d+(?:\.\d+)?)',
         # "$275 flat", "$275 total", "$275 even"
@@ -242,16 +251,36 @@ def _extract_name_from_text(text: str) -> str | None:
 
 
 # ---------------------------------------------------------------------------
+# Vertical prompts loader
+# ---------------------------------------------------------------------------
+
+def _load_vertical_prompts(vertical_key: str) -> str:
+    """Load prompts.md for a trade vertical. Returns empty string if not found."""
+    prompts_path = os.path.join(
+        os.path.dirname(__file__), "..", "directives", "verticals",
+        vertical_key, "prompts.md"
+    )
+    if os.path.exists(prompts_path):
+        with open(prompts_path, "r") as f:
+            return f.read()
+    return ""
+
+
+# ---------------------------------------------------------------------------
 # Claude prompt builders
 # ---------------------------------------------------------------------------
 
 def build_system_prompt(client: dict) -> str:
+    vertical_key = client.get("trade_vertical", "sewer_drain")
+    vertical_prompts = _load_vertical_prompts(vertical_key)
+
     return (
         f"You are the AI back office assistant for {client['business_name']}, "
         f"owned by {client['owner_name']}.\n"
         f"Read this Personality Layer completely before doing anything. "
         f"This is who you are writing for:\n\n"
         f"{client['personality']}\n\n"
+        f"TRADE-SPECIFIC GUIDANCE:\n{vertical_prompts}\n\n"
         f"CRITICAL RULES:\n"
         f"Every word must sound like {client['owner_name']} wrote it personally\n"
         f"Plain text only — no markdown, no bullet symbols\n"
@@ -261,9 +290,7 @@ def build_system_prompt(client: dict) -> str:
         f"Include itemized breakdown of labor and parts\n"
         f"Payment terms must match the personality layer\n"
         f"End with business name and contact number\n"
-        f"Never use corporate filler language\n"
-        f"A rural Maine septic customer should feel like they got "
-        f"a fair honest bill from someone they can trust"
+        f"Never use corporate filler language"
     )
 
 
@@ -303,7 +330,7 @@ def build_user_prompt(
     )
 
     return (
-        f"Generate a complete invoice for this completed septic job.\n\n"
+        f"Generate a complete invoice for this completed job.\n\n"
         f"Business: {client['business_name']}\n"
         f"Owner: {client['owner_name']}\n"
         f"Invoice number: {inv_number}\n"
@@ -323,11 +350,9 @@ def build_user_prompt(
         f"- Never copy the field report wording directly\n"
         f"- Use the trade vertical to write the correct service "
         f"description\n"
-        f"- Bad example: 'I pumped carol duggens 1000 gallon tank "
-        f"at 75 long street send her a bill for $275'\n"
-        f"- Good example: '1,000 Gallon Septic Tank Pumping — "
-        f"Tank pumped and inspected. Inlet and outlet baffles "
-        f"checked.'\n\n"
+        f"- Bad example: raw field notes copied verbatim onto invoice\n"
+        f"- Good example: professional trade-specific service description "
+        f"a homeowner would understand\n\n"
         f"Job details:\n"
         f"Hours worked: {actual_hours}\n"
         f"Hourly rate: ${hourly_rate:.2f}/hr\n"
@@ -400,6 +425,7 @@ def run(client_phone: str, raw_input: str, customer_phone: str | None = None) ->
     # ------------------------------------------------------------------
     # Step 3: Parse the raw input
     # ------------------------------------------------------------------
+    vertical_key    = client.get("trade_vertical", "sewer_drain")
     actual_hours    = parse_hours(raw_input)
     materials_desc, materials_cost = parse_materials(raw_input)
 
@@ -418,7 +444,7 @@ def run(client_phone: str, raw_input: str, customer_phone: str | None = None) ->
         flat_rate = amounts[0]
         print(f"[{timestamp()}] INFO invoice_agent: Single amount — ${flat_rate:.2f}")
     else:
-        flat_rate = parse_flat_rate(raw_input)
+        flat_rate = parse_flat_rate(raw_input, vertical_key=vertical_key)
 
     # If no hours but a flat rate was specified, use it directly
     if actual_hours is None and flat_rate is not None:

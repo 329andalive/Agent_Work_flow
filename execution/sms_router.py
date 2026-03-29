@@ -37,6 +37,7 @@ from execution.response_detector import detect_response_type
 from execution.db_followups import get_pending_followups_by_type
 from execution.db_clarification import get_pending as get_pending_clarification
 from execution.db_clarification import get_pending_approval_by_customer, update_approval_status
+from execution.vertical_loader import load_vertical
 
 
 def timestamp():
@@ -63,60 +64,78 @@ def has_permission(role: str, action: str) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# Keyword routing table — only used when priority detection doesn't match.
-# Clock keywords only trigger for field_tech / foreman (enforced in route_message).
+# Vertical-aware keyword helpers — load from config, never crash
 # ---------------------------------------------------------------------------
-ROUTING_TABLE = {
-    # No-show response — foreman/owner responding to a no-show alert
-    "noshow_agent": [
-        "on it", "on my way", "got it", "handling it",
-        "reassign", "re-assign", "find someone", "send someone",
-    ],
-    # Clock agent — field staff clocking in or out
-    "clock_agent": [
-        "on site", "clocking in", "clock in", "starting", "arrived",
-        "clocking out", "clock out", "headed out",
-    ],
-    # Invoice agent — owner texting in that a job is done
-    "invoice_agent": [
-        "all done", "job done", "just finished", "we're done", "just wrapped",
-        "wrapped up", "took me", "billed", "bill them", "send invoice",
-        "send the invoice", "finished up", "worked", "spent",
-        "send her a bill", "send him a bill", "send them a bill",
-        "a bill for", "bill for", "i pumped", "i ran", "i did",
-        "3 hours", "2 hours", "4 hours", "5 hours", "1 hour", "half a day",
-    ],
-    # Proposal agent — new job request / estimate keywords
-    # MUST come before scheduling_agent so "he needs a new baffle" routes here,
-    # not to scheduling. Job-description words are estimate requests.
-    "proposal_agent": [
-        "estimate", "quote", "price", "how much", "bid", "pricing", "cost",
-        "needs a", "he needs", "she needs", "they need",
-        "wants a", "looking for", "can you do",
-        "baffle", "pump", "repair", "replace", "install", "fix",
-    ],
-    # Job list agent — viewing the schedule for a date or range
-    # Must appear before scheduling_agent so query phrases win on first match.
-    "job_list_agent": [
-        "jobs today", "jobs tomorrow", "jobs this week",
-        "jobs monday", "jobs tuesday", "jobs wednesday",
-        "jobs thursday", "jobs friday", "jobs saturday", "jobs sunday",
-        "today's jobs", "tomorrow's jobs",
-        "what's on", "what's scheduled",
-        "schedule today", "schedule tomorrow", "schedule this week",
-        "schedule monday", "schedule tuesday", "schedule wednesday",
-        "schedule thursday", "schedule friday", "schedule saturday", "schedule sunday",
-        "job list", "show schedule", "pull schedule",
-    ],
-    # Scheduling agent — booking jobs with a date/time
-    # Checked AFTER proposal_agent so job descriptions don't route here
-    "scheduling_agent": [
-        "schedule", "book", "set up", "add to the schedule", "put on the schedule",
-        "calendar", "appointment", "when can", "come out", "available",
-    ],
-    # Review request
-    "review_agent": ["review", "google", "feedback", "rating", "stars", "yelp"],
-}
+
+def _invoice_keywords(vertical_key: str) -> list:
+    """Load invoice SMS keywords from vertical config."""
+    config = load_vertical(vertical_key)
+    return config.get("sms_keywords", {}).get("invoice", [])
+
+
+def _proposal_keywords(vertical_key: str) -> list:
+    """Load proposal SMS keywords from vertical config."""
+    config = load_vertical(vertical_key)
+    return config.get("sms_keywords", {}).get("proposal", [])
+
+
+# ---------------------------------------------------------------------------
+# Static completion/action phrases — not trade-specific, always the same
+# ---------------------------------------------------------------------------
+_INVOICE_ACTION_PHRASES = [
+    "all done", "job done", "just finished", "we're done", "just wrapped",
+    "wrapped up", "took me", "billed", "bill them", "send invoice",
+    "send the invoice", "finished up", "worked", "spent",
+    "send her a bill", "send him a bill", "send them a bill",
+    "3 hours", "2 hours", "4 hours", "5 hours", "1 hour", "half a day",
+]
+
+_PROPOSAL_ACTION_PHRASES = [
+    "estimate", "quote", "price", "how much", "bid", "pricing", "cost",
+    "needs a", "he needs", "she needs", "they need",
+    "wants a", "looking for", "can you do",
+]
+
+
+def _build_routing_table(vertical_key: str) -> dict:
+    """Build the keyword routing table with vertical-specific keywords merged in."""
+    invoice_kws = _INVOICE_ACTION_PHRASES + _invoice_keywords(vertical_key)
+    proposal_kws = _PROPOSAL_ACTION_PHRASES + _proposal_keywords(vertical_key)
+
+    return {
+        "noshow_agent": [
+            "on it", "on my way", "got it", "handling it",
+            "reassign", "re-assign", "find someone", "send someone",
+        ],
+        "clock_agent": [
+            "on site", "clocking in", "clock in", "starting", "arrived",
+            "clocking out", "clock out", "headed out",
+        ],
+        "invoice_agent": invoice_kws,
+        "proposal_agent": proposal_kws,
+        # Job list agent — viewing the schedule for a date or range
+        # Must appear before scheduling_agent so query phrases win on first match.
+        "job_list_agent": [
+            "jobs today", "jobs tomorrow", "jobs this week",
+            "jobs monday", "jobs tuesday", "jobs wednesday",
+            "jobs thursday", "jobs friday", "jobs saturday", "jobs sunday",
+            "today's jobs", "tomorrow's jobs",
+            "what's on", "what's scheduled",
+            "schedule today", "schedule tomorrow", "schedule this week",
+            "schedule monday", "schedule tuesday", "schedule wednesday",
+            "schedule thursday", "schedule friday", "schedule saturday", "schedule sunday",
+            "job list", "show schedule", "pull schedule",
+        ],
+        # Scheduling agent — booking jobs with a date/time
+        # Checked AFTER proposal_agent so job descriptions don't route here
+        "scheduling_agent": [
+            "schedule", "book", "set up", "add to the schedule", "put on the schedule",
+            "calendar", "appointment", "when can", "come out", "available",
+        ],
+        # Review request
+        "review_agent": ["review", "google", "feedback", "rating", "stars", "yelp"],
+    }
+
 
 DEFAULT_AGENT = "proposal_agent"
 
@@ -129,14 +148,15 @@ def lookup_client(phone_number: str) -> dict | None:
     return get_client_by_phone(phone_number)
 
 
-def detect_agent(message_body: str) -> str:
+def detect_agent(message_body: str, vertical_key: str = "sewer_drain") -> str:
     """
     Keyword-only routing fallback. Used when priority detection doesn't match.
     Falls back to DEFAULT_AGENT if no keywords match.
     """
     body_lower = message_body.lower()
+    routing_table = _build_routing_table(vertical_key)
 
-    for agent_name, keywords in ROUTING_TABLE.items():
+    for agent_name, keywords in routing_table.items():
         for keyword in keywords:
             if keyword in body_lower:
                 return agent_name
@@ -983,11 +1003,12 @@ def route_message(sms_data: dict) -> str:
             # Check if the message is actually a new job, not a clarification reply.
             # A stage=2 clarification expects an address, but the owner may have
             # started a completely new request. Detect this and kill the stale session.
-            _JOB_KEYWORDS = [
-                "needs", "pump", "tank", "repair", "install", "replace", "drain",
-                "inspect", "baffle", "riser", "clog", "line", "camera", "jetting",
-                "gallon", "labor", "hours", "travel", "cost", "$",
-            ]
+            _clar_vertical = client.get("trade_vertical", "sewer_drain")
+            _clar_config = load_vertical(_clar_vertical)
+            _JOB_KEYWORDS = (
+                ["needs", "labor", "hours", "travel", "cost", "$"]
+                + _clar_config.get("field_keywords", [])
+            )
             body_lower = body.lower()
             looks_like_job = sum(1 for kw in _JOB_KEYWORDS if kw in body_lower) >= 2
 
@@ -1066,7 +1087,8 @@ def route_message(sms_data: dict) -> str:
         # Step 7: High-confidence keyword routing for unambiguous patterns
         # (invoice completion phrases, job list queries, noshow responses)
         # ------------------------------------------------------------------
-        agent = detect_agent(body)
+        _vertical_key = client.get("trade_vertical", "sewer_drain")
+        agent = detect_agent(body, vertical_key=_vertical_key)
 
         # noshow_agent only fires if there's actually an open alert
         if agent == "noshow_agent":
