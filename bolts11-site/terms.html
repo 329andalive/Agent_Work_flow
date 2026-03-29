@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Terms &amp; Conditions — Bolts11</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    :root{--navy:#1a2e4a;--navy-dark:#132038;--amber:#f59e0b;--white:#ffffff;--gray-50:#f9fafb;--gray-200:#e5e7eb;--gray-400:#9ca3af;--gray-500:#6b7280;--gray-700:#374151}
+    html{scroll-behavior:smooth}
+    body{font-family:'Inter',system-ui,sans-serif;color:var(--gray-700);line-height:1.7;background:var(--white)}
+    a{color:var(--navy);text-decoration:none}
+    a:hover{text-decoration:underline}
+    .nav{position:sticky;top:0;z-index:100;background:var(--white);border-bottom:1px solid var(--gray-200);padding:0 24px}
+    .nav-inner{max-width:1120px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;height:64px}
+    .nav-logo{font-size:20px;font-weight:800;color:var(--navy);display:flex;align-items:center;gap:6px}
+    .nav-logo span{color:var(--amber)}
+    .nav-back{font-size:14px;font-weight:500;color:var(--gray-500)}
+    .content{max-width:720px;margin:0 auto;padding:48px 24px 80px}
+    h1{font-size:32px;font-weight:800;color:var(--navy);margin-bottom:8px}
+    .updated{font-size:13px;color:var(--gray-400);margin-bottom:32px}
+    h2{font-size:20px;font-weight:700;color:var(--navy);margin:32px 0 12px}
+    p,ul{margin-bottom:16px;font-size:15px}
+    ul{padding-left:24px}
+    li{margin-bottom:8px}
+    .footer{background:var(--navy-dark);color:rgba(255,255,255,0.5);padding:24px;text-align:center;font-size:12px}
+    .footer a{color:rgba(255,255,255,0.5)}
+  </style>
+</head>
+<body>
+
+<nav class="nav">
+  <div class="nav-inner">
+    <a href="index.html" class="nav-logo"><span>&#9889;</span> Bolts11</a>
+    <a href="index.html" class="nav-back">&larr; Back to Home</a>
+  </div>
+</nav>
+
+<div class="content">
+  <h1>Terms &amp; Conditions</h1>
+  <p class="updated">Last updated: March 29, 2026</p>
+
+  <h2>Service Description</h2>
+  <p>Bolts11 is a multi-tenant SaaS platform that provides automated SMS job notifications, invoicing, proposal generation, and scheduling tools for small trade service businesses. The platform is accessed via web dashboard and SMS.</p>
+
+  <h2>Account Responsibility</h2>
+  <p>Each trade business ("Client") is responsible for:</p>
+  <ul>
+    <li>Providing accurate customer contact information</li>
+    <li>Obtaining proper SMS consent from their customers before adding them to the platform</li>
+    <li>Maintaining the security of their login PIN and account access</li>
+    <li>The accuracy of invoices, proposals, and job descriptions generated through the platform</li>
+  </ul>
+
+  <h2>SMS Messaging</h2>
+  <p>All SMS sent through Bolts11 is transactional &mdash; job confirmations, invoices, proposals, and scheduling updates. Bolts11 does not send marketing messages. All recipients can reply STOP at any time to opt out.</p>
+  <p>Clients must comply with all applicable SMS regulations including TCPA, CTIA guidelines, and 10DLC registration requirements. Bolts11 provides the tools for compliance but the Client is responsible for obtaining and maintaining customer consent.</p>
+
+  <h2>Data Ownership</h2>
+  <p>All customer data, job records, invoices, and proposals belong to the Client. Bolts11 processes and stores this data solely to operate the platform on the Client's behalf. Clients may request a full data export at any time.</p>
+
+  <h2>Payment Processing</h2>
+  <p>Payments collected through the platform are processed by Square. Bolts11 does not store credit card numbers or handle payment card data directly. Square's terms of service apply to all payment transactions.</p>
+
+  <h2>Multi-Tenancy</h2>
+  <p>Each Client's data is logically isolated from all other Clients. No Client can access another Client's customers, jobs, invoices, or messages. This isolation is enforced at the database query level on every request.</p>
+
+  <h2>Uptime and Availability</h2>
+  <p>Bolts11 is hosted on Railway with auto-deploy on code changes. While we aim for high availability, we do not guarantee specific uptime percentages at this stage. SMS delivery depends on the Telnyx network and carrier availability.</p>
+
+  <h2>Limitation of Liability</h2>
+  <p>Bolts11 is provided "as is." We are not liable for missed SMS deliveries, incorrect invoice amounts entered by the Client, or any business decisions made based on platform data. Our liability is limited to the fees paid for the service in the preceding 12 months.</p>
+
+  <h2>Termination</h2>
+  <p>Either party may terminate the service at any time. Upon termination, the Client's data will be retained for 90 days to allow for export, then permanently deleted.</p>
+
+  <h2>Changes to Terms</h2>
+  <p>We may update these terms as the platform evolves. Clients will be notified of material changes via the email on their account. Continued use of the platform after notification constitutes acceptance.</p>
+
+  <h2>Contact</h2>
+  <p>Questions about these terms? Email <a href="mailto:support@bolts11.com">support@bolts11.com</a>.</p>
+</div>
+
+<footer class="footer">
+  <p>&copy; 2026 Bolts11. All rights reserved. <a href="privacy.html">Privacy</a> &middot; <a href="terms.html">Terms</a></p>
+</footer>
+
+</body>
+</html>

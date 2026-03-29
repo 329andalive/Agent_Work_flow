@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Bolts11 — Automated SMS Job Notifications for Trade Businesses</title>
+  <meta name="description" content="Bolts11 sends automated SMS notifications to your customers the moment a job is scheduled, dispatched, or completed. Built for plumbers, HVAC, septic, and excavation.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    :root{
+      --navy:#1a2e4a;--navy-dark:#132038;--amber:#f59e0b;--amber-hover:#d97706;
+      --white:#ffffff;--gray-50:#f9fafb;--gray-100:#f3f4f6;--gray-200:#e5e7eb;
+      --gray-400:#9ca3af;--gray-500:#6b7280;--gray-700:#374151;--gray-900:#111827;
+      --radius:10px;--shadow:0 1px 3px rgba(0,0,0,0.08),0 1px 2px rgba(0,0,0,0.04);
+      --shadow-lg:0 4px 20px rgba(0,0,0,0.1);
+    }
+    html{scroll-behavior:smooth}
+    body{font-family:'Inter',system-ui,-apple-system,sans-serif;color:var(--gray-700);line-height:1.6;background:var(--white)}
+    a{color:inherit;text-decoration:none}
+    img{max-width:100%;display:block}
+
+    /* Nav */
+    .nav{position:sticky;top:0;z-index:100;background:var(--white);border-bottom:1px solid var(--gray-200);padding:0 24px}
+    .nav-inner{max-width:1120px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;height:64px}
+    .nav-logo{font-size:20px;font-weight:800;color:var(--navy);display:flex;align-items:center;gap:6px}
+    .nav-logo span{color:var(--amber)}
+    .nav-links{display:flex;align-items:center;gap:28px}
+    .nav-links a{font-size:14px;font-weight:500;color:var(--gray-500);transition:color 0.15s}
+    .nav-links a:hover{color:var(--navy)}
+    .btn{display:inline-block;padding:10px 22px;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;transition:all 0.15s;border:none;text-align:center}
+    .btn-amber{background:var(--amber);color:var(--navy)}
+    .btn-amber:hover{background:var(--amber-hover)}
+    .btn-outline{background:transparent;border:2px solid var(--navy);color:var(--navy)}
+    .btn-outline:hover{background:var(--navy);color:var(--white)}
+    .btn-outline-white{background:transparent;border:2px solid var(--white);color:var(--white)}
+    .btn-outline-white:hover{background:rgba(255,255,255,0.1)}
+    .hamburger{display:none;background:none;border:none;font-size:24px;cursor:pointer;color:var(--navy);padding:4px}
+    .mobile-menu{display:none;position:fixed;top:64px;left:0;right:0;background:var(--white);border-bottom:1px solid var(--gray-200);padding:16px 24px;z-index:99;box-shadow:var(--shadow-lg)}
+    .mobile-menu.open{display:flex;flex-direction:column;gap:16px}
+    .mobile-menu a{font-size:15px;font-weight:500;color:var(--gray-700);padding:8px 0}
+
+    /* Sections */
+    .section{padding:80px 24px}
+    .section-gray{background:var(--gray-50)}
+    .container{max-width:1120px;margin:0 auto}
+    .section-label{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:var(--amber);margin-bottom:8px}
+    .section-title{font-size:36px;font-weight:800;color:var(--navy);line-height:1.15;margin-bottom:12px}
+    .section-subtitle{font-size:17px;color:var(--gray-500);max-width:640px;line-height:1.7}
+    .section-header{margin-bottom:48px}
+
+    /* Hero */
+    .hero{background:linear-gradient(135deg,var(--navy-dark) 0%,var(--navy) 100%);color:var(--white);padding:100px 24px 80px;text-align:center}
+    .hero h1{font-size:56px;font-weight:800;line-height:1.05;margin-bottom:16px;letter-spacing:-0.02em}
+    .hero h1 span{color:var(--amber)}
+    .hero .hero-sub{font-size:22px;opacity:0.85;margin-bottom:12px;font-weight:500}
+    .hero .hero-body{font-size:17px;opacity:0.7;max-width:620px;margin:0 auto 32px;line-height:1.7}
+    .hero-btns{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-bottom:24px}
+    .hero-trust{font-size:13px;opacity:0.5;max-width:480px;margin:0 auto}
+
+    /* Steps */
+    .steps-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:32px}
+    .step-card{background:var(--white);border:1px solid var(--gray-200);border-radius:var(--radius);padding:32px 28px;box-shadow:var(--shadow);text-align:center}
+    .step-num{display:inline-flex;align-items:center;justify-content:center;width:40px;height:40px;border-radius:50%;background:var(--amber);color:var(--navy);font-size:18px;font-weight:800;margin-bottom:16px}
+    .step-card h3{font-size:18px;font-weight:700;color:var(--navy);margin-bottom:8px}
+    .step-card p{font-size:14px;color:var(--gray-500);line-height:1.6}
+
+    /* Features */
+    .features-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:24px}
+    .feature-card{background:var(--white);border:1px solid var(--gray-200);border-radius:var(--radius);padding:28px 24px;box-shadow:var(--shadow);transition:box-shadow 0.15s}
+    .feature-card:hover{box-shadow:var(--shadow-lg)}
+    .feature-icon{font-size:28px;margin-bottom:12px}
+    .feature-card h3{font-size:16px;font-weight:700;color:var(--navy);margin-bottom:6px}
+    .feature-card p{font-size:14px;color:var(--gray-500);line-height:1.6}
+
+    /* Trades */
+    .trades-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-top:32px}
+    .trade-card{background:var(--white);border:1px solid var(--gray-200);border-radius:var(--radius);padding:20px 16px;text-align:center;box-shadow:var(--shadow)}
+    .trade-card .trade-icon{font-size:32px;margin-bottom:8px}
+    .trade-card .trade-name{font-size:14px;font-weight:600;color:var(--navy)}
+
+    /* Testimonials */
+    .testimonials-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:24px}
+    .testimonial-card{background:var(--white);border:1px solid var(--gray-200);border-radius:var(--radius);padding:28px 24px;box-shadow:var(--shadow)}
+    .testimonial-card blockquote{font-size:15px;color:var(--gray-700);line-height:1.7;font-style:italic;margin-bottom:16px}
+    .testimonial-card cite{font-size:13px;color:var(--gray-400);font-style:normal;display:block}
+
+    /* CTA / Contact */
+    .cta-section{background:linear-gradient(135deg,var(--navy-dark) 0%,var(--navy) 100%);color:var(--white);text-align:center}
+    .cta-section .section-title{color:var(--white)}
+    .cta-section .section-subtitle{color:rgba(255,255,255,0.7);margin:0 auto 32px}
+    .contact-form{max-width:480px;margin:0 auto;display:flex;flex-direction:column;gap:14px}
+    .contact-form input,.contact-form select{width:100%;padding:12px 16px;border:1px solid rgba(255,255,255,0.2);border-radius:8px;background:rgba(255,255,255,0.08);color:var(--white);font-family:inherit;font-size:15px}
+    .contact-form input::placeholder{color:rgba(255,255,255,0.4)}
+    .contact-form input:focus{outline:none;border-color:var(--amber);background:rgba(255,255,255,0.12)}
+    .cta-closing{font-size:14px;opacity:0.5;margin-top:24px;max-width:500px;margin-left:auto;margin-right:auto}
+
+    /* Footer */
+    .footer{background:var(--navy-dark);color:rgba(255,255,255,0.6);padding:48px 24px 32px}
+    .footer-inner{max-width:1120px;margin:0 auto}
+    .footer-top{display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:40px;margin-bottom:32px}
+    .footer-brand .footer-logo{font-size:18px;font-weight:800;color:var(--white);margin-bottom:8px}
+    .footer-brand .footer-logo span{color:var(--amber)}
+    .footer-brand p{font-size:13px;line-height:1.6}
+    .footer-col h4{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:rgba(255,255,255,0.4);margin-bottom:12px}
+    .footer-col a{display:block;font-size:13px;margin-bottom:8px;transition:color 0.15s}
+    .footer-col a:hover{color:var(--white)}
+    .footer-bottom{border-top:1px solid rgba(255,255,255,0.08);padding-top:20px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px}
+    .footer-bottom p{font-size:12px}
+    .footer-legal{font-size:11px;line-height:1.6;margin-bottom:20px;opacity:0.5}
+
+    /* Responsive */
+    @media(max-width:900px){
+      .steps-grid,.features-grid,.testimonials-grid{grid-template-columns:1fr}
+      .trades-grid{grid-template-columns:repeat(2,1fr)}
+      .footer-top{grid-template-columns:1fr 1fr}
+      .hero h1{font-size:38px}
+      .section-title{font-size:28px}
+    }
+    @media(max-width:640px){
+      .nav-links{display:none}
+      .hamburger{display:block}
+      .hero{padding:60px 24px 48px}
+      .hero h1{font-size:32px}
+      .hero .hero-sub{font-size:18px}
+      .section{padding:48px 20px}
+      .trades-grid{grid-template-columns:repeat(2,1fr)}
+      .footer-top{grid-template-columns:1fr}
+      .footer-bottom{flex-direction:column;text-align:center}
+    }
+  </style>
+</head>
+<body>
+
+<!-- Nav -->
+<nav class="nav">
+  <div class="nav-inner">
+    <a href="#" class="nav-logo"><span>&#9889;</span> Bolts11</a>
+    <div class="nav-links">
+      <a href="#how-it-works">How It Works</a>
+      <a href="#features">Features</a>
+      <a href="#who">Who It's For</a>
+      <a href="#contact">Contact</a>
+      <a href="#contact" class="btn btn-amber">Request a Demo &rarr;</a>
+    </div>
+    <button class="hamburger" onclick="document.getElementById('mobile-menu').classList.toggle('open')" aria-label="Menu">&#9776;</button>
+  </div>
+</nav>
+<div class="mobile-menu" id="mobile-menu">
+  <a href="#how-it-works" onclick="document.getElementById('mobile-menu').classList.remove('open')">How It Works</a>
+  <a href="#features" onclick="document.getElementById('mobile-menu').classList.remove('open')">Features</a>
+  <a href="#who" onclick="document.getElementById('mobile-menu').classList.remove('open')">Who It's For</a>
+  <a href="#contact" onclick="document.getElementById('mobile-menu').classList.remove('open')">Contact</a>
+  <a href="#contact" class="btn btn-amber" onclick="document.getElementById('mobile-menu').classList.remove('open')">Request a Demo &rarr;</a>
+</div>
+
+<!-- Hero -->
+<section class="hero">
+  <div class="container">
+    <h1>Built for <span>Trades</span></h1>
+    <div class="hero-sub">Your customers know you're coming. Before you even knock.</div>
+    <p class="hero-body">Bolts11 sends automated SMS notifications to your customers the moment a job is scheduled, dispatched, or completed &mdash; no app, no setup, no hassle.</p>
+    <div class="hero-btns">
+      <a href="#contact" class="btn btn-amber">Request a Demo</a>
+      <a href="#how-it-works" class="btn btn-outline-white">See How It Works</a>
+    </div>
+    <p class="hero-trust">Trusted by plumbers, HVAC techs, septic servicers, and excavators across rural America.</p>
+  </div>
+</section>
+
+<!-- How It Works -->
+<section class="section section-gray" id="how-it-works">
+  <div class="container">
+    <div class="section-header">
+      <div class="section-label">How It Works</div>
+      <h2 class="section-title">Simple by Design</h2>
+      <p class="section-subtitle">Three steps. Zero learning curve. Bolts11 plugs into how you already run your jobs. Your crew texts job updates the same way they always have &mdash; Bolts11 handles the rest.</p>
+    </div>
+    <div class="steps-grid">
+      <div class="step-card">
+        <div class="step-num">1</div>
+        <h3>You Book the Job</h3>
+        <p>Schedule a job via your dispatch system or just text in the job details. Bolts11 captures everything automatically.</p>
+      </div>
+      <div class="step-card">
+        <div class="step-num">2</div>
+        <h3>Bolts11 Notifies Your Customer</h3>
+        <p>Your customer gets a professional SMS &mdash; confirmed appointment time, tech name, and what to expect. Automatically.</p>
+      </div>
+      <div class="step-card">
+        <div class="step-num">3</div>
+        <h3>Job Done, Customer Happy</h3>
+        <p>On completion, a follow-up SMS goes out &mdash; receipt, review request, or whatever fits your workflow.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Features -->
+<section class="section" id="features">
+  <div class="container">
+    <div class="section-header">
+      <div class="section-label">Platform Features</div>
+      <h2 class="section-title">Everything your back office needs.</h2>
+    </div>
+    <div class="features-grid">
+      <div class="feature-card">
+        <div class="feature-icon">&#128241;</div>
+        <h3>SMS-First, Always</h3>
+        <p>Customers get plain text messages that work on every phone &mdash; no app download, no email, no portal. Rural-proof.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">&#127970;</div>
+        <h3>Multi-Tenant Platform</h3>
+        <p>Each trade business gets their own isolated environment, their own phone number, and their own customer data.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">&#129302;</div>
+        <h3>AI-Powered Notifications</h3>
+        <p>Messages sound like you wrote them &mdash; not a robot. Bolts11 learns your business voice and your pricing language.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">&#128203;</div>
+        <h3>Proposals &amp; Invoices</h3>
+        <p>Generate professional estimates from a quick job description. Send invoices when the job wraps up. All via SMS.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">&#11088;</div>
+        <h3>Automatic Review Requests</h3>
+        <p>After every completed job, Bolts11 follows up asking for a Google review &mdash; at the exact right moment.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">&#128274;</div>
+        <h3>Compliant by Default</h3>
+        <p>STOP opt-out honored instantly. All mobile data handled per CTIA guidelines. Your customers' trust, protected.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">&#128197;</div>
+        <h3>Scheduling &amp; Dispatch</h3>
+        <p>Text in a job and Bolts11 schedules it, confirms with the customer, and keeps your crew on track.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">&#128202;</div>
+        <h3>Job History Dashboard</h3>
+        <p>See every job, every message, every invoice &mdash; organized by day. Know what's done and what's pending at a glance.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">&#128295;</div>
+        <h3>Zero Hardware Required</h3>
+        <p>Your crew already has a phone. That's all they need. No tablets, no scanners, no new equipment.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Who It's For -->
+<section class="section section-gray" id="who">
+  <div class="container">
+    <div class="section-header">
+      <div class="section-label">Who It's For</div>
+      <h2 class="section-title">Built for Trades</h2>
+      <p class="section-subtitle">If you do service work, Bolts11 is for you. Designed from the ground up for small trade service businesses. If your crew is in the field and your customers are waiting for updates &mdash; this is what you need.</p>
+    </div>
+    <div class="trades-grid">
+      <div class="trade-card"><div class="trade-icon">&#129695;</div><div class="trade-name">Plumbing</div></div>
+      <div class="trade-card"><div class="trade-icon">&#10052;&#65039;</div><div class="trade-name">HVAC</div></div>
+      <div class="trade-card"><div class="trade-icon">&#128688;</div><div class="trade-name">Sewer &amp; Drain</div></div>
+      <div class="trade-card"><div class="trade-icon">&#128167;</div><div class="trade-name">Septic Service</div></div>
+      <div class="trade-card"><div class="trade-icon">&#127959;&#65039;</div><div class="trade-name">Excavation</div></div>
+      <div class="trade-card"><div class="trade-icon">&#9889;</div><div class="trade-name">Electrical</div></div>
+      <div class="trade-card"><div class="trade-icon">&#128293;</div><div class="trade-name">Heating &amp; Oil</div></div>
+      <div class="trade-card"><div class="trade-icon">&#127968;</div><div class="trade-name">Home Services</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- Testimonials -->
+<section class="section" id="testimonials">
+  <div class="container">
+    <div class="section-header">
+      <div class="section-label">From the Field</div>
+      <h2 class="section-title">What trade owners are saying.</h2>
+    </div>
+    <div class="testimonials-grid">
+      <div class="testimonial-card">
+        <blockquote>&ldquo;I used to get calls all day asking 'when are you coming?' Now my customers know before they even have to ask. It changed my whole week.&rdquo;</blockquote>
+        <cite>&mdash; Mike D., Owner, rural septic service &mdash; Maine</cite>
+      </div>
+      <div class="testimonial-card">
+        <blockquote>&ldquo;We went from chasing unpaid invoices to getting paid the same day. The follow-up texts do it automatically. I don't have to think about it.&rdquo;</blockquote>
+        <cite>&mdash; Rachel T., Office Manager, HVAC &mdash; Tennessee</cite>
+      </div>
+      <div class="testimonial-card">
+        <blockquote>&ldquo;My Google reviews doubled in two months. The system asks at exactly the right time &mdash; right after the job, while they're still happy.&rdquo;</blockquote>
+        <cite>&mdash; Dan C., Owner, excavation &amp; grading &mdash; Ohio</cite>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- CTA / Contact -->
+<section class="section cta-section" id="contact">
+  <div class="container">
+    <div class="section-header" style="text-align:center">
+      <div class="section-label">Get Started</div>
+      <h2 class="section-title">Ready to put your back office on autopilot?</h2>
+      <p class="section-subtitle" style="margin:0 auto 32px">Tell us about your business and we'll get you set up. Takes about 10 minutes.</p>
+    </div>
+    <form class="contact-form" action="https://formsubmit.co/support@bolts11.com" method="POST" netlify>
+      <input type="text" name="name" placeholder="Your Name" required>
+      <input type="text" name="business_type" placeholder="Business Type (e.g. Septic, HVAC, Plumbing)">
+      <input type="tel" name="phone" placeholder="Phone Number" required>
+      <input type="email" name="email" placeholder="Email Address" required>
+      <input type="hidden" name="_subject" value="New Bolts11 Demo Request">
+      <button type="submit" class="btn btn-amber" style="width:100%;padding:14px;font-size:16px">Request a Free Demo</button>
+    </form>
+    <p class="cta-closing">Stop losing jobs to missed communication. Your competitors are still playing phone tag. You don't have to.</p>
+  </div>
+</section>
+
+<!-- Footer -->
+<footer class="footer">
+  <div class="footer-inner">
+    <div class="footer-top">
+      <div class="footer-brand">
+        <div class="footer-logo"><span>&#9889;</span> Bolts11</div>
+        <p>Automated SMS job notifications for small trade service businesses. Built for the field, not the office.</p>
+      </div>
+      <div class="footer-col">
+        <h4>Platform</h4>
+        <a href="#how-it-works">How It Works</a>
+        <a href="#features">Features</a>
+        <a href="#who">Who It's For</a>
+        <a href="#contact">Request a Demo</a>
+      </div>
+      <div class="footer-col">
+        <h4>Legal</h4>
+        <a href="privacy.html">Privacy Policy</a>
+        <a href="terms.html">Terms &amp; Conditions</a>
+      </div>
+      <div class="footer-col">
+        <h4>Support</h4>
+        <a href="mailto:support@bolts11.com">support@bolts11.com</a>
+      </div>
+    </div>
+    <p class="footer-legal">Bolts11 is a multi-tenant SaaS platform. SMS notifications are transactional only. Mobile numbers are never sold or shared. Reply STOP to any message to opt out.</p>
+    <div class="footer-bottom">
+      <p>&copy; 2026 Bolts11. All rights reserved.</p>
+      <p><a href="privacy.html">Privacy Policy</a> &middot; <a href="terms.html">Terms &amp; Conditions</a></p>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>
