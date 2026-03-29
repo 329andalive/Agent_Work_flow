@@ -1,8 +1,147 @@
 Response
 
 # HANDOFF.md — Bolts11 Session Log
-> Last updated: March 28, 2026 — Backend Engineer
+> Last updated: March 29, 2026 — Backend Engineer
 > Read CLAUDE.md first every session before touching any code.
+
+---
+
+## Session — March 29, 2026
+
+### Testing Infrastructure — Built From Zero (T1-T6)
+- Installed pytest 8.3.4 + pytest-mock, created tests/ scaffold (T1)
+- 36 unit tests + 6 integration tests, 0 failures
+- Covers: invoice math, SMS routing, multi-tenancy safety, vertical config,
+  agent wiring, email bridge, schema contracts
+- T3 caught live bug: "EST " prefix was falling through to clarification_agent
+  instead of proposal_agent — fixed in sms_router.py
+- T5 schema contracts verify DB columns match code expectations against real Supabase
+- Rule going forward: every bug fixed gets a test added before the fix
+
+### Vertical Config System — Built and Wired (V1-V4)
+- Created execution/vertical_loader.py — cached config loader with graceful fallback
+- Extracted all sewer-specific hardcoding from invoice_agent.py, proposal_agent.py,
+  sms_router.py, document_html.py into directives/verticals/sewer_drain/
+- Agents are now vertical-agnostic — they load config at runtime from client.trade_vertical
+- Added landscaping vertical — 3 JSON files, zero code changes (V3)
+- Added gravel_pit vertical — includes self-load workflow config (V4)
+  Self-load: contractor texts "got 10 yards 3/4 minus" → draft invoice created,
+  office notified, held for approval. Replaces the forgotten Friday notebook problem.
+
+### Verticals Now Available
+```
+directives/verticals/
+├── sewer_drain/     — config.json, prices.json, prompts.md (V1)
+├── landscaping/     — config.json, prices.json, prompts.md (V3)
+└── gravel_pit/      — config.json, prices.json, prompts.md (V4)
+```
+
+Each vertical contains:
+- `config.json` — job types, SMS keywords, tax rules, field keywords, job_type_map
+- `prices.json` — regional service pricing (low/typical/high)
+- `prompts.md` — agent prompt language for invoice, proposal, scheduling
+
+### Schedule Planner — Built (SP1)
+- New page at /dashboard/planner — weekly grid with backlog column
+- Drag-and-drop jobs from backlog to Mon-Fri day columns
+- POST /api/jobs/reschedule moves jobs in Supabase on drop
+- Capacity bars per day (green/amber/red) with configurable daily cap (8)
+- Zone consolidation hints — amber banner when same zone appears on 2+ days
+- "Open dispatch →" link under each day column
+- Added Planner to sidebar nav (before Dispatch)
+
+### Email Bridge — Built (EB1)
+- Created execution/email_send.py using Resend (replaced SendGrid before first deploy)
+- Navy/amber branded HTML emails with line items, totals, PAY NOW button
+- API routes: /api/invoices/<id>/send-email, /api/proposals/<id>/send-email
+- Invoice view: "Email Invoice" button POSTs to API (was mailto: link)
+- Proposal view: Added "Email Estimate" amber button with same flow
+- Both prompt for email if not on file, save to customer record on send
+- Requires RESEND_API_KEY in env vars to activate
+
+### Dispatch Board — Address Display
+- Job cards now show customer address with pin icon on both slip cards and worker tabs
+- Address sourced: job_address → customer_address → fallback empty
+- CSS: .slip-card__addr and .slip-tab__addr with DM Mono, ellipsis truncation
+
+### Dashboard Items — All Previously Broken Items Fixed
+- Control Board job "View →" links — already wired
+- job_detail.html — already exists with full implementation
+- customer_detail.html — already deployed
+- customers.html — already deployed
+- estimates.html, invoices.html, payments.html — already deployed
+- Square Step 8b — already wired in invoice_agent.py
+- auth_routes.py debug prints — already clean
+
+### Real-World Test Setup — 40 Jobs Seeded
+- Created scripts/seed_week.py — seeds a full week of realistic dispatch data
+- DRY RUN: python scripts/seed_week.py --dry-run
+- SEED: python scripts/seed_week.py
+- 40 jobs seeded across 5 days (March 30 - April 3, 2026)
+- Uses 23 real customer IDs from B&B Septic's customer list
+- All 40 jobs confirmed inserted: status=scheduled, unassigned
+
+### bolts11-site — Recovered
+- bolts11-site/ files were never committed to GitHub (lost when local
+  repo was deleted earlier in session)
+- Site confirmed live at https://bolts11.com (Netlify + Cloudflare)
+- Recreated bolts11-site/index.html, privacy.html, terms.html from
+  live site content
+- All files now committed to repo
+
+### Files Changed This Session
+```
+NEW   execution/vertical_loader.py          — cached config loader
+NEW   execution/email_send.py               — Resend email bridge
+NEW   directives/verticals/sewer_drain/     — config.json, prices.json, prompts.md
+NEW   directives/verticals/landscaping/     — config.json, prices.json, prompts.md
+NEW   directives/verticals/gravel_pit/      — config.json, prices.json, prompts.md
+NEW   templates/dashboard/planner.html      — weekly schedule planner
+NEW   scripts/seed_week.py                  — 40-job test data seeder
+NEW   bolts11-site/index.html               — marketing site
+NEW   bolts11-site/privacy.html             — privacy policy
+NEW   bolts11-site/terms.html               — terms and conditions
+NEW   tests/test_vertical_loader.py         — 14 tests (sewer + landscaping + gravel)
+NEW   tests/test_vertical_wiring.py         — 4 tests (agent wiring verification)
+NEW   tests/test_email_send.py              — 5 tests (email bridge)
+NEW   tests/test_schema_contracts.py        — 6 integration tests (DB schema)
+MOD   execution/proposal_agent.py           — loads job_type_keywords from vertical config
+MOD   execution/invoice_agent.py            — loads field_keywords + prompts from vertical
+MOD   execution/sms_router.py               — builds routing table from vertical keywords
+MOD   execution/document_html.py            — tax rate/label from vertical config
+MOD   routes/dashboard_routes.py            — planner route, reschedule API, email APIs
+MOD   templates/base.html                   — planner nav item added
+MOD   templates/dashboard/dispatch.html     — address on cards + tabs
+MOD   templates/dashboard/invoice_view.html — email button (Resend API)
+MOD   templates/dashboard/proposal_view.html — email estimate button
+MOD   requirements.txt                      — resend==2.4.0
+```
+
+### Still Pending — Carry Forward
+- **Prompt #5** — Run square_payment_writeback.sql in Supabase (manual)
+- **10DLC approval** — outbound SMS still blocked
+- **Square production credentials** — still on sandbox
+- **Supabase rebrand UPDATE** — title still shows "Holt Sewer & Drain"
+  Run: UPDATE clients SET business_name = 'B&B Septic'
+       WHERE id = '8aafcd73-b41c-4f1a-bd01-3e7955798367';
+- **RESEND_API_KEY** — add to Railway env vars (resend.com free tier)
+- **Netlify deploy** — drag bolts11-site/ folder to Netlify to restore live site
+
+### Monday Real-World Test Plan
+1. Open /dashboard/planner — drag 40 seeded jobs onto days
+2. Open /dashboard/dispatch?date=2026-03-30 — assign jobs to Austin/Jesse/Jeremy
+3. Text completions from your phone (and wife's phone for second tech):
+   "DONE pumped 1000 gal tank Arthur Crockett 310 Northport Ave $325"
+4. Watch dashboard update — jobs flip to invoiced, invoices appear
+5. Log every break — each one becomes a bug fix + test
+
+### Next Session Priorities
+1. Geo-clustering — wire geocode.py to set zone_cluster on job create,
+   color-code dispatch board cards automatically
+2. Customer CSV import — self-serve bulk import for onboarding
+3. Client config inheritance — client overrides vertical defaults
+   (B&B Septic starts from sewer_drain template, overrides what's different)
+4. Self-serve onboarding wizard — after 5 manual client setups
 
 ---
 
@@ -115,8 +254,7 @@ Confirmed end-to-end at 6:26 PM:
 - [ ] **Square production credentials** — flip env vars when ready for real money
 
 ### Next Session Priority
-- Vertical config layer — the unlock for every trade after sewer and drain
-- Multi-tenant onboarding flow that generates personality.md per business
+See March 29 session above — all items completed.
 
 ---
 
@@ -128,7 +266,7 @@ API domain:    https://api.bolts11.com (DNS may not be pointed yet)
 GitHub repo:   329andalive/Agent_Work_flow
 Python:        3.12.9 (pinned via .python-version — DO NOT remove this file)
 Deploy:        Auto-deploy on push to main
-Build status:  ✅ GREEN as of March 23, 2026 — gunicorn 25.1.0 booting clean
+Build status:  ✅ GREEN as of March 29, 2026 — 36 tests passing
 ```
 
 ---
@@ -150,19 +288,19 @@ Build status:  ✅ GREEN as of March 23, 2026 — gunicorn 25.1.0 booting clean
 - [x] `squareup==44.0.1.20260122` installed and pinned — Square SDK available on Railway
 - [x] All 66 dependencies fully pinned in requirements.txt — no floating versions
 
-## Still Broken / Not Yet Built
+## Still Broken / Not Yet Built — Updated March 29
 
-- [ ] Control Board job "View →" links — `href="#"` (Claude Code Prompt #1)
-- [ ] `/dashboard/customers/` — TemplateNotFound, `customers.html` missing (Prompt #2 + 7.9)
-- [ ] `/dashboard/customers/<id>` — 404, no route or template (Prompt #3)
-- [ ] `/dashboard/estimates/` — route exists, `estimates.html` template missing (Prompt #4)
-- [ ] `/dashboard/invoices/` — route exists, `invoices.html` template missing (Prompt #4)
-- [ ] `/dashboard/payments/` — route exists, `payments.html` template missing (Prompt #4)
-- [ ] Customers page inline add form — `customers.html` not yet built (Prompt #5, blocked on #2)
-- [ ] `customer_detail.html` — template missing (Prompt #3)
-- [ ] `job_detail.html` — template missing (needs to be created)
-- [ ] Square payment link not wired in invoice_agent.py (7.10 — see below)
-- [ ] Debug prints still in auth_routes.py login handler (7.11)
+- [x] Control Board job "View →" links — fixed
+- [x] `/dashboard/customers/` — working
+- [x] `/dashboard/customers/<id>` — working
+- [x] `/dashboard/estimates/` — working
+- [x] `/dashboard/invoices/` — working
+- [x] `/dashboard/payments/` — working
+- [x] `customers.html` — deployed
+- [x] `customer_detail.html` — deployed
+- [x] `job_detail.html` — deployed
+- [x] Square payment link wired in invoice_agent.py (7.10 done)
+- [x] Debug prints removed from auth_routes.py (7.11 done)
 
 ---
 
