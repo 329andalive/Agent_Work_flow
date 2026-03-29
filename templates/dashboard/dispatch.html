@@ -63,13 +63,14 @@
 .slip-badge--asap { background:#FCEBEB; color:#A32D2D; }
 .slip-card__addr { font-family:'DM Mono',monospace; font-size:10px; color:var(--text-tertiary); margin-top:4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 
-.slip-tab { background:var(--bg-card); border:1px solid var(--border); border-radius:4px; padding:6px 10px; margin-bottom:4px; cursor:grab; display:flex; align-items:center; justify-content:space-between; font-size:12px; gap:4px; }
+.slip-tab { background:var(--bg-card); border:1px solid var(--border); border-radius:4px; padding:6px 10px; margin-bottom:4px; cursor:grab; display:flex; align-items:center; justify-content:space-between; font-size:12px; gap:4px; flex-wrap:wrap; }
 .slip-tab:active { cursor:grabbing; }
 .slip-tab.dragging { opacity:0.35; }
 .slip-tab__name { font-weight:500; color:var(--text-primary); flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .slip-tab__badge { font-family:'DM Mono',monospace; font-size:9px; color:var(--text-tertiary); flex-shrink:0; }
 .slip-tab__remove { font-size:15px; color:var(--text-tertiary); cursor:pointer; flex-shrink:0; line-height:1; padding:0 2px; }
 .slip-tab__remove:hover { color:var(--red); }
+.slip-tab__addr { font-family:'DM Mono',monospace; font-size:9px; color:var(--text-tertiary); display:block; width:100%; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-top:2px; }
 
 .held-section { margin-top:16px; }
 .held-header { font-family:'DM Mono',monospace; font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:0.08em; color:var(--text-tertiary); padding:8px 0; cursor:pointer; display:flex; align-items:center; gap:6px; }
@@ -224,7 +225,7 @@
     tab.className = 'slip-tab';
     tab.draggable = true;
     Object.keys(d).forEach(function(k) { tab.dataset[k] = d[k]; });
-    tab.innerHTML = '<span class="slip-tab__name">' + (d.name || d.customer_name || 'Customer') + '</span><span class="slip-tab__badge">' + (d.time || d.zone || '') + '</span><span class="slip-tab__remove">&times;</span>';
+    tab.innerHTML = '<span class="slip-tab__name">' + (d.name || d.customer_name || 'Customer') + '</span><span class="slip-tab__badge">' + (d.time || d.zone || '') + '</span><span class="slip-tab__remove">&times;</span>' + (d.address ? '<span class="slip-tab__addr">\ud83d\udccd ' + d.address + '</span>' : '');
     tab.querySelector('.slip-tab__remove').addEventListener('click', function(e) {
       e.stopPropagation();
       var card = makeCard(d, false);
