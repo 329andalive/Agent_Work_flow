@@ -140,7 +140,6 @@ def main():
 
         record = {
             "client_id": CLIENT_ID,
-            "client_phone": CLIENT_PHONE,
             "customer_id": customer["id"],
             "job_type": job["job_type"],
             "job_description": job["description"],
