@@ -1028,7 +1028,7 @@ def route_message(sms_data: dict) -> str:
         # ------------------------------------------------------------------
         body_upper = body.strip().upper()
 
-        if body_upper.startswith("ESTIMATE") or body_upper.startswith("QUOTE"):
+        if body_upper.startswith("ESTIMATE") or body_upper.startswith("EST ") or body_upper.startswith("QUOTE"):
             print(f"[{timestamp()}] INFO sms_router: Explicit trigger → proposal_agent")
             dispatch("proposal_agent", sms_data, employee=employee, role=role)
             return "proposal_agent"
