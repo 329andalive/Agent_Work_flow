@@ -1,0 +1,19 @@
+{
+  "vertical_key": "landscaping",
+  "region": "northeast_us",
+  "services": [
+    {"name": "Lawn mowing — small (under 5k sqft)",   "low": 40,  "typical": 55,  "high": 75},
+    {"name": "Lawn mowing — medium (5k-15k sqft)",    "low": 60,  "typical": 85,  "high": 110},
+    {"name": "Lawn mowing — large (over 15k sqft)",   "low": 100, "typical": 140, "high": 185},
+    {"name": "Spring/fall cleanup",                   "low": 150, "typical": 250, "high": 400},
+    {"name": "Mulch install — per yard",              "low": 65,  "typical": 85,  "high": 110},
+    {"name": "Shrub/hedge trimming",                  "low": 75,  "typical": 125, "high": 200},
+    {"name": "Aeration — small lawn",                 "low": 75,  "typical": 100, "high": 135},
+    {"name": "Aeration — large lawn",                 "low": 120, "typical": 165, "high": 225},
+    {"name": "Overseeding",                           "low": 100, "typical": 150, "high": 225},
+    {"name": "Snow plowing — per visit",              "low": 50,  "typical": 75,  "high": 125},
+    {"name": "Snow plowing — seasonal contract",      "low": 400, "typical": 650, "high": 950},
+    {"name": "Landscape bed install — per bed",       "low": 200, "typical": 350, "high": 600},
+    {"name": "Irrigation winterization",              "low": 75,  "typical": 100, "high": 150}
+  ]
+}

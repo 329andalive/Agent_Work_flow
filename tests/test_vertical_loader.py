@@ -37,3 +37,27 @@ def test_unknown_vertical_returns_empty():
 
 def test_default_job_type():
     assert get_default_job_type("sewer_drain") == "pump"
+
+
+def test_landscaping_config_loads():
+    _cache.clear()
+    config = load_vertical("landscaping")
+    assert config, "Landscaping config should not be empty"
+    assert "job_types" in config
+    assert "mow" in config["job_types"]
+
+
+def test_landscaping_default_job_type():
+    _cache.clear()
+    assert get_default_job_type("landscaping") == "mow"
+
+
+def test_landscaping_tax_rate_is_zero():
+    _cache.clear()
+    assert get_tax_rate("landscaping") == 0.0
+
+
+def test_landscaping_has_snow_removal():
+    _cache.clear()
+    config = load_vertical("landscaping")
+    assert "snow_removal" in config["job_types"]

@@ -1,0 +1,43 @@
+{
+  "vertical_key": "landscaping",
+  "vertical_label": "Landscaping",
+  "default_job_type": "mow",
+  "tax_rules": {
+    "parts_rate": 0.0,
+    "labor_rate": 0.0,
+    "tax_label": "No tax"
+  },
+  "job_types": [
+    "mow", "cleanup", "mulch", "install", "design",
+    "snow_removal", "aeration", "seeding", "pruning", "irrigation"
+  ],
+  "sms_keywords": {
+    "invoice": [
+      "mowed", "mow", "cut", "trimmed", "trim", "cleanup", "cleaned up",
+      "mulched", "mulch", "planted", "plant", "seeded", "seed",
+      "pruned", "prune", "plowed", "plow", "shoveled", "shovel",
+      "aerated", "aeration", "hours", "labor", "materials", "cost"
+    ],
+    "proposal": [
+      "mow", "cut", "trim", "cleanup", "mulch", "plant", "install",
+      "seed", "prune", "plow", "snow", "aerate", "irrigate", "design"
+    ],
+    "job_type_map": {
+      "snow_removal": ["snow", "plow", "plowing", "shovel", "ice", "salt", "winter"],
+      "cleanup":      ["cleanup", "clean up", "leaves", "brush", "debris", "fall", "spring"],
+      "mulch":        ["mulch", "bark", "beds", "wood chip"],
+      "install":      ["install", "plant", "planting", "new", "landscape", "design"],
+      "aeration":     ["aerate", "aeration", "core", "overseed"],
+      "seeding":      ["seed", "seeding", "grass", "lawn", "overseed"],
+      "pruning":      ["prune", "pruning", "trim", "trimming", "hedge", "bush", "shrub"],
+      "mow":          ["mow", "mowed", "mowing", "cut", "grass", "lawn"]
+    }
+  },
+  "field_keywords": [
+    "mowed", "mow", "cut", "trimmed", "cleanup", "mulched", "mulch",
+    "planted", "seeded", "pruned", "plowed", "aerated", "lawn",
+    "grass", "beds", "shrub", "hedge", "leaves", "snow", "hours"
+  ],
+  "job_type_regex": "mow|cleanup|mulch|plant|install|seed|prune|plow|snow|aerat|irrigat",
+  "taxable_keywords": ["mulch", "seed", "plant", "stone", "material", "sod", "fertilizer"]
+}
