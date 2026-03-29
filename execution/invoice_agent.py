@@ -67,6 +67,46 @@ HOURS_MISSING_REPLY = (
 # Parsing helpers
 # ---------------------------------------------------------------------------
 
+def parse_all_amounts(text: str) -> list[float]:
+    """
+    Extract every dollar amount from text.
+    Handles comma-formatted numbers like $1,250.00.
+    Returns a list of floats.
+    """
+    raw = re.findall(r'\$(\d+(?:,\d{3})*(?:\.\d{1,2})?)', text)
+    return [float(a.replace(',', '')) for a in raw]
+
+
+def sum_amounts(text: str) -> float:
+    """
+    Sum all dollar amounts found in text.
+    Returns 0.0 if none found.
+    """
+    return sum(parse_all_amounts(text))
+
+
+def calculate_line_item_tax(line_items: list[dict], tax_rate: float) -> tuple[float, float]:
+    """
+    Calculate tax on taxable line items only.
+
+    Args:
+        line_items: list of dicts with 'amount' or 'total' and optional 'taxable' bool
+        tax_rate: e.g. 0.055 for Maine 5.5%
+
+    Returns:
+        (tax_amount, grand_total) where grand_total = subtotal + tax
+    """
+    subtotal = 0.0
+    taxable_subtotal = 0.0
+    for item in line_items:
+        amt = float(item.get("amount", 0) or item.get("total", 0))
+        subtotal += amt
+        if item.get("taxable"):
+            taxable_subtotal += amt
+    tax_amount = round(taxable_subtotal * tax_rate, 2)
+    grand_total = round(subtotal + tax_amount, 2)
+    return tax_amount, grand_total
+
 def parse_hours(text: str) -> float | None:
     """
     Extract hours worked from the owner's completion message.
@@ -366,8 +406,7 @@ def run(client_phone: str, raw_input: str, customer_phone: str | None = None) ->
     # Multi-amount detection FIRST — count all dollar amounts in the text
     # This prevents parse_flat_rate from grabbing one amount while
     # parse_materials grabs another, causing double-counting.
-    all_amounts = re.findall(r'\$(\d+(?:,\d{3})*(?:\.\d{1,2})?)', raw_input)
-    amounts = [float(a.replace(',', '')) for a in all_amounts] if all_amounts else []
+    amounts = parse_all_amounts(raw_input)
     print(f"[{timestamp()}] INFO invoice_agent: Dollar amounts found in text: {amounts}")
 
     if len(amounts) > 1:
