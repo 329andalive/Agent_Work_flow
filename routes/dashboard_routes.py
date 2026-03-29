@@ -1511,6 +1511,143 @@ def dispatch_board():
 
 
 # ---------------------------------------------------------------------------
+# GET /dashboard/planner — Schedule Planner (weekly grid)
+# ---------------------------------------------------------------------------
+
+@dashboard_bp.route("/dashboard/planner")
+def schedule_planner():
+    client_id = _resolve_client_id()
+    if not client_id:
+        return redirect("/login")
+
+    ctx = _base_context("planner", client_id)
+    sb = _get_supabase()
+
+    # Default to current week Monday
+    today = date.today()
+    week_offset = int(request.args.get("week", 0))
+    monday = today - timedelta(days=today.weekday()) + timedelta(weeks=week_offset)
+    week_days = [monday + timedelta(days=i) for i in range(5)]  # Mon-Fri only
+
+    # Load ALL unscheduled jobs (status=scheduled or pending, no assigned_worker_id)
+    backlog = []
+    try:
+        result = sb.table("jobs").select(
+            "id, job_type, job_description, job_address, status, "
+            "scheduled_date, customer_id, zone_cluster, estimated_amount, job_notes"
+        ).eq("client_id", client_id).in_(
+            "status", ["scheduled", "pending"]
+        ).is_("assigned_worker_id", "null").order("created_at").execute()
+        backlog = result.data or []
+    except Exception as e:
+        print(f"[{_ts()}] WARN dashboard_routes: planner backlog — {e}")
+
+    # Load jobs already scheduled for this week
+    week_jobs = []
+    try:
+        result = sb.table("jobs").select(
+            "id, job_type, job_description, job_address, status, "
+            "scheduled_date, customer_id, zone_cluster, estimated_amount, job_notes"
+        ).eq("client_id", client_id).gte(
+            "scheduled_date", week_days[0].isoformat()
+        ).lte(
+            "scheduled_date", week_days[-1].isoformat()
+        ).order("scheduled_date").execute()
+        week_jobs = result.data or []
+    except Exception as e:
+        print(f"[{_ts()}] WARN dashboard_routes: planner week_jobs — {e}")
+
+    # Enrich all jobs with customer names + addresses
+    all_jobs = backlog + week_jobs
+    cust_ids = list(set(j.get("customer_id") for j in all_jobs if j.get("customer_id")))
+    cust_map = {}
+    if cust_ids:
+        try:
+            custs = sb.table("customers").select(
+                "id, customer_name, customer_phone, customer_address"
+            ).in_("id", cust_ids).execute().data or []
+            cust_map = {c["id"]: c for c in custs}
+        except Exception as e:
+            print(f"[{_ts()}] WARN dashboard_routes: planner cust map — {e}")
+
+    for j in all_jobs:
+        cid = j.get("customer_id")
+        if cid and cid in cust_map:
+            j["customer_name"] = cust_map[cid].get("customer_name", "")
+            j["address"] = j.get("job_address") or cust_map[cid].get("customer_address", "")
+        else:
+            j["customer_name"] = ""
+            j["address"] = j.get("job_address") or ""
+
+    # Group week jobs by date string
+    from collections import defaultdict
+    jobs_by_day = defaultdict(list)
+    for j in week_jobs:
+        sd = (j.get("scheduled_date") or "")[:10]
+        if sd:
+            jobs_by_day[sd].append(j)
+
+    # Remove week jobs from backlog (don't show twice)
+    week_job_ids = {j["id"] for j in week_jobs}
+    backlog = [j for j in backlog if j["id"] not in week_job_ids]
+
+    # Daily capacity — hardcoded for now, will come from vertical config later
+    DAILY_CAPACITY = 8
+
+    ctx.update({
+        "week_days": week_days,
+        "week_offset": week_offset,
+        "backlog": backlog,
+        "week_jobs": week_jobs,
+        "jobs_by_day": dict(jobs_by_day),
+        "backlog_json": json.dumps(backlog, default=str),
+        "week_jobs_json": json.dumps(week_jobs, default=str),
+        "daily_capacity": DAILY_CAPACITY,
+        "monday_iso": monday.isoformat(),
+        "today_iso": today.isoformat(),
+        "fmt_short_date": fmt_short_date,
+    })
+    return render_template("dashboard/planner.html", **ctx)
+
+
+@dashboard_bp.route("/api/jobs/reschedule", methods=["POST"])
+def api_reschedule_job():
+    """Move a job to a specific date from the planner."""
+    client_id = _resolve_client_id()
+    if not client_id:
+        return jsonify({"success": False, "error": "Not authenticated"}), 401
+
+    data = request.get_json(silent=True) or {}
+    job_id = data.get("job_id")
+    new_date = data.get("scheduled_date")  # YYYY-MM-DD or null to unschedule
+
+    if not job_id:
+        return jsonify({"success": False, "error": "job_id required"}), 400
+
+    sb = _get_supabase()
+
+    # Verify job belongs to this client
+    try:
+        check = sb.table("jobs").select("id").eq(
+            "id", job_id).eq("client_id", client_id).execute()
+        if not check.data:
+            return jsonify({"success": False, "error": "Job not found"}), 404
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+    try:
+        update = {"scheduled_date": new_date}
+        if new_date:
+            update["status"] = "scheduled"
+        sb.table("jobs").update(update).eq("id", job_id).execute()
+        print(f"[{_ts()}] INFO dashboard_routes: Rescheduled job {job_id[:8]} → {new_date}")
+        return jsonify({"success": True})
+    except Exception as e:
+        print(f"[{_ts()}] ERROR dashboard_routes: reschedule failed — {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+# ---------------------------------------------------------------------------
 # GET /dashboard/classes — Class/Slot management
 # ---------------------------------------------------------------------------
 

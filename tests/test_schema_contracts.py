@@ -116,3 +116,19 @@ def test_invoice_links_table_has_required_columns():
         "square_order_id", "square_payment_link_id", "payment_link_url",
         "expires_at", "created_at",
     })
+
+
+def test_jobs_reschedule_columns():
+    """Verify columns used by the reschedule API exist."""
+    cols = get_table_columns("jobs")
+    required = {"id", "client_id", "scheduled_date", "status", "assigned_worker_id"}
+    missing = required - cols
+    if missing:
+        sql_fixes = "\n".join(
+            f"    ALTER TABLE jobs ADD COLUMN IF NOT EXISTS {col} TEXT;"
+            for col in sorted(missing)
+        )
+        pytest.fail(
+            f"MISSING columns in 'jobs': {missing}\n"
+            f"Run this SQL to fix:\n{sql_fixes}"
+        )

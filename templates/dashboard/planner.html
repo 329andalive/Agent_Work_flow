@@ -1,0 +1,314 @@
+{% extends "base.html" %}
+{% block title %}Schedule Planner{% endblock %}
+{% block page_title %}Schedule Planner{% endblock %}
+{% block topbar_meta %}Week of {{ monday_iso }}{% endblock %}
+
+{% block extra_css %}
+.pl-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; flex-wrap:wrap; gap:8px; }
+.pl-nav { display:flex; align-items:center; gap:6px; }
+.pl-nav-btn { font-family:'DM Mono',monospace; font-size:14px; padding:5px 10px; border:1px solid var(--border); border-radius:4px; background:var(--bg-card); color:var(--text-secondary); cursor:pointer; line-height:1; }
+.pl-nav-btn:hover { background:var(--bg-page); color:var(--text-primary); }
+.pl-week-btn { font-family:'DM Mono',monospace; font-size:11px; padding:5px 10px; border:1px solid var(--border); border-radius:4px; background:var(--bg-card); color:var(--text-secondary); cursor:pointer; }
+.pl-week-btn:hover { background:var(--bg-page); }
+.pl-stats { display:flex; align-items:center; gap:14px; }
+.pl-stat { font-family:'DM Mono',monospace; font-size:11px; color:var(--text-tertiary); }
+.pl-stat strong { color:var(--text-primary); font-size:13px; }
+
+.pl-week-strip { display:flex; gap:4px; margin-bottom:12px; overflow-x:auto; padding-bottom:2px; }
+.pl-day-tab { font-family:'DM Mono',monospace; font-size:10px; padding:6px 12px; border-radius:4px; border:1px solid var(--border); background:var(--bg-card); color:var(--text-secondary); white-space:nowrap; display:flex; align-items:center; gap:8px; flex:1; min-width:0; justify-content:center; }
+.pl-day-tab .cap-bar { display:inline-block; width:40px; height:4px; border-radius:2px; background:#e5e7eb; overflow:hidden; }
+.pl-day-tab .cap-fill { display:block; height:100%; border-radius:2px; transition:width 0.2s; }
+.cap-green { background:#639922; }
+.cap-amber { background:#d97706; }
+.cap-red { background:#dc2626; }
+
+.pl-board { display:flex; gap:10px; align-items:flex-start; overflow-x:auto; min-height:calc(100vh - 280px); padding-bottom:20px; }
+.pl-backlog-col { width:272px; min-width:272px; flex-shrink:0; }
+.pl-week-grid { display:flex; gap:10px; flex:1; min-width:0; }
+.pl-day-col { flex:1; min-width:180px; }
+
+.pl-col-header { font-family:'DM Mono',monospace; font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:0.08em; color:var(--text-tertiary); padding:8px 10px; border-bottom:2px solid var(--text-tertiary); margin-bottom:6px; display:flex; justify-content:space-between; align-items:center; }
+.pl-col-header.over-cap { color:var(--amber); border-bottom-color:var(--amber); }
+.pl-drop-zone { min-height:80px; padding:2px 0; max-height:calc(100vh - 340px); overflow-y:auto; }
+.pl-drop-zone.drag-over { background:rgba(37,99,235,0.05); border-radius:6px; }
+.pl-drop-empty { font-family:'DM Mono',monospace; font-size:10px; color:var(--text-tertiary); text-align:center; padding:20px 8px; opacity:0.6; }
+
+.pl-zone-banner { background:#FAEEDA; border:1px solid #d4a844; border-radius:6px; padding:10px 14px; margin-bottom:12px; font-family:'DM Mono',monospace; font-size:11px; color:#854F0B; cursor:pointer; transition:opacity 0.12s; }
+.pl-zone-banner:hover { opacity:0.85; }
+.pl-highlight { border-color:var(--amber) !important; box-shadow:0 0 0 2px rgba(217,119,6,0.3); }
+
+.pl-dispatch-link { font-family:'DM Mono',monospace; font-size:11px; color:var(--text-tertiary); text-decoration:none; display:block; text-align:center; padding:4px; margin-top:6px; }
+.pl-dispatch-link:hover { color:var(--text-primary); }
+
+/* Reuse slip-card styles from dispatch */
+.slip-card { background:var(--bg-card); border:1px solid var(--border); border-radius:6px; padding:10px 12px; margin-bottom:6px; cursor:grab; transition:box-shadow 0.12s,opacity 0.12s; }
+.slip-card:active { cursor:grabbing; }
+.slip-card.dragging { opacity:0.35; }
+.slip-card__name { font-size:14px; font-weight:600; color:var(--text-primary); margin-bottom:2px; }
+.slip-card__desc { font-size:12px; color:var(--text-secondary); margin-bottom:5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.slip-card__badges { display:flex; flex-wrap:wrap; gap:4px; }
+.slip-card__addr { font-family:'DM Mono',monospace; font-size:10px; color:var(--text-tertiary); margin-top:4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.slip-badge { font-family:'DM Mono',monospace; font-size:9px; font-weight:600; padding:1px 6px; border-radius:3px; text-transform:uppercase; }
+.slip-badge--north { background:#dbeafe; color:#1d4ed8; }
+.slip-badge--central { background:#EAF3DE; color:#3B6D11; }
+.slip-badge--south { background:#FAEEDA; color:#854F0B; }
+.slip-badge--unknown { background:#f3f4f6; color:#6b7280; }
+.slip-badge--amt { background:#f3f4f6; color:#374151; }
+{% endblock %}
+
+{% block content %}
+<!-- Header -->
+<div class="pl-header">
+  <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+    <div class="pl-nav">
+      <button class="pl-nav-btn" onclick="shiftWeek(-1)">&#8249;</button>
+      <span style="font-family:'DM Mono',monospace;font-size:13px;color:var(--text-primary);padding:0 6px">
+        {{ monday_iso }}
+      </span>
+      <button class="pl-nav-btn" onclick="shiftWeek(1)">&#8250;</button>
+      <button class="pl-week-btn" onclick="window.location='/dashboard/planner'">This Week</button>
+    </div>
+    <div class="pl-stats">
+      <span class="pl-stat"><strong id="backlog-count">{{ backlog|length }}</strong> backlog</span>
+      <span class="pl-stat"><strong id="week-count">{{ week_jobs|length }}</strong> this week</span>
+    </div>
+  </div>
+</div>
+
+<!-- Week strip with capacity bars -->
+<div class="pl-week-strip">
+  {% set day_names = ['MON','TUE','WED','THU','FRI'] %}
+  {% set months = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'] %}
+  {% for wd in week_days %}
+    {% set iso = wd.isoformat() %}
+    {% set count = jobs_by_day.get(iso, [])|length %}
+    {% set pct = (count / daily_capacity * 100)|int if daily_capacity else 0 %}
+    <div class="pl-day-tab">
+      <span>{{ day_names[loop.index0] }} {{ months[wd.month - 1] }} {{ wd.day }}</span>
+      <span style="font-weight:600">{{ count }}/{{ daily_capacity }}</span>
+      <span class="cap-bar">
+        <span class="cap-fill {% if pct <= 50 %}cap-green{% elif pct <= 80 %}cap-amber{% else %}cap-red{% endif %}"
+              style="width:{{ [pct, 100]|min }}%"></span>
+      </span>
+    </div>
+  {% endfor %}
+</div>
+
+<!-- Zone consolidation hints -->
+<div id="zone-hints"></div>
+
+<!-- Main board -->
+<div class="pl-board">
+  <!-- Backlog column -->
+  <div class="pl-backlog-col">
+    <div class="pl-col-header"><span>Backlog</span><span id="bl-count">{{ backlog|length }}</span></div>
+    <div class="pl-drop-zone" id="backlog-zone" data-date="">
+      {% if not backlog %}
+      <div class="pl-drop-empty">No unscheduled jobs</div>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Week grid -->
+  <div class="pl-week-grid">
+    {% for wd in week_days %}
+      {% set iso = wd.isoformat() %}
+      {% set count = jobs_by_day.get(iso, [])|length %}
+      <div class="pl-day-col">
+        <div class="pl-col-header {% if count > daily_capacity %}over-cap{% endif %}" id="dh-{{ iso }}">
+          <span>{{ day_names[loop.index0] }} {{ wd.day }}</span>
+          <span id="dc-{{ iso }}">{{ count }}/{{ daily_capacity }}</span>
+        </div>
+        <div class="pl-drop-zone" id="dz-{{ iso }}" data-date="{{ iso }}">
+          {% if not jobs_by_day.get(iso) %}
+          <div class="pl-drop-empty">Drop jobs here</div>
+          {% endif %}
+        </div>
+        <a href="/dashboard/dispatch?date={{ iso }}" class="pl-dispatch-link">Open dispatch →</a>
+      </div>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function() {
+  var BACKLOG = {{ backlog_json|safe }};
+  var WEEK_JOBS = {{ week_jobs_json|safe }};
+  var CAPACITY = {{ daily_capacity }};
+  var WEEK_OFFSET = {{ week_offset }};
+  var WEEK_DAYS = [{% for wd in week_days %}'{{ wd.isoformat() }}'{% if not loop.last %},{% endif %}{% endfor %}];
+  var draggedEl = null;
+
+  function shiftWeek(n) {
+    window.location.href = '/dashboard/planner?week=' + (WEEK_OFFSET + n);
+  }
+  window.shiftWeek = shiftWeek;
+
+  function makeCard(job) {
+    var zc = (job.zone_cluster || 'unknown').toLowerCase();
+    var div = document.createElement('div');
+    div.className = 'slip-card';
+    div.draggable = true;
+    div.dataset.jobId = job.id || '';
+    div.dataset.name = job.customer_name || '';
+    div.dataset.desc = (job.job_description || job.job_type || '').toString().slice(0,50);
+    div.dataset.zone = job.zone_cluster || 'Unknown';
+    div.dataset.address = job.address || job.job_address || '';
+    div.dataset.amount = job.estimated_amount ? '$' + Math.round(job.estimated_amount) : '';
+    div.innerHTML =
+      '<div class="slip-card__name">' + (div.dataset.name || 'Customer') + '</div>' +
+      '<div class="slip-card__desc">' + (div.dataset.desc || 'No description') + '</div>' +
+      '<div class="slip-card__badges">' +
+        '<span class="slip-badge slip-badge--' + zc + '">' + div.dataset.zone + '</span>' +
+        (div.dataset.amount ? '<span class="slip-badge slip-badge--amt">' + div.dataset.amount + '</span>' : '') +
+      '</div>' +
+      (div.dataset.address ? '<div class="slip-card__addr">\ud83d\udccd ' + div.dataset.address + '</div>' : '');
+    div.addEventListener('dragstart', function(e) {
+      draggedEl = div;
+      div.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', div.dataset.jobId);
+    });
+    div.addEventListener('dragend', function() {
+      div.classList.remove('dragging');
+      draggedEl = null;
+      document.querySelectorAll('.drag-over').forEach(function(z) { z.classList.remove('drag-over'); });
+    });
+    return div;
+  }
+
+  function initDropZones() {
+    document.querySelectorAll('.pl-drop-zone').forEach(function(zone) {
+      zone.addEventListener('dragover', function(e) {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        zone.classList.add('drag-over');
+      });
+      zone.addEventListener('dragleave', function() { zone.classList.remove('drag-over'); });
+      zone.addEventListener('drop', function(e) {
+        e.preventDefault();
+        zone.classList.remove('drag-over');
+        if (!draggedEl) return;
+
+        var srcZone = draggedEl.closest('.pl-drop-zone');
+        if (!srcZone || srcZone === zone) return;
+
+        var jobId = draggedEl.dataset.jobId;
+        var newDate = zone.dataset.date || null;
+
+        // Remove empty placeholder if present
+        var empty = zone.querySelector('.pl-drop-empty');
+        if (empty) empty.remove();
+
+        zone.appendChild(draggedEl);
+
+        // Add empty placeholder back to source if now empty
+        if (srcZone.children.length === 0) {
+          var ph = document.createElement('div');
+          ph.className = 'pl-drop-empty';
+          ph.textContent = srcZone.dataset.date ? 'Drop jobs here' : 'No unscheduled jobs';
+          srcZone.appendChild(ph);
+        }
+
+        updateCounts();
+
+        // POST reschedule
+        fetch('/api/jobs/reschedule', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({job_id: jobId, scheduled_date: newDate})
+        }).catch(function(err) { console.error('Reschedule failed:', err); });
+      });
+    });
+  }
+
+  function updateCounts() {
+    // Backlog count
+    var bl = document.getElementById('backlog-zone');
+    var blCards = bl ? bl.querySelectorAll('.slip-card').length : 0;
+    var blEl = document.getElementById('bl-count');
+    var blStat = document.getElementById('backlog-count');
+    if (blEl) blEl.textContent = blCards;
+    if (blStat) blStat.textContent = blCards;
+
+    // Week counts
+    var weekTotal = 0;
+    WEEK_DAYS.forEach(function(iso) {
+      var dz = document.getElementById('dz-' + iso);
+      var count = dz ? dz.querySelectorAll('.slip-card').length : 0;
+      weekTotal += count;
+      var dc = document.getElementById('dc-' + iso);
+      var dh = document.getElementById('dh-' + iso);
+      if (dc) dc.textContent = count + '/' + CAPACITY;
+      if (dh) {
+        if (count > CAPACITY) { dh.classList.add('over-cap'); }
+        else { dh.classList.remove('over-cap'); }
+      }
+    });
+    var weekStat = document.getElementById('week-count');
+    if (weekStat) weekStat.textContent = weekTotal;
+  }
+
+  function populateBoard() {
+    var blZone = document.getElementById('backlog-zone');
+    BACKLOG.forEach(function(j) { blZone.appendChild(makeCard(j)); });
+    if (BACKLOG.length > 0) {
+      var empty = blZone.querySelector('.pl-drop-empty');
+      if (empty) empty.remove();
+    }
+
+    WEEK_JOBS.forEach(function(j) {
+      var sd = (j.scheduled_date || '').slice(0, 10);
+      var dz = document.getElementById('dz-' + sd);
+      if (dz) {
+        var empty = dz.querySelector('.pl-drop-empty');
+        if (empty) empty.remove();
+        dz.appendChild(makeCard(j));
+      }
+    });
+    updateCounts();
+  }
+
+  function checkZoneConflicts() {
+    // Find zones that appear on 2+ different days
+    var zoneByDay = {};
+    WEEK_JOBS.forEach(function(j) {
+      var z = (j.zone_cluster || '').toLowerCase();
+      var d = (j.scheduled_date || '').slice(0, 10);
+      if (!z || z === 'unknown' || !d) return;
+      if (!zoneByDay[z]) zoneByDay[z] = new Set();
+      zoneByDay[z].add(d);
+    });
+
+    var hints = document.getElementById('zone-hints');
+    if (!hints) return;
+    hints.innerHTML = '';
+
+    Object.keys(zoneByDay).forEach(function(zone) {
+      if (zoneByDay[zone].size >= 2) {
+        var days = Array.from(zoneByDay[zone]).sort();
+        var banner = document.createElement('div');
+        banner.className = 'pl-zone-banner';
+        banner.textContent = '\u26a0\ufe0f ' + days.length + ' ' + zone + ' jobs on different days \u2014 consolidate to save mileage?';
+        banner.dataset.zone = zone;
+        banner.addEventListener('click', function() {
+          // Toggle highlight on matching cards
+          document.querySelectorAll('.slip-card').forEach(function(card) {
+            if ((card.dataset.zone || '').toLowerCase() === zone) {
+              card.classList.toggle('pl-highlight');
+            }
+          });
+        });
+        hints.appendChild(banner);
+      }
+    });
+  }
+
+  populateBoard();
+  initDropZones();
+  checkZoneConflicts();
+})();
+</script>
+{% endblock %}
