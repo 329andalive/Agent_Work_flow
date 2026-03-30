@@ -1,27 +1,13 @@
 {% extends "admin_base.html" %}
 {% block title %}Clients — Bolts11 Admin{% endblock %}
 {% block page_title %}All Clients{% endblock %}
-
 {% block content %}
 <div class="stats-grid">
-  <div class="stat-card">
-    <div class="stat-label">Total Clients</div>
-    <div class="stat-value">{{ total }}</div>
-  </div>
-  <div class="stat-card">
-    <div class="stat-label">Active</div>
-    <div class="stat-value green">{{ active_count }}</div>
-  </div>
-  <div class="stat-card">
-    <div class="stat-label">Inactive</div>
-    <div class="stat-value" style="color:var(--text-muted)">{{ total - active_count }}</div>
-  </div>
-  <div class="stat-card">
-    <div class="stat-label">New This Month</div>
-    <div class="stat-value amber">—</div>
-  </div>
+  <div class="stat-card"><div class="stat-label">Total Clients</div><div class="stat-value">{{ total }}</div></div>
+  <div class="stat-card"><div class="stat-label">Active</div><div class="stat-value green">{{ active_count }}</div></div>
+  <div class="stat-card"><div class="stat-label">Inactive</div><div class="stat-value" style="color:var(--text-muted)">{{ total - active_count }}</div></div>
+  <div class="stat-card"><div class="stat-label">Pending Requests</div><div class="stat-value amber">{{ pending_count }}</div></div>
 </div>
-
 <div class="card">
   <div class="card-header">
     <div class="card-title">All Clients</div>
@@ -30,31 +16,18 @@
   {% if clients %}
   <div class="table-wrap">
     <table>
-      <thead>
-        <tr>
-          <th>Business</th>
-          <th>Owner</th>
-          <th>Phone</th>
-          <th>Vertical</th>
-          <th>Jobs</th>
-          <th>Status</th>
-          <th>Since</th>
-        </tr>
-      </thead>
+      <thead><tr><th>Business</th><th>Owner</th><th>Phone</th><th>Vertical</th><th>Jobs</th><th>Status</th><th>Since</th></tr></thead>
       <tbody>
         {% for c in clients %}
         <tr style="cursor:pointer" onclick="window.location='/clients/{{ c.id }}'">
           <td><strong>{{ c.business_name or '—' }}</strong></td>
           <td>{{ c.owner_name or '—' }}</td>
           <td class="mono" style="font-size:12px">{{ c.phone }}</td>
-          <td><span style="font-size:11px;color:var(--text-muted)">{{ c.trade_vertical or 'general' }}</span></td>
+          <td style="font-size:11px;color:var(--text-muted)">{{ c.trade_vertical or 'general' }}</td>
           <td class="mono">{{ counts.get(c.phone, 0) }}</td>
           <td>
-            {% if c.active %}
-              <span class="badge badge-active"><span class="dot"></span> Active</span>
-            {% else %}
-              <span class="badge badge-inactive">Inactive</span>
-            {% endif %}
+            {% if c.active %}<span class="badge badge-active"><span class="dot"></span> Active</span>
+            {% else %}<span class="badge badge-inactive">Inactive</span>{% endif %}
           </td>
           <td style="color:var(--text-muted);font-size:11px">{{ fmt_dt(c.created_at)[:12] }}</td>
         </tr>

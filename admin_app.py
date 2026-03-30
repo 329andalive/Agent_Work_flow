@@ -3,15 +3,8 @@ admin_app.py — Bolts11 Admin Dashboard
 Runs as a SEPARATE Flask app on a separate Railway service.
 Domain: admin.bolts11.com
 
-Deploy separately from the main app:
-  - New Railway service pointing at this repo
-  - Start command: gunicorn admin_app:app --bind 0.0.0.0:$PORT
-  - Same env vars as main app (SUPABASE_URL, SUPABASE_SERVICE_KEY,
-    RESEND_API_KEY, ANTHROPIC_API_KEY, SECRET_KEY)
-  - Add: ADMIN_PIN=<your secret 6-digit admin PIN>
-
-This app shares the same Supabase DB as the main app.
-It does NOT import from the main app's blueprints.
+Start command: gunicorn admin_app:app --bind 0.0.0.0:$PORT --workers 1 --timeout 60
+Env vars needed: SUPABASE_URL, SUPABASE_SERVICE_KEY, RESEND_API_KEY, SECRET_KEY, ADMIN_PIN
 """
 
 import os

@@ -1,53 +1,21 @@
 {% extends "admin_base.html" %}
 {% block title %}API Costs — Bolts11 Admin{% endblock %}
 {% block page_title %}API Cost Tracking{% endblock %}
-
 {% block content %}
 <div class="stats-grid">
-  <div class="stat-card">
-    <div class="stat-label">Total Est. Spend</div>
-    <div class="stat-value amber">${{ "%.4f"|format(total_cost) }}</div>
-    <div class="stat-sub">Across all clients</div>
-  </div>
-  <div class="stat-card">
-    <div class="stat-label">Clients Tracked</div>
-    <div class="stat-value">{{ clients|length }}</div>
-  </div>
-  <div class="stat-card">
-    <div class="stat-label">Avg Per Client</div>
-    <div class="stat-value" style="font-size:22px">
-      ${{ "%.4f"|format(total_cost / clients|length) if clients else "0.0000" }}
-    </div>
-  </div>
-  <div class="stat-card">
-    <div class="stat-label">Cost Model</div>
-    <div class="stat-value" style="font-size:14px;color:var(--text-muted);font-family:inherit;font-weight:500;padding-top:4px">
-      Haiku $0.0008<br>Sonnet $0.006
-    </div>
-  </div>
+  <div class="stat-card"><div class="stat-label">Total Est. Spend</div><div class="stat-value amber">${{ "%.4f"|format(total_cost) }}</div><div class="stat-sub">All clients lifetime</div></div>
+  <div class="stat-card"><div class="stat-label">Clients Tracked</div><div class="stat-value">{{ clients|length }}</div></div>
+  <div class="stat-card"><div class="stat-label">Avg Per Client</div><div class="stat-value" style="font-size:22px">${{ "%.4f"|format(total_cost / clients|length) if clients else "0.0000" }}</div></div>
+  <div class="stat-card"><div class="stat-label">Rates</div><div style="font-size:12px;color:var(--text-muted);margin-top:8px;line-height:1.8">Haiku $0.0008/call<br>Sonnet $0.006/call</div></div>
 </div>
-
-<div class="card">
+<div class="card" style="margin-bottom:20px">
   <div class="card-header">
-    <div>
-      <div class="card-title">Cost by Client</div>
-      <div class="card-sub">Estimated from agent_activity log. Actual Anthropic costs may vary.</div>
-    </div>
+    <div><div class="card-title">Cost by Client</div><div class="card-sub">Estimated from agent_activity log. Actual Anthropic costs may vary slightly.</div></div>
   </div>
   {% if clients %}
   <div class="table-wrap">
     <table>
-      <thead>
-        <tr>
-          <th>Business</th>
-          <th>Phone</th>
-          <th>Haiku Calls</th>
-          <th>Sonnet Calls</th>
-          <th>Total Actions</th>
-          <th>Est. Cost</th>
-          <th>% of Total</th>
-        </tr>
-      </thead>
+      <thead><tr><th>Business</th><th>Phone</th><th>Haiku</th><th>Sonnet</th><th>Total Actions</th><th>Est. Cost</th><th>Share</th></tr></thead>
       <tbody>
         {% for c in clients %}
         <tr>
@@ -74,18 +42,17 @@
     </table>
   </div>
   {% else %}
-  <div class="empty">No activity data yet. Costs will appear here as clients use the platform.</div>
+  <div class="empty">No activity data yet. Costs appear here as clients use the platform.</div>
   {% endif %}
 </div>
-
-<div class="card" style="margin-top:20px">
-  <div class="card-title" style="margin-bottom:12px">&#128203; Cost Reference</div>
+<div class="card">
+  <div class="card-title" style="margin-bottom:14px">&#128203; Cost Reference</div>
   <table style="max-width:500px">
-    <thead><tr><th>Model</th><th>Est. per call</th><th>Use case</th></tr></thead>
+    <thead><tr><th>Model / Service</th><th>Est. per call</th><th>Used for</th></tr></thead>
     <tbody>
       <tr><td>Claude Haiku</td><td class="mono">$0.0008</td><td style="color:var(--text-muted);font-size:12px">SMS routing, classification</td></tr>
       <tr><td>Claude Sonnet</td><td class="mono">$0.0060</td><td style="color:var(--text-muted);font-size:12px">Invoices, proposals, content</td></tr>
-      <tr><td>SMS (Telnyx)</td><td class="mono">~$0.004</td><td style="color:var(--text-muted);font-size:12px">Per outbound SMS segment</td></tr>
+      <tr><td>SMS (Telnyx)</td><td class="mono">~$0.004</td><td style="color:var(--text-muted);font-size:12px">Per outbound segment</td></tr>
       <tr><td>Resend Email</td><td class="mono">$0.0000</td><td style="color:var(--text-muted);font-size:12px">Free tier (3,000/mo)</td></tr>
     </tbody>
   </table>

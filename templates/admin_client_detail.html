@@ -1,15 +1,11 @@
 {% extends "admin_base.html" %}
 {% block title %}{{ client.business_name }} — Bolts11 Admin{% endblock %}
 {% block page_title %}{{ client.business_name }}{% endblock %}
-
 {% block content %}
 <div style="margin-bottom:20px">
   <a href="/clients" class="btn btn-ghost btn-sm">&larr; All Clients</a>
 </div>
-
 <div class="grid-2" style="margin-bottom:20px">
-
-  <!-- Client Info -->
   <div class="card">
     <div class="card-header">
       <div class="card-title">Client Details</div>
@@ -31,32 +27,19 @@
       <tr><td style="color:var(--text-muted);font-size:12px;padding:6px 0">Member Since</td><td style="font-size:12px">{{ fmt_dt(client.created_at) }}</td></tr>
     </table>
   </div>
-
-  <!-- Quick Stats -->
   <div style="display:flex;flex-direction:column;gap:16px">
-    <div class="card card-sm">
-      <div class="stat-label">Jobs Logged</div>
-      <div class="stat-value" style="font-size:32px">{{ jobs|length }}</div>
-    </div>
-    <div class="card card-sm">
-      <div class="stat-label">SMS Messages</div>
-      <div class="stat-value" style="font-size:32px">{{ sms_count }}</div>
-    </div>
+    <div class="card card-sm"><div class="stat-label">Jobs Logged</div><div class="stat-value" style="font-size:32px">{{ jobs|length }}</div></div>
+    <div class="card card-sm"><div class="stat-label">SMS Messages</div><div class="stat-value" style="font-size:32px">{{ sms_count }}</div></div>
     <div class="card card-sm">
       <div class="stat-label">Est. API Cost (lifetime)</div>
       <div class="stat-value amber" style="font-size:28px">${{ "%.4f"|format(cost_estimate.est_usd) }}</div>
-      <div class="stat-sub" style="margin-top:6px;font-size:11px;color:var(--text-muted)">
-        {{ cost_estimate.haiku_calls }} Haiku · {{ cost_estimate.sonnet_calls }} Sonnet calls
-      </div>
+      <div class="stat-sub" style="margin-top:6px;font-size:11px;color:var(--text-muted)">{{ cost_estimate.haiku_calls }} Haiku · {{ cost_estimate.sonnet_calls }} Sonnet calls</div>
     </div>
   </div>
 </div>
 
-<!-- Resend Welcome Email -->
 <div class="card" style="margin-bottom:20px">
-  <div class="card-header">
-    <div class="card-title">&#9993; Send Welcome / Onboarding Email</div>
-  </div>
+  <div class="card-header"><div class="card-title">&#9993; Send Welcome / Onboarding Email</div></div>
   <form method="POST" action="/clients/{{ client.id }}/resend-welcome" style="display:flex;gap:12px;align-items:flex-end">
     <div class="form-group" style="flex:1;margin-bottom:0">
       <label class="form-label">Email Address</label>
@@ -66,29 +49,6 @@
   </form>
 </div>
 
-<!-- Recent Jobs -->
-{% if jobs %}
-<div class="card" style="margin-bottom:20px">
-  <div class="card-header">
-    <div class="card-title">Recent Jobs</div>
-  </div>
-  <div class="table-wrap">
-    <table>
-      <thead><tr><th>Agent</th><th>Created</th></tr></thead>
-      <tbody>
-        {% for j in jobs[:10] %}
-        <tr>
-          <td style="color:var(--text-muted);font-size:12px">{{ j.agent_used or '—' }}</td>
-          <td class="mono" style="font-size:11px;color:var(--text-muted)">{{ fmt_dt(j.created_at) }}</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-</div>
-{% endif %}
-
-<!-- Activity Log -->
 <div class="card">
   <div class="card-header">
     <div class="card-title">Agent Activity Log</div>
@@ -97,16 +57,14 @@
   {% if activity %}
   <div class="table-wrap">
     <table>
-      <thead>
-        <tr><th>Agent</th><th>Action</th><th>Summary</th><th>Time</th></tr>
-      </thead>
+      <thead><tr><th>Agent</th><th>Action</th><th>Summary</th><th>Time</th></tr></thead>
       <tbody>
         {% for a in activity %}
         <tr>
           <td><span style="font-size:11px;background:rgba(245,158,11,0.1);color:var(--amber);padding:2px 8px;border-radius:100px">{{ a.agent_name }}</span></td>
           <td style="font-size:12px;color:var(--text-muted)">{{ a.action_taken or '—' }}</td>
           <td style="font-size:12px;max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ a.output_summary or '—' }}</td>
-          <td class="mono" style="font-size:11px;color:var(--text-dim)">{{ fmt_dt(a.created_at) }}</td>
+          <td style="font-family:var(--mono);font-size:11px;color:var(--text-dim)">{{ fmt_dt(a.created_at) }}</td>
         </tr>
         {% endfor %}
       </tbody>
