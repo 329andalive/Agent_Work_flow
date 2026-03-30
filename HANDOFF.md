@@ -1,8 +1,91 @@
 Response
 
 # HANDOFF.md — Bolts11 Session Log
-> Last updated: March 29, 2026 — Backend Engineer
+> Last updated: March 30, 2026 — Backend Engineer
 > Read CLAUDE.md first every session before touching any code.
+
+---
+
+## Session — March 30, 2026
+
+### Admin Dashboard — Built and Deployed (Separate Railway Service)
+- Created `admin_app.py` — standalone Flask app at admin.bolts11.com
+- Runs as a separate Railway service with its own start command:
+  `gunicorn admin_app:app --bind 0.0.0.0:$PORT --workers 1 --timeout 60`
+- Shares the same Supabase DB as the main app
+- Auth: single 6-digit ADMIN_PIN (env var), not per-user
+- Pages:
+  - `/requests` — view/approve/reject/contact access requests from bolts11.com
+  - `/clients` — all active clients, job counts, status
+  - `/clients/<id>` — client detail, activity log, API cost estimate, resend welcome email
+  - `/costs` — API cost tracking per client (Haiku/Sonnet call estimates)
+- Approving a request provisions a new client in Supabase + sends welcome email via Resend
+- Dark theme (navy/amber), sidebar nav with pending request badge count
+- Deploy guide saved in `deploy.md`
+
+### Bolts11.com Website — Rebuilt and Wired to Backend
+- bolts11.com is served from a **separate repo**: `329andalive/bolts10` (Cloudflare Pages)
+- Updated `index.html` — dual-audience site (trades + wellness + shops), early access form
+- Created `signin.html` — client portal login (phone + PIN)
+- Form submits POST to `https://api.bolts11.com/api/access-request`
+- Signin submits POST to `https://api.bolts11.com/api/auth/portal-login`
+- Key fix: forms were pointing to Railway internal URL (`web-production-043dc.up.railway.app`)
+  instead of `api.bolts11.com` — corrected in both files
+- Added `wrangler.jsonc` for Cloudflare Worker deployment
+
+### Portal Login — Temp PIN Flow for New Clients
+- New clients (no `pin_hash` set) use temp PIN `5555` for first login
+- Temp PIN accepted → redirect to `/set-pin` to create real 4-digit PIN
+- Existing clients validate against hashed PIN as before
+- Welcome email now shows formatted phone `(207) 555-0100` and temp PIN instructions
+
+### Resend Email Agent — Rebuilt
+- Replaced `urllib` with `requests` library in `execution/resend_agent.py`
+- Added `_fmt_phone()` helper for display-friendly phone formatting in emails
+- Four email functions: access request confirmation, lead alert, welcome, document delivery
+- `RESEND_API_KEY` env var confirmed set in Railway
+
+### Access Request Pipeline — End to End
+- `routes/access_request_routes.py` — handles form submissions + portal login
+- Saves lead to `access_requests` table in Supabase
+- Sends confirmation email to requester + alert email to support@bolts11.com
+- Portal login consolidated here (removed duplicate from `auth_routes.py`)
+- Blueprint registered in `sms_receive.py` as `access_bp`
+- Cross-origin session cookies configured: `SameSite=None`, `Secure=True`
+
+### Files Changed This Session
+```
+NEW   admin_app.py                             — admin dashboard Flask app
+NEW   deploy.md                                — admin deployment guide
+NEW   routes/admin_routes.py                   — admin routes (requests, clients, costs)
+NEW   routes/access_request_routes.py          — access request + portal login
+NEW   execution/resend_agent.py                — Resend email delivery (rebuilt)
+NEW   templates/admin_base.html                — admin dark theme base layout
+NEW   templates/admin_login.html               — 6-digit PIN login
+NEW   templates/admin_requests.html            — access request management
+NEW   templates/admin_clients.html             — client list
+NEW   templates/admin_client_detail.html       — client detail + activity
+NEW   templates/admin_costs.html               — API cost tracking
+NEW   bolts11-site/wrangler.jsonc              — Cloudflare Worker config
+NEW   bolts11-site/signin.html                 — client portal sign-in page
+MOD   bolts11-site/index.html                  — rebuilt with access form + audience tabs
+MOD   routes/auth_routes.py                    — removed duplicate portal-login route
+MOD   execution/sms_receive.py                 — registered access_bp, session cookie config
+```
+
+### Repos
+```
+329andalive/Agent_Work_flow  — Flask backend (Railway)
+329andalive/bolts10           — bolts11.com static site (Cloudflare Pages)
+```
+
+### Still Pending — Carry Forward
+- **Railway redeploy needed** — latest commit needs to be deployed (was on old commit)
+- **admin.bolts11.com DNS** — CNAME record needed in Cloudflare pointing to new Railway service
+- **ADMIN_PIN env var** — set in new Railway admin service
+- **`access_requests` table** — verify exists in Supabase with correct columns
+- **10DLC approval** — outbound SMS still blocked
+- **Square production credentials** — still on sandbox
 
 ---
 
