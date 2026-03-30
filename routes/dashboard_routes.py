@@ -795,7 +795,31 @@ def proposal_action(proposal_id):
 
         if action == "accepted":
             sb.table("proposals").update({"status": "accepted", "accepted_at": now}).eq("id", proposal_id).execute()
-            flash("Proposal marked as accepted.", "success")
+
+            # Auto-create work order job → lands in Planner backlog
+            try:
+                prop = sb.table("proposals").select(
+                    "customer_id, job_id, amount_estimate, raw_input"
+                ).eq("id", proposal_id).execute().data
+                if prop:
+                    p = prop[0]
+                    wo = {
+                        "client_id": client_id,
+                        "customer_id": p.get("customer_id"),
+                        "status": "work_order",
+                        "scheduled_date": None,
+                        "job_type": "from_proposal",
+                        "job_description": p.get("raw_input", ""),
+                        "estimated_amount": p.get("amount_estimate"),
+                        "source_proposal_id": proposal_id,
+                        "created_at": now,
+                    }
+                    sb.table("jobs").insert(wo).execute()
+                    print(f"[{_ts()}] INFO dashboard_routes: Auto work order created from proposal {proposal_id[:8]}")
+            except Exception as wo_err:
+                print(f"[{_ts()}] WARN dashboard_routes: Auto work order failed — {wo_err}")
+
+            flash("Proposal accepted — work order added to Planner backlog.", "success")
         elif action == "lost":
             sb.table("proposals").update({"status": "declined", "response_type": "declined"}).eq("id", proposal_id).execute()
             flash("Proposal marked as lost.", "info")
@@ -1742,15 +1766,15 @@ def schedule_planner():
     monday = today - timedelta(days=today.weekday()) + timedelta(weeks=week_offset)
     week_days = [monday + timedelta(days=i) for i in range(5)]  # Mon-Fri only
 
-    # Load ALL unscheduled jobs (status=scheduled or pending, no assigned_worker_id)
+    # Load ALL unscheduled jobs (work_order, scheduled, pending — no date or no worker)
     backlog = []
     try:
         result = sb.table("jobs").select(
             "id, job_type, job_description, job_address, status, "
             "scheduled_date, customer_id, zone_cluster, estimated_amount, job_notes"
         ).eq("client_id", client_id).in_(
-            "status", ["scheduled", "pending"]
-        ).is_("assigned_worker_id", "null").order("created_at").execute()
+            "status", ["work_order", "scheduled", "pending"]
+        ).is_("scheduled_date", "null").order("created_at").execute()
         backlog = result.data or []
     except Exception as e:
         print(f"[{_ts()}] WARN dashboard_routes: planner backlog — {e}")
@@ -1807,6 +1831,16 @@ def schedule_planner():
     # Daily capacity — hardcoded for now, will come from vertical config later
     DAILY_CAPACITY = 8
 
+    # Load customers for Quick-Add panel
+    customers = []
+    try:
+        cust_result = sb.table("customers").select(
+            "id, customer_name, customer_phone, customer_address"
+        ).eq("client_id", client_id).order("customer_name").execute()
+        customers = cust_result.data or []
+    except Exception as e:
+        print(f"[{_ts()}] WARN dashboard_routes: planner customers — {e}")
+
     ctx.update({
         "week_days": week_days,
         "week_offset": week_offset,
@@ -1815,6 +1849,7 @@ def schedule_planner():
         "jobs_by_day": dict(jobs_by_day),
         "backlog_json": json.dumps(backlog, default=str),
         "week_jobs_json": json.dumps(week_jobs, default=str),
+        "customers_json": json.dumps(customers, default=str),
         "daily_capacity": DAILY_CAPACITY,
         "monday_iso": monday.isoformat(),
         "today_iso": today.isoformat(),
@@ -1852,11 +1887,92 @@ def api_reschedule_job():
         update = {"scheduled_date": new_date}
         if new_date:
             update["status"] = "scheduled"
+        else:
+            update["status"] = "work_order"
         sb.table("jobs").update(update).eq("id", job_id).execute()
         print(f"[{_ts()}] INFO dashboard_routes: Rescheduled job {job_id[:8]} → {new_date}")
         return jsonify({"success": True})
     except Exception as e:
         print(f"[{_ts()}] ERROR dashboard_routes: reschedule failed — {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+# ---------------------------------------------------------------------------
+# POST /api/work-orders/create — Quick-Add from Planner
+# ---------------------------------------------------------------------------
+
+@dashboard_bp.route("/api/work-orders/create", methods=["POST"])
+def api_create_work_order():
+    """Create a work order from the Planner Quick-Add panel."""
+    client_id = _resolve_client_id()
+    if not client_id:
+        return jsonify({"success": False, "error": "Not authenticated"}), 401
+
+    data = request.get_json(silent=True) or {}
+    customer_id = data.get("customer_id")
+    customer_name = (data.get("customer_name") or "").strip()
+    customer_phone = (data.get("customer_phone") or "").strip()
+    customer_address = (data.get("customer_address") or "").strip()
+    scope = (data.get("scope") or "").strip()
+    job_type = (data.get("job_type") or "general").strip()
+    scheduled_date = data.get("scheduled_date") or None
+
+    if not scope:
+        return jsonify({"success": False, "error": "Job description is required."}), 400
+
+    sb = _get_supabase()
+
+    # If no existing customer selected, create one from provided name/phone
+    if not customer_id and customer_phone:
+        import re
+        digits = re.sub(r"\D", "", customer_phone)
+        if len(digits) == 10:
+            phone_e164 = f"+1{digits}"
+        elif len(digits) == 11 and digits.startswith("1"):
+            phone_e164 = f"+{digits}"
+        else:
+            phone_e164 = f"+{digits}" if digits else ""
+
+        try:
+            # Check if customer already exists by phone
+            existing = sb.table("customers").select("id").eq(
+                "client_id", client_id
+            ).eq("customer_phone", phone_e164).execute()
+            if existing.data:
+                customer_id = existing.data[0]["id"]
+            else:
+                new_cust = {
+                    "client_id": client_id,
+                    "customer_name": customer_name or "New Customer",
+                    "customer_phone": phone_e164,
+                    "customer_address": customer_address,
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                }
+                cust_result = sb.table("customers").insert(new_cust).execute()
+                if cust_result.data:
+                    customer_id = cust_result.data[0]["id"]
+                    print(f"[{_ts()}] INFO planner: Auto-created customer {customer_name} ({phone_e164})")
+        except Exception as e:
+            print(f"[{_ts()}] WARN planner: Customer create failed — {e}")
+
+    # Create the work order
+    try:
+        wo = {
+            "client_id": client_id,
+            "customer_id": customer_id,
+            "status": "scheduled" if scheduled_date else "work_order",
+            "scheduled_date": scheduled_date,
+            "job_type": job_type,
+            "job_description": scope,
+            "job_address": customer_address,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+        result = sb.table("jobs").insert(wo).execute()
+        job_id = result.data[0]["id"] if result.data else None
+        print(f"[{_ts()}] INFO planner: Work order created — {job_id} ({scope[:40]})")
+        return jsonify({"success": True, "job_id": job_id})
+    except Exception as e:
+        print(f"[{_ts()}] ERROR planner: Work order create failed — {e}")
         return jsonify({"success": False, "error": str(e)}), 500
 
 

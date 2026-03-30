@@ -54,6 +54,30 @@
 .slip-badge--south { background:#FAEEDA; color:#854F0B; }
 .slip-badge--unknown { background:#f3f4f6; color:#6b7280; }
 .slip-badge--amt { background:#f3f4f6; color:#374151; }
+.slip-badge--wo { background:#dbeafe; color:#1d4ed8; }
+
+/* Quick-Add panel */
+.qa-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.3); z-index:200; }
+.qa-overlay.open { display:block; }
+.qa-panel { position:fixed; top:0; right:-420px; width:400px; max-width:90vw; height:100vh; background:var(--bg-card); border-left:1px solid var(--border); z-index:201; transition:right 0.25s ease; overflow-y:auto; padding:28px 24px; }
+.qa-panel.open { right:0; }
+.qa-title { font-size:16px; font-weight:700; color:var(--text-primary); margin-bottom:4px; }
+.qa-sub { font-size:12px; color:var(--text-tertiary); margin-bottom:24px; }
+.qa-field { margin-bottom:16px; }
+.qa-label { display:block; font-family:'DM Mono',monospace; font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:0.08em; color:var(--text-tertiary); margin-bottom:6px; }
+.qa-input, .qa-select, .qa-textarea { width:100%; padding:10px 12px; background:var(--bg-page); border:1px solid var(--border); border-radius:6px; color:var(--text-primary); font-family:inherit; font-size:14px; }
+.qa-input:focus, .qa-select:focus, .qa-textarea:focus { outline:none; border-color:var(--amber); }
+.qa-textarea { resize:vertical; min-height:80px; }
+.qa-select { cursor:pointer; }
+.qa-btn { width:100%; padding:12px; background:var(--amber); color:#1a2e4a; font-size:14px; font-weight:700; border:none; border-radius:8px; cursor:pointer; font-family:inherit; transition:all 0.15s; }
+.qa-btn:hover { background:#d97706; }
+.qa-btn:disabled { opacity:0.5; cursor:not-allowed; }
+.qa-close { position:absolute; top:16px; right:16px; background:none; border:none; font-size:20px; color:var(--text-tertiary); cursor:pointer; padding:4px 8px; }
+.qa-close:hover { color:var(--text-primary); }
+.qa-msg { padding:10px 14px; border-radius:6px; font-size:13px; margin-bottom:16px; display:none; }
+.qa-msg-ok { background:rgba(34,197,94,0.1); border:1px solid rgba(34,197,94,0.25); color:#22c55e; }
+.qa-msg-err { background:rgba(239,68,68,0.1); border:1px solid rgba(239,68,68,0.2); color:#ef4444; }
+.qa-or { font-size:11px; color:var(--text-tertiary); text-align:center; margin:8px 0; }
 {% endblock %}
 
 {% block content %}
@@ -73,6 +97,7 @@
       <span class="pl-stat"><strong id="week-count">{{ week_jobs|length }}</strong> this week</span>
     </div>
   </div>
+  <button class="pl-week-btn" style="background:var(--amber);color:#1a2e4a;font-weight:700;border-color:var(--amber)" onclick="openQuickAdd()">+ Work Order</button>
 </div>
 
 <!-- Week strip with capacity bars -->
@@ -124,10 +149,75 @@
           <div class="pl-drop-empty">Drop jobs here</div>
           {% endif %}
         </div>
-        <a href="/dashboard/dispatch?date={{ iso }}" class="pl-dispatch-link">Open dispatch →</a>
+        <a href="/dashboard/dispatch?date={{ iso }}" class="pl-dispatch-link">Open dispatch &rarr;</a>
       </div>
     {% endfor %}
   </div>
+</div>
+
+<!-- Quick-Add overlay + panel -->
+<div class="qa-overlay" id="qa-overlay" onclick="closeQuickAdd()"></div>
+<div class="qa-panel" id="qa-panel">
+  <button class="qa-close" onclick="closeQuickAdd()">&times;</button>
+  <div class="qa-title">+ Work Order</div>
+  <div class="qa-sub">Drop a job into the planner. Pick a day or leave blank for backlog.</div>
+  <div class="qa-msg" id="qa-msg"></div>
+
+  <form id="qa-form" onsubmit="return submitQuickAdd(event)">
+    <!-- Existing customer dropdown -->
+    <div class="qa-field">
+      <label class="qa-label">Existing Customer</label>
+      <select class="qa-select" id="qa-customer" onchange="qaCustomerChanged()">
+        <option value="">-- New customer --</option>
+      </select>
+    </div>
+
+    <div id="qa-new-fields">
+      <div class="qa-or">or enter new customer details</div>
+      <div class="qa-field">
+        <label class="qa-label">Name</label>
+        <input class="qa-input" id="qa-name" placeholder="Customer name">
+      </div>
+      <div class="qa-field">
+        <label class="qa-label">Phone</label>
+        <input class="qa-input" id="qa-phone" placeholder="(207) 555-0100" type="tel">
+      </div>
+      <div class="qa-field">
+        <label class="qa-label">Address</label>
+        <input class="qa-input" id="qa-address" placeholder="123 Main St">
+      </div>
+    </div>
+
+    <div class="qa-field">
+      <label class="qa-label">What's the problem? *</label>
+      <textarea class="qa-textarea" id="qa-scope" placeholder="Pump out 1500 gal septic, customer says backing up" required></textarea>
+    </div>
+
+    <div class="qa-field">
+      <label class="qa-label">Job Type</label>
+      <select class="qa-select" id="qa-type">
+        <option value="general">General</option>
+        <option value="pump_out">Pump Out</option>
+        <option value="inspection">Inspection</option>
+        <option value="repair">Repair</option>
+        <option value="install">Install</option>
+        <option value="maintenance">Maintenance</option>
+        <option value="consultation">Consultation</option>
+      </select>
+    </div>
+
+    <div class="qa-field">
+      <label class="qa-label">Schedule Day (optional)</label>
+      <select class="qa-select" id="qa-day">
+        <option value="">Backlog (unscheduled)</option>
+        {% for wd in week_days %}
+        <option value="{{ wd.isoformat() }}">{{ day_names[loop.index0] }} {{ months[wd.month - 1] }} {{ wd.day }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <button type="submit" class="qa-btn" id="qa-submit">Drop It In &#8629;</button>
+  </form>
 </div>
 {% endblock %}
 
@@ -136,10 +226,89 @@
 (function() {
   var BACKLOG = {{ backlog_json|safe }};
   var WEEK_JOBS = {{ week_jobs_json|safe }};
+  var CUSTOMERS = {{ customers_json|safe }};
   var CAPACITY = {{ daily_capacity }};
   var WEEK_OFFSET = {{ week_offset }};
   var WEEK_DAYS = [{% for wd in week_days %}'{{ wd.isoformat() }}'{% if not loop.last %},{% endif %}{% endfor %}];
   var draggedEl = null;
+
+  // Populate customer dropdown
+  var custSelect = document.getElementById('qa-customer');
+  CUSTOMERS.forEach(function(c) {
+    var opt = document.createElement('option');
+    opt.value = c.id;
+    opt.textContent = (c.customer_name || 'Unknown') + ' — ' + (c.customer_phone || '');
+    opt.dataset.address = c.customer_address || '';
+    custSelect.appendChild(opt);
+  });
+
+  window.qaCustomerChanged = function() {
+    var sel = custSelect.options[custSelect.selectedIndex];
+    var newFields = document.getElementById('qa-new-fields');
+    if (custSelect.value) {
+      newFields.style.display = 'none';
+      if (sel.dataset.address) document.getElementById('qa-address').value = sel.dataset.address;
+    } else {
+      newFields.style.display = 'block';
+      document.getElementById('qa-name').value = '';
+      document.getElementById('qa-phone').value = '';
+      document.getElementById('qa-address').value = '';
+    }
+  };
+
+  window.openQuickAdd = function() {
+    document.getElementById('qa-overlay').classList.add('open');
+    document.getElementById('qa-panel').classList.add('open');
+  };
+  window.closeQuickAdd = function() {
+    document.getElementById('qa-overlay').classList.remove('open');
+    document.getElementById('qa-panel').classList.remove('open');
+  };
+
+  window.submitQuickAdd = function(e) {
+    e.preventDefault();
+    var btn = document.getElementById('qa-submit');
+    var msg = document.getElementById('qa-msg');
+    btn.disabled = true;
+    msg.style.display = 'none';
+
+    var payload = {
+      customer_id: custSelect.value || null,
+      customer_name: document.getElementById('qa-name').value.trim(),
+      customer_phone: document.getElementById('qa-phone').value.trim(),
+      customer_address: document.getElementById('qa-address').value.trim(),
+      scope: document.getElementById('qa-scope').value.trim(),
+      job_type: document.getElementById('qa-type').value,
+      scheduled_date: document.getElementById('qa-day').value || null,
+    };
+
+    fetch('/api/work-orders/create', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(payload)
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.success) {
+        msg.className = 'qa-msg qa-msg-ok';
+        msg.textContent = 'Work order created. Reloading...';
+        msg.style.display = 'block';
+        setTimeout(function() { window.location.reload(); }, 800);
+      } else {
+        msg.className = 'qa-msg qa-msg-err';
+        msg.textContent = data.error || 'Something went wrong.';
+        msg.style.display = 'block';
+        btn.disabled = false;
+      }
+    })
+    .catch(function() {
+      msg.className = 'qa-msg qa-msg-err';
+      msg.textContent = 'Connection error. Try again.';
+      msg.style.display = 'block';
+      btn.disabled = false;
+    });
+    return false;
+  };
 
   function shiftWeek(n) {
     window.location.href = '/dashboard/planner?week=' + (WEEK_OFFSET + n);
@@ -148,6 +317,7 @@
 
   function makeCard(job) {
     var zc = (job.zone_cluster || 'unknown').toLowerCase();
+    var isWO = job.status === 'work_order';
     var div = document.createElement('div');
     div.className = 'slip-card';
     div.draggable = true;
@@ -162,6 +332,7 @@
       '<div class="slip-card__desc">' + (div.dataset.desc || 'No description') + '</div>' +
       '<div class="slip-card__badges">' +
         '<span class="slip-badge slip-badge--' + zc + '">' + div.dataset.zone + '</span>' +
+        (isWO ? '<span class="slip-badge slip-badge--wo">WO</span>' : '') +
         (div.dataset.amount ? '<span class="slip-badge slip-badge--amt">' + div.dataset.amount + '</span>' : '') +
       '</div>' +
       (div.dataset.address ? '<div class="slip-card__addr">\ud83d\udccd ' + div.dataset.address + '</div>' : '');
@@ -198,13 +369,11 @@
         var jobId = draggedEl.dataset.jobId;
         var newDate = zone.dataset.date || null;
 
-        // Remove empty placeholder if present
         var empty = zone.querySelector('.pl-drop-empty');
         if (empty) empty.remove();
 
         zone.appendChild(draggedEl);
 
-        // Add empty placeholder back to source if now empty
         if (srcZone.children.length === 0) {
           var ph = document.createElement('div');
           ph.className = 'pl-drop-empty';
@@ -214,7 +383,6 @@
 
         updateCounts();
 
-        // POST reschedule
         fetch('/api/jobs/reschedule', {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
@@ -225,7 +393,6 @@
   }
 
   function updateCounts() {
-    // Backlog count
     var bl = document.getElementById('backlog-zone');
     var blCards = bl ? bl.querySelectorAll('.slip-card').length : 0;
     var blEl = document.getElementById('bl-count');
@@ -233,7 +400,6 @@
     if (blEl) blEl.textContent = blCards;
     if (blStat) blStat.textContent = blCards;
 
-    // Week counts
     var weekTotal = 0;
     WEEK_DAYS.forEach(function(iso) {
       var dz = document.getElementById('dz-' + iso);
@@ -272,7 +438,6 @@
   }
 
   function checkZoneConflicts() {
-    // Find zones that appear on 2+ different days
     var zoneByDay = {};
     WEEK_JOBS.forEach(function(j) {
       var z = (j.zone_cluster || '').toLowerCase();
@@ -294,7 +459,6 @@
         banner.textContent = '\u26a0\ufe0f ' + days.length + ' ' + zone + ' jobs on different days \u2014 consolidate to save mileage?';
         banner.dataset.zone = zone;
         banner.addEventListener('click', function() {
-          // Toggle highlight on matching cards
           document.querySelectorAll('.slip-card').forEach(function(card) {
             if ((card.dataset.zone || '').toLowerCase() === zone) {
               card.classList.toggle('pl-highlight');
