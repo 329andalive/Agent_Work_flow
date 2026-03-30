@@ -15,14 +15,12 @@ Usage:
 """
 
 import os
-import json
-import urllib.request
-import urllib.error
+import requests
 from datetime import datetime
 
 # ── Config ──────────────────────────────────────────────────────────────────
 
-# Supports both "re_send" and "RESEND_API_KEY" variable names in Railway
+# Supports both "RESEND_API_KEY" and "re_send" variable names in Railway
 RESEND_API_KEY = (
     os.environ.get("RESEND_API_KEY") or
     os.environ.get("re_send") or
@@ -37,44 +35,41 @@ def _ts():
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
-def _send(to: list[str], subject: str, html: str, reply_to: str = None) -> dict:
+def _send(to: list, subject: str, html: str, reply_to: str = None) -> dict:
     """
-    Core Resend API call. Returns {"success": True} or {"success": False, "error": "..."}.
-    Uses stdlib urllib — no extra dependencies.
+    Core Resend API call using requests library.
+    Returns {"success": True, "id": "..."} or {"success": False, "error": "..."}.
     """
     if not RESEND_API_KEY:
         print(f"[{_ts()}] WARN resend_agent: RESEND_API_KEY not set — email skipped")
         return {"success": False, "error": "RESEND_API_KEY not configured"}
 
     payload = {
-        "from": FROM_ADDRESS,
-        "to": to,
+        "from":    FROM_ADDRESS,
+        "to":      to,
         "subject": subject,
-        "html": html,
+        "html":    html,
     }
     if reply_to:
         payload["reply_to"] = reply_to
 
-    body = json.dumps(payload).encode("utf-8")
-    req  = urllib.request.Request(
-        RESEND_API_URL,
-        data=body,
-        headers={
-            "Authorization": f"Bearer {RESEND_API_KEY}",
-            "Content-Type":  "application/json",
-        },
-        method="POST",
-    )
-
     try:
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            data = json.loads(resp.read())
+        resp = requests.post(
+            RESEND_API_URL,
+            json=payload,
+            headers={
+                "Authorization": f"Bearer {RESEND_API_KEY}",
+                "Content-Type":  "application/json",
+            },
+            timeout=15,
+        )
+        data = resp.json()
+        if resp.status_code in (200, 201):
             print(f"[{_ts()}] INFO resend_agent: Email sent → {to} | id={data.get('id')}")
             return {"success": True, "id": data.get("id")}
-    except urllib.error.HTTPError as e:
-        body_err = e.read().decode("utf-8", errors="replace")
-        print(f"[{_ts()}] ERROR resend_agent: HTTP {e.code} → {body_err}")
-        return {"success": False, "error": f"HTTP {e.code}: {body_err}"}
+        else:
+            print(f"[{_ts()}] ERROR resend_agent: HTTP {resp.status_code} → {data}")
+            return {"success": False, "error": f"HTTP {resp.status_code}: {data}"}
     except Exception as e:
         print(f"[{_ts()}] ERROR resend_agent: {e}")
         return {"success": False, "error": str(e)}
