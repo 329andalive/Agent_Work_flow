@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Bolts11 Admin — Sign In</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    :root{--bg:#0a0e1a;--card:#111827;--border:#1e2d45;--amber:#f59e0b;--text:#e2e8f0;--muted:#64748b}
+    body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;min-height:100vh;display:flex;align-items:center;justify-content:center}
+    .bg-grid{position:fixed;inset:0;background-image:linear-gradient(rgba(245,158,11,0.03) 1px,transparent 1px),linear-gradient(90deg,rgba(245,158,11,0.03) 1px,transparent 1px);background-size:40px 40px;pointer-events:none}
+    .card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:40px 36px;width:100%;max-width:380px;position:relative;z-index:1}
+    .logo{display:flex;align-items:center;gap:6px;font-size:18px;font-weight:800;margin-bottom:6px}
+    .bolt{color:var(--amber)}
+    .badge{font-size:9px;font-weight:700;background:rgba(245,158,11,0.15);color:var(--amber);padding:2px 8px;border-radius:100px;text-transform:uppercase;letter-spacing:0.08em}
+    .sub{font-size:13px;color:var(--muted);margin-bottom:32px}
+    .label{display:block;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.07em;color:var(--muted);margin-bottom:8px}
+    .pin-wrap{display:flex;gap:10px;justify-content:center;margin-bottom:24px}
+    .pin-box{width:48px;height:54px;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:8px;text-align:center;font-size:22px;font-weight:700;color:var(--text);font-family:'JetBrains Mono',monospace;transition:border-color 0.15s;-webkit-text-security:disc}
+    .pin-box:focus{outline:none;border-color:var(--amber);background:rgba(245,158,11,0.05)}
+    .btn{width:100%;padding:13px;background:var(--amber);color:#0a0e1a;font-size:15px;font-weight:700;border:none;border-radius:8px;cursor:pointer;font-family:inherit;transition:all 0.15s}
+    .btn:hover{background:#d97706;transform:translateY(-1px)}
+    .btn:disabled{opacity:0.5;cursor:not-allowed;transform:none}
+    .error{background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.25);color:#f87171;padding:10px 14px;border-radius:8px;font-size:13px;margin-bottom:20px}
+  </style>
+</head>
+<body>
+<div class="bg-grid"></div>
+<div class="card">
+  <div class="logo"><span class="bolt">&#9889;</span> Bolts11 <span class="badge">Admin</span></div>
+  <p class="sub">Internal operations dashboard</p>
+
+  {% if error %}
+    <div class="error">{{ error }}</div>
+  {% endif %}
+
+  <form method="POST">
+    <label class="label">Admin PIN</label>
+    <div class="pin-wrap">
+      <input class="pin-box" type="password" id="p1" maxlength="1" inputmode="numeric" autocomplete="off">
+      <input class="pin-box" type="password" id="p2" maxlength="1" inputmode="numeric" autocomplete="off">
+      <input class="pin-box" type="password" id="p3" maxlength="1" inputmode="numeric" autocomplete="off">
+      <input class="pin-box" type="password" id="p4" maxlength="1" inputmode="numeric" autocomplete="off">
+      <input class="pin-box" type="password" id="p5" maxlength="1" inputmode="numeric" autocomplete="off">
+      <input class="pin-box" type="password" id="p6" maxlength="1" inputmode="numeric" autocomplete="off">
+    </div>
+    <input type="hidden" name="pin" id="pin-hidden">
+    <button class="btn" type="submit" id="submit-btn" disabled>Sign In</button>
+  </form>
+</div>
+<script>
+const boxes = ['p1','p2','p3','p4','p5','p6'].map(id => document.getElementById(id));
+const hidden = document.getElementById('pin-hidden');
+const btn    = document.getElementById('submit-btn');
+
+function updateHidden() {
+  const val = boxes.map(b => b.value).join('');
+  hidden.value = val;
+  btn.disabled = val.length < 6;
+}
+
+boxes.forEach((box, i) => {
+  box.addEventListener('input', () => {
+    box.value = box.value.replace(/\D/g,'').slice(0,1);
+    updateHidden();
+    if (box.value && i < 5) boxes[i+1].focus();
+  });
+  box.addEventListener('keydown', e => {
+    if (e.key === 'Backspace' && !box.value && i > 0) {
+      boxes[i-1].focus(); boxes[i-1].value = ''; updateHidden();
+    }
+  });
+  box.addEventListener('paste', e => {
+    e.preventDefault();
+    const digits = (e.clipboardData.getData('text')||'').replace(/\D/g,'').slice(0,6);
+    digits.split('').forEach((d,j) => { if(boxes[j]) boxes[j].value = d; });
+    updateHidden();
+    if (boxes[digits.length-1]) boxes[digits.length-1].focus();
+  });
+});
+boxes[0].focus();
+</script>
+</body>
+</html>

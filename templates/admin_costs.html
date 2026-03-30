@@ -1,0 +1,93 @@
+{% extends "admin_base.html" %}
+{% block title %}API Costs — Bolts11 Admin{% endblock %}
+{% block page_title %}API Cost Tracking{% endblock %}
+
+{% block content %}
+<div class="stats-grid">
+  <div class="stat-card">
+    <div class="stat-label">Total Est. Spend</div>
+    <div class="stat-value amber">${{ "%.4f"|format(total_cost) }}</div>
+    <div class="stat-sub">Across all clients</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Clients Tracked</div>
+    <div class="stat-value">{{ clients|length }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Avg Per Client</div>
+    <div class="stat-value" style="font-size:22px">
+      ${{ "%.4f"|format(total_cost / clients|length) if clients else "0.0000" }}
+    </div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Cost Model</div>
+    <div class="stat-value" style="font-size:14px;color:var(--text-muted);font-family:inherit;font-weight:500;padding-top:4px">
+      Haiku $0.0008<br>Sonnet $0.006
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header">
+    <div>
+      <div class="card-title">Cost by Client</div>
+      <div class="card-sub">Estimated from agent_activity log. Actual Anthropic costs may vary.</div>
+    </div>
+  </div>
+  {% if clients %}
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Business</th>
+          <th>Phone</th>
+          <th>Haiku Calls</th>
+          <th>Sonnet Calls</th>
+          <th>Total Actions</th>
+          <th>Est. Cost</th>
+          <th>% of Total</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for c in clients %}
+        <tr>
+          <td><strong>{{ c.name }}</strong></td>
+          <td class="mono" style="font-size:11px;color:var(--text-muted)">{{ c.phone }}</td>
+          <td class="mono">{{ c.haiku_calls }}</td>
+          <td class="mono">{{ c.sonnet_calls }}</td>
+          <td class="mono">{{ c.total_actions }}</td>
+          <td class="mono" style="color:var(--amber)">${{ "%.4f"|format(c.est_cost_usd) }}</td>
+          <td>
+            {% if total_cost > 0 %}
+            {% set pct = (c.est_cost_usd / total_cost * 100)|round(1) %}
+            <div style="display:flex;align-items:center;gap:8px">
+              <div style="flex:1;background:var(--border);border-radius:100px;height:4px;max-width:80px">
+                <div style="width:{{ pct }}%;background:var(--amber);height:4px;border-radius:100px"></div>
+              </div>
+              <span style="font-size:11px;color:var(--text-muted)">{{ pct }}%</span>
+            </div>
+            {% else %}—{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="empty">No activity data yet. Costs will appear here as clients use the platform.</div>
+  {% endif %}
+</div>
+
+<div class="card" style="margin-top:20px">
+  <div class="card-title" style="margin-bottom:12px">&#128203; Cost Reference</div>
+  <table style="max-width:500px">
+    <thead><tr><th>Model</th><th>Est. per call</th><th>Use case</th></tr></thead>
+    <tbody>
+      <tr><td>Claude Haiku</td><td class="mono">$0.0008</td><td style="color:var(--text-muted);font-size:12px">SMS routing, classification</td></tr>
+      <tr><td>Claude Sonnet</td><td class="mono">$0.0060</td><td style="color:var(--text-muted);font-size:12px">Invoices, proposals, content</td></tr>
+      <tr><td>SMS (Telnyx)</td><td class="mono">~$0.004</td><td style="color:var(--text-muted);font-size:12px">Per outbound SMS segment</td></tr>
+      <tr><td>Resend Email</td><td class="mono">$0.0000</td><td style="color:var(--text-muted);font-size:12px">Free tier (3,000/mo)</td></tr>
+    </tbody>
+  </table>
+</div>
+{% endblock %}

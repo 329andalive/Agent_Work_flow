@@ -1,0 +1,186 @@
+{% extends "admin_base.html" %}
+{% block title %}Access Requests — Bolts11 Admin{% endblock %}
+{% block page_title %}Access Requests{% endblock %}
+
+{% block content %}
+<div class="stats-grid">
+  <div class="stat-card">
+    <div class="stat-label">Pending</div>
+    <div class="stat-value amber">{{ pending|length }}</div>
+    <div class="stat-sub">Awaiting action</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Contacted</div>
+    <div class="stat-value" style="color:var(--blue)">{{ contacted|length }}</div>
+    <div class="stat-sub">In conversation</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Approved</div>
+    <div class="stat-value green">{{ approved|length }}</div>
+    <div class="stat-sub">Live clients</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Total Requests</div>
+    <div class="stat-value">{{ total }}</div>
+    <div class="stat-sub">All time</div>
+  </div>
+</div>
+
+<!-- Pending -->
+{% if pending %}
+<div class="card" style="margin-bottom:20px">
+  <div class="card-header">
+    <div>
+      <div class="card-title">&#128228; Pending — Needs Action</div>
+      <div class="card-sub">These people filled out the form and are waiting to hear from you</div>
+    </div>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Business Type</th>
+          <th>Phone</th>
+          <th>Email</th>
+          <th>Received</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in pending %}
+        <tr>
+          <td><strong>{{ r.name }}</strong></td>
+          <td>{{ r.business_type or '—' }}</td>
+          <td class="mono">{{ r.phone or '—' }}</td>
+          <td><a href="mailto:{{ r.email }}" style="color:var(--amber)">{{ r.email }}</a></td>
+          <td class="mono" style="color:var(--text-muted);font-size:11px">{{ fmt_dt(r.created_at) }}</td>
+          <td>
+            <div style="display:flex;gap:6px;flex-wrap:wrap">
+              <button class="btn btn-sm btn-green" onclick="openApproveModal('{{ r.id }}','{{ r.name }}','{{ r.business_type }}')">
+                &#10003; Approve
+              </button>
+              <form method="POST" action="/requests/{{ r.id }}/contact" style="display:inline">
+                <button class="btn btn-sm btn-blue" type="submit">&#128222; Contacted</button>
+              </form>
+              <form method="POST" action="/requests/{{ r.id }}/reject" style="display:inline"
+                onsubmit="return confirm('Reject this request?')">
+                <button class="btn btn-sm btn-red" type="submit">&#10005; Reject</button>
+              </form>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+<!-- Contacted -->
+{% if contacted %}
+<div class="card" style="margin-bottom:20px">
+  <div class="card-header">
+    <div class="card-title" style="color:var(--blue)">&#128222; Contacted</div>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Name</th><th>Business</th><th>Phone</th><th>Email</th><th>Requested</th><th>Actions</th></tr>
+      </thead>
+      <tbody>
+        {% for r in contacted %}
+        <tr>
+          <td><strong>{{ r.name }}</strong></td>
+          <td>{{ r.business_type or '—' }}</td>
+          <td class="mono">{{ r.phone or '—' }}</td>
+          <td><a href="mailto:{{ r.email }}" style="color:var(--amber)">{{ r.email }}</a></td>
+          <td class="mono" style="color:var(--text-muted);font-size:11px">{{ fmt_dt(r.created_at) }}</td>
+          <td>
+            <div style="display:flex;gap:6px">
+              <button class="btn btn-sm btn-green" onclick="openApproveModal('{{ r.id }}','{{ r.name }}','{{ r.business_type }}')">
+                &#10003; Approve
+              </button>
+              <form method="POST" action="/requests/{{ r.id }}/reject" style="display:inline"
+                onsubmit="return confirm('Reject?')">
+                <button class="btn btn-sm btn-red" type="submit">&#10005;</button>
+              </form>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+<!-- Approved -->
+{% if approved %}
+<div class="card" style="margin-bottom:20px">
+  <div class="card-header">
+    <div class="card-title" style="color:var(--green)">&#10003; Approved — Live Clients</div>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Name</th><th>Business</th><th>Phone</th><th>Approved</th></tr>
+      </thead>
+      <tbody>
+        {% for r in approved %}
+        <tr>
+          <td>{{ r.name }}</td>
+          <td>{{ r.business_type or '—' }}</td>
+          <td class="mono">{{ r.phone or '—' }}</td>
+          <td class="mono" style="color:var(--text-muted);font-size:11px">{{ fmt_dt(r.approved_at) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{% if not pending and not contacted and not approved %}
+<div class="card">
+  <div class="empty">&#128228; No access requests yet. When someone fills out the form on bolts11.com they'll appear here.</div>
+</div>
+{% endif %}
+
+<!-- Approve Modal -->
+<div class="modal-overlay" id="approve-modal">
+  <div class="modal">
+    <div class="modal-title">Approve &amp; Provision Client</div>
+    <div class="modal-sub" id="modal-sub">Set the business name then click Approve — we'll create their account and send the welcome email automatically.</div>
+    <form method="POST" id="approve-form">
+      <div class="form-group">
+        <label class="form-label">Business Name</label>
+        <input type="text" name="business_name" id="modal-biz-name" class="form-input" placeholder="e.g. Sarah's Yoga Studio" required>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+        <button type="submit" class="btn btn-amber">&#9889; Approve &amp; Go Live</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function openApproveModal(id, name, bizType) {
+  document.getElementById('approve-form').action = '/requests/' + id + '/approve';
+  document.getElementById('modal-biz-name').value = (name.split(' ')[0] || '') + "'s " + (bizType || 'Business');
+  document.getElementById('modal-sub').textContent =
+    'Approving request from ' + name + '. We\'ll create their Bolts11 account and send the welcome email instantly.';
+  document.getElementById('approve-modal').classList.add('open');
+  setTimeout(() => document.getElementById('modal-biz-name').select(), 50);
+}
+function closeModal() {
+  document.getElementById('approve-modal').classList.remove('open');
+}
+document.getElementById('approve-modal').addEventListener('click', function(e) {
+  if (e.target === this) closeModal();
+});
+</script>
+{% endblock %}

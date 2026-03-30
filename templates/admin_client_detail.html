@@ -1,0 +1,119 @@
+{% extends "admin_base.html" %}
+{% block title %}{{ client.business_name }} — Bolts11 Admin{% endblock %}
+{% block page_title %}{{ client.business_name }}{% endblock %}
+
+{% block content %}
+<div style="margin-bottom:20px">
+  <a href="/clients" class="btn btn-ghost btn-sm">&larr; All Clients</a>
+</div>
+
+<div class="grid-2" style="margin-bottom:20px">
+
+  <!-- Client Info -->
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title">Client Details</div>
+      <form method="POST" action="/clients/{{ client.id }}/toggle-active">
+        <button class="btn btn-sm {% if client.active %}btn-red{% else %}btn-green{% endif %}" type="submit"
+          onclick="return confirm('{% if client.active %}Deactivate{% else %}Activate{% endif %} this client?')">
+          {% if client.active %}Deactivate{% else %}Activate{% endif %}
+        </button>
+      </form>
+    </div>
+    <table style="width:100%">
+      <tr><td style="color:var(--text-muted);font-size:12px;padding:6px 0;width:130px">Business</td><td><strong>{{ client.business_name }}</strong></td></tr>
+      <tr><td style="color:var(--text-muted);font-size:12px;padding:6px 0">Owner</td><td>{{ client.owner_name or '—' }}</td></tr>
+      <tr><td style="color:var(--text-muted);font-size:12px;padding:6px 0">Phone</td><td class="mono">{{ client.phone }}</td></tr>
+      <tr><td style="color:var(--text-muted);font-size:12px;padding:6px 0">Vertical</td><td>{{ client.trade_vertical or 'general' }}</td></tr>
+      <tr><td style="color:var(--text-muted);font-size:12px;padding:6px 0">Status</td>
+        <td>{% if client.active %}<span class="badge badge-active"><span class="dot"></span> Active</span>
+            {% else %}<span class="badge badge-inactive">Inactive</span>{% endif %}</td></tr>
+      <tr><td style="color:var(--text-muted);font-size:12px;padding:6px 0">Member Since</td><td style="font-size:12px">{{ fmt_dt(client.created_at) }}</td></tr>
+    </table>
+  </div>
+
+  <!-- Quick Stats -->
+  <div style="display:flex;flex-direction:column;gap:16px">
+    <div class="card card-sm">
+      <div class="stat-label">Jobs Logged</div>
+      <div class="stat-value" style="font-size:32px">{{ jobs|length }}</div>
+    </div>
+    <div class="card card-sm">
+      <div class="stat-label">SMS Messages</div>
+      <div class="stat-value" style="font-size:32px">{{ sms_count }}</div>
+    </div>
+    <div class="card card-sm">
+      <div class="stat-label">Est. API Cost (lifetime)</div>
+      <div class="stat-value amber" style="font-size:28px">${{ "%.4f"|format(cost_estimate.est_usd) }}</div>
+      <div class="stat-sub" style="margin-top:6px;font-size:11px;color:var(--text-muted)">
+        {{ cost_estimate.haiku_calls }} Haiku · {{ cost_estimate.sonnet_calls }} Sonnet calls
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Resend Welcome Email -->
+<div class="card" style="margin-bottom:20px">
+  <div class="card-header">
+    <div class="card-title">&#9993; Send Welcome / Onboarding Email</div>
+  </div>
+  <form method="POST" action="/clients/{{ client.id }}/resend-welcome" style="display:flex;gap:12px;align-items:flex-end">
+    <div class="form-group" style="flex:1;margin-bottom:0">
+      <label class="form-label">Email Address</label>
+      <input type="email" name="email" class="form-input" placeholder="owner@business.com" required>
+    </div>
+    <button type="submit" class="btn btn-amber">Send Welcome Email</button>
+  </form>
+</div>
+
+<!-- Recent Jobs -->
+{% if jobs %}
+<div class="card" style="margin-bottom:20px">
+  <div class="card-header">
+    <div class="card-title">Recent Jobs</div>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Agent</th><th>Created</th></tr></thead>
+      <tbody>
+        {% for j in jobs[:10] %}
+        <tr>
+          <td style="color:var(--text-muted);font-size:12px">{{ j.agent_used or '—' }}</td>
+          <td class="mono" style="font-size:11px;color:var(--text-muted)">{{ fmt_dt(j.created_at) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+<!-- Activity Log -->
+<div class="card">
+  <div class="card-header">
+    <div class="card-title">Agent Activity Log</div>
+    <span style="font-size:11px;color:var(--text-muted)">Last {{ activity|length }} events</span>
+  </div>
+  {% if activity %}
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Agent</th><th>Action</th><th>Summary</th><th>Time</th></tr>
+      </thead>
+      <tbody>
+        {% for a in activity %}
+        <tr>
+          <td><span style="font-size:11px;background:rgba(245,158,11,0.1);color:var(--amber);padding:2px 8px;border-radius:100px">{{ a.agent_name }}</span></td>
+          <td style="font-size:12px;color:var(--text-muted)">{{ a.action_taken or '—' }}</td>
+          <td style="font-size:12px;max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ a.output_summary or '—' }}</td>
+          <td class="mono" style="font-size:11px;color:var(--text-dim)">{{ fmt_dt(a.created_at) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="empty">No activity logged yet for this client.</div>
+  {% endif %}
+</div>
+{% endblock %}
