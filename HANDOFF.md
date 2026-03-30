@@ -629,12 +629,12 @@ templates/dashboard/
   control.html                   — Control Board (job links broken)
   office.html                    — Office summary (keep, do not delete)
   command.html                   — Command Center chat ✅
-  customers.html                 — MISSING — needs to be created
-  customer_detail.html           — MISSING — needs to be created
-  estimates.html                 — MISSING — needs to be created
-  invoices.html                  — MISSING — needs to be created
-  payments.html                  — MISSING — needs to be created
-  job_detail.html                — MISSING — needs to be created
+  customers.html                 — done ✅
+  customer_detail.html           — Done ✅
+  estimates.html                 — Done ✅
+  invoices.html                  — Done ✅
+  payments.html                  — Done ✅ 
+  job_detail.html                — Done ✅
   proposal_view.html             — Proposal document ✅
   invoice_view.html              — Invoice document ✅
   new_job.html                   — New Job form ✅
