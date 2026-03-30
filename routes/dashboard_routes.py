@@ -715,6 +715,7 @@ def proposal_view(proposal_id):
     try:
         result = sb.table("proposals").select("*").eq("id", proposal_id).eq("client_id", client_id).execute()
         if not result.data:
+            print(f"[{_ts()}] WARN proposal_view: no proposal found — id={proposal_id}, client_id={client_id}")
             abort(404)
         proposal = result.data[0]
     except Exception as e:
@@ -798,9 +799,13 @@ def proposal_action(proposal_id):
 
             # Auto-create work order job → lands in Planner backlog
             try:
-                prop = sb.table("proposals").select(
-                    "customer_id, job_id, amount_estimate, raw_input"
-                ).eq("id", proposal_id).execute().data
+                prop = (
+                    sb.table("proposals")
+                    .select("id, job_id, customer_id, amount_estimate, proposal_text")
+                    .eq("id", proposal_id)
+                    .eq("client_id", client_id)
+                    .execute()
+                ).data
                 if prop:
                     p = prop[0]
                     wo = {
@@ -809,7 +814,7 @@ def proposal_action(proposal_id):
                         "status": "work_order",
                         "scheduled_date": None,
                         "job_type": "from_proposal",
-                        "job_description": p.get("raw_input", ""),
+                        "job_description": p.get("proposal_text", ""),
                         "estimated_amount": p.get("amount_estimate"),
                         "source_proposal_id": proposal_id,
                         "created_at": now,
