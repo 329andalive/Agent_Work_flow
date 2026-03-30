@@ -35,6 +35,8 @@ app.secret_key = os.environ.get("SECRET_KEY", "dev-secret-change-in-production")
 
 from datetime import timedelta as _timedelta
 app.permanent_session_lifetime = _timedelta(days=30)
+app.config['SESSION_COOKIE_SAMESITE'] = 'None'
+app.config['SESSION_COOKIE_SECURE'] = True  # Required for SameSite=None; Railway uses HTTPS
 
 # Register blueprints
 from routes.document_routes import document_bp

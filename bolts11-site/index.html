@@ -3,130 +3,191 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Bolts11 — Automated SMS Job Notifications for Trade Businesses</title>
-  <meta name="description" content="Bolts11 sends automated SMS notifications to your customers the moment a job is scheduled, dispatched, or completed. Built for plumbers, HVAC, septic, and excavation.">
+  <title>Bolts11 — The AI Back Office Suite</title>
+  <meta name="description" content="Bolts11 replaces the notebook, the sticky notes, and the $150/month scheduling app. SMS scheduling, invoicing, proposals, and dispatch — for trades, studios, clinics, and service businesses.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=DM+Serif+Display:ital@0;1&display=swap" rel="stylesheet">
   <style>
     *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
     :root{
-      --navy:#1a2e4a;--navy-dark:#132038;--amber:#f59e0b;--amber-hover:#d97706;
+      --navy:#1a2e4a;--navy-dark:#132038;--navy-deeper:#0d1828;
+      --amber:#f59e0b;--amber-hover:#d97706;--amber-light:#fef3c7;
       --white:#ffffff;--gray-50:#f9fafb;--gray-100:#f3f4f6;--gray-200:#e5e7eb;
       --gray-400:#9ca3af;--gray-500:#6b7280;--gray-700:#374151;--gray-900:#111827;
-      --radius:10px;--shadow:0 1px 3px rgba(0,0,0,0.08),0 1px 2px rgba(0,0,0,0.04);
-      --shadow-lg:0 4px 20px rgba(0,0,0,0.1);
+      --radius:10px;--radius-lg:16px;
+      --shadow:0 1px 3px rgba(0,0,0,0.08),0 1px 2px rgba(0,0,0,0.04);
+      --shadow-lg:0 4px 24px rgba(0,0,0,0.12);
+      --shadow-xl:0 8px 40px rgba(0,0,0,0.18);
     }
     html{scroll-behavior:smooth}
-    body{font-family:'Inter',system-ui,-apple-system,sans-serif;color:var(--gray-700);line-height:1.6;background:var(--white)}
+    body{font-family:'Inter',system-ui,sans-serif;color:var(--gray-700);line-height:1.6;background:var(--white)}
     a{color:inherit;text-decoration:none}
     img{max-width:100%;display:block}
 
-    /* Nav */
-    .nav{position:sticky;top:0;z-index:100;background:var(--white);border-bottom:1px solid var(--gray-200);padding:0 24px}
+    /* ── Nav ── */
+    .nav{position:sticky;top:0;z-index:100;background:rgba(255,255,255,0.97);backdrop-filter:blur(8px);border-bottom:1px solid var(--gray-200);padding:0 24px}
     .nav-inner{max-width:1120px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;height:64px}
     .nav-logo{font-size:20px;font-weight:800;color:var(--navy);display:flex;align-items:center;gap:6px}
-    .nav-logo span{color:var(--amber)}
+    .nav-logo .bolt{color:var(--amber)}
     .nav-links{display:flex;align-items:center;gap:28px}
     .nav-links a{font-size:14px;font-weight:500;color:var(--gray-500);transition:color 0.15s}
     .nav-links a:hover{color:var(--navy)}
-    .btn{display:inline-block;padding:10px 22px;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;transition:all 0.15s;border:none;text-align:center}
+    .nav-actions{display:flex;align-items:center;gap:10px}
+    .btn{display:inline-flex;align-items:center;justify-content:center;padding:10px 22px;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;transition:all 0.15s;border:none;font-family:inherit;gap:6px}
     .btn-amber{background:var(--amber);color:var(--navy)}
-    .btn-amber:hover{background:var(--amber-hover)}
-    .btn-outline{background:transparent;border:2px solid var(--navy);color:var(--navy)}
-    .btn-outline:hover{background:var(--navy);color:var(--white)}
-    .btn-outline-white{background:transparent;border:2px solid var(--white);color:var(--white)}
-    .btn-outline-white:hover{background:rgba(255,255,255,0.1)}
+    .btn-amber:hover{background:var(--amber-hover);transform:translateY(-1px);box-shadow:0 4px 12px rgba(245,158,11,0.4)}
+    .btn-outline{background:transparent;border:1.5px solid var(--gray-200);color:var(--gray-700)}
+    .btn-outline:hover{border-color:var(--navy);color:var(--navy)}
+    .btn-ghost{background:transparent;color:var(--gray-500);padding:10px 16px}
+    .btn-ghost:hover{color:var(--navy);background:var(--gray-50)}
+    .btn-white{background:var(--white);color:var(--navy)}
+    .btn-white:hover{background:var(--amber-light)}
+    .btn-outline-white{background:transparent;border:1.5px solid rgba(255,255,255,0.35);color:var(--white)}
+    .btn-outline-white:hover{background:rgba(255,255,255,0.1);border-color:rgba(255,255,255,0.6)}
+    .btn-lg{padding:14px 28px;font-size:16px;border-radius:10px}
     .hamburger{display:none;background:none;border:none;font-size:24px;cursor:pointer;color:var(--navy);padding:4px}
     .mobile-menu{display:none;position:fixed;top:64px;left:0;right:0;background:var(--white);border-bottom:1px solid var(--gray-200);padding:16px 24px;z-index:99;box-shadow:var(--shadow-lg)}
-    .mobile-menu.open{display:flex;flex-direction:column;gap:16px}
-    .mobile-menu a{font-size:15px;font-weight:500;color:var(--gray-700);padding:8px 0}
+    .mobile-menu.open{display:flex;flex-direction:column;gap:12px}
+    .mobile-menu a{font-size:15px;font-weight:500;color:var(--gray-700);padding:8px 0;border-bottom:1px solid var(--gray-100)}
 
-    /* Sections */
-    .section{padding:80px 24px}
+    /* ── Sections ── */
+    .section{padding:88px 24px}
     .section-gray{background:var(--gray-50)}
+    .section-navy{background:var(--navy);color:var(--white)}
     .container{max-width:1120px;margin:0 auto}
-    .section-label{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:var(--amber);margin-bottom:8px}
-    .section-title{font-size:36px;font-weight:800;color:var(--navy);line-height:1.15;margin-bottom:12px}
-    .section-subtitle{font-size:17px;color:var(--gray-500);max-width:640px;line-height:1.7}
-    .section-header{margin-bottom:48px}
+    .section-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.12em;color:var(--amber);margin-bottom:10px}
+    .section-title{font-size:38px;font-weight:800;color:var(--navy);line-height:1.12;margin-bottom:14px}
+    .section-subtitle{font-size:17px;color:var(--gray-500);max-width:600px;line-height:1.75}
+    .section-header{margin-bottom:52px}
+    .text-center{text-align:center}
+    .text-center .section-subtitle{margin:0 auto}
 
-    /* Hero */
-    .hero{background:linear-gradient(135deg,var(--navy-dark) 0%,var(--navy) 100%);color:var(--white);padding:100px 24px 80px;text-align:center}
-    .hero h1{font-size:56px;font-weight:800;line-height:1.05;margin-bottom:16px;letter-spacing:-0.02em}
-    .hero h1 span{color:var(--amber)}
-    .hero .hero-sub{font-size:22px;opacity:0.85;margin-bottom:12px;font-weight:500}
-    .hero .hero-body{font-size:17px;opacity:0.7;max-width:620px;margin:0 auto 32px;line-height:1.7}
-    .hero-btns{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-bottom:24px}
-    .hero-trust{font-size:13px;opacity:0.5;max-width:480px;margin:0 auto}
+    /* ── Hero ── */
+    .hero{position:relative;background:var(--navy-deeper);color:var(--white);padding:100px 24px 90px;text-align:center;overflow:hidden}
+    .hero-bg-grid{position:absolute;inset:0;background-image:linear-gradient(rgba(245,158,11,0.06) 1px,transparent 1px),linear-gradient(90deg,rgba(245,158,11,0.06) 1px,transparent 1px);background-size:48px 48px;pointer-events:none}
+    .hero-bg-radial{position:absolute;inset:0;background:radial-gradient(ellipse 80% 60% at 50% 0%,rgba(26,46,74,0.8) 0%,transparent 70%);pointer-events:none}
+    .hero-eyebrow{display:inline-flex;align-items:center;gap:8px;background:rgba(245,158,11,0.15);border:1px solid rgba(245,158,11,0.3);border-radius:100px;padding:6px 16px;font-size:12px;font-weight:600;color:var(--amber);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:28px}
+    .hero-eyebrow-dot{width:6px;height:6px;border-radius:50%;background:var(--amber);animation:pulse-dot 2s infinite}
+    @keyframes pulse-dot{0%,100%{opacity:1;transform:scale(1)}50%{opacity:0.5;transform:scale(0.8)}}
+    .hero h1{font-family:'DM Serif Display',Georgia,serif;font-size:62px;font-weight:400;line-height:1.05;margin-bottom:20px;letter-spacing:-0.01em}
+    .hero h1 em{color:var(--amber);font-style:italic}
+    .hero-sub{font-size:20px;opacity:0.75;margin-bottom:12px;font-weight:400;max-width:580px;margin-left:auto;margin-right:auto;line-height:1.6}
+    .hero-btns{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-bottom:40px;margin-top:32px}
+    .hero-audiences{display:flex;justify-content:center;gap:8px;flex-wrap:wrap;margin-bottom:32px}
+    .audience-pill{background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.12);border-radius:100px;padding:6px 14px;font-size:12px;color:rgba(255,255,255,0.65);font-weight:500}
+    .hero-trust{font-size:12px;opacity:0.4;margin:0 auto}
 
-    /* Steps */
+    /* ── Comparison bar ── */
+    .compare-bar{background:var(--amber);padding:14px 24px;text-align:center}
+    .compare-bar p{font-size:14px;font-weight:600;color:var(--navy);max-width:900px;margin:0 auto}
+    .compare-bar strong{font-weight:800}
+
+    /* ── How it works ── */
     .steps-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:32px}
-    .step-card{background:var(--white);border:1px solid var(--gray-200);border-radius:var(--radius);padding:32px 28px;box-shadow:var(--shadow);text-align:center}
-    .step-num{display:inline-flex;align-items:center;justify-content:center;width:40px;height:40px;border-radius:50%;background:var(--amber);color:var(--navy);font-size:18px;font-weight:800;margin-bottom:16px}
-    .step-card h3{font-size:18px;font-weight:700;color:var(--navy);margin-bottom:8px}
-    .step-card p{font-size:14px;color:var(--gray-500);line-height:1.6}
+    .step-card{background:var(--white);border:1px solid var(--gray-200);border-radius:var(--radius-lg);padding:36px 28px;box-shadow:var(--shadow);text-align:left;position:relative}
+    .step-num{display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border-radius:50%;background:var(--amber);color:var(--navy);font-size:15px;font-weight:800;margin-bottom:20px}
+    .step-card h3{font-size:18px;font-weight:700;color:var(--navy);margin-bottom:10px}
+    .step-card p{font-size:14px;color:var(--gray-500);line-height:1.65}
+    .step-sms{background:var(--navy-deeper);border-radius:8px;padding:14px 16px;margin-top:18px;font-size:12px;font-family:'SF Mono','Fira Code',monospace;color:rgba(255,255,255,0.75);line-height:1.7}
+    .step-sms .sms-in{color:#86efac}
+    .step-sms .sms-out{color:#fde68a}
 
-    /* Features */
-    .features-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:24px}
-    .feature-card{background:var(--white);border:1px solid var(--gray-200);border-radius:var(--radius);padding:28px 24px;box-shadow:var(--shadow);transition:box-shadow 0.15s}
-    .feature-card:hover{box-shadow:var(--shadow-lg)}
-    .feature-icon{font-size:28px;margin-bottom:12px}
-    .feature-card h3{font-size:16px;font-weight:700;color:var(--navy);margin-bottom:6px}
-    .feature-card p{font-size:14px;color:var(--gray-500);line-height:1.6}
+    /* ── Features ── */
+    .features-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:22px}
+    .feature-card{background:var(--white);border:1px solid var(--gray-200);border-radius:var(--radius-lg);padding:28px 24px;box-shadow:var(--shadow);transition:all 0.2s}
+    .feature-card:hover{box-shadow:var(--shadow-lg);transform:translateY(-2px);border-color:var(--amber)}
+    .feature-icon{font-size:26px;margin-bottom:14px;display:block}
+    .feature-card h3{font-size:16px;font-weight:700;color:var(--navy);margin-bottom:7px}
+    .feature-card p{font-size:13.5px;color:var(--gray-500);line-height:1.65}
 
-    /* Trades */
-    .trades-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-top:32px}
-    .trade-card{background:var(--white);border:1px solid var(--gray-200);border-radius:var(--radius);padding:20px 16px;text-align:center;box-shadow:var(--shadow)}
-    .trade-card .trade-icon{font-size:32px;margin-bottom:8px}
-    .trade-card .trade-name{font-size:14px;font-weight:600;color:var(--navy)}
+    /* ── Audiences toggle ── */
+    .audience-toggle-wrap{display:flex;justify-content:center;margin-bottom:48px}
+    .audience-toggle{display:inline-flex;background:var(--gray-100);border-radius:100px;padding:4px;gap:4px}
+    .audience-toggle button{padding:10px 24px;border-radius:100px;border:none;font-size:14px;font-weight:600;cursor:pointer;transition:all 0.2s;background:transparent;color:var(--gray-500);font-family:inherit}
+    .audience-toggle button.active{background:var(--navy);color:var(--white);box-shadow:var(--shadow)}
+    .audience-panel{display:none}
+    .audience-panel.active{display:grid}
+    .audience-grid{grid-template-columns:repeat(4,1fr);gap:16px}
+    .audience-card{background:var(--white);border:1px solid var(--gray-200);border-radius:var(--radius-lg);padding:22px 16px;text-align:center;box-shadow:var(--shadow);transition:all 0.15s}
+    .audience-card:hover{border-color:var(--amber);box-shadow:var(--shadow-lg)}
+    .audience-card .aud-icon{font-size:30px;margin-bottom:10px}
+    .audience-card .aud-name{font-size:13px;font-weight:600;color:var(--navy);margin-bottom:4px}
+    .audience-card .aud-pain{font-size:12px;color:var(--gray-400)}
 
-    /* Testimonials */
+    /* ── Pricing comparison ── */
+    .vs-grid{display:grid;grid-template-columns:1fr 1fr;gap:24px;max-width:720px;margin:0 auto}
+    .vs-card{border-radius:var(--radius-lg);padding:32px 28px}
+    .vs-card.them{background:var(--gray-50);border:1px solid var(--gray-200)}
+    .vs-card.us{background:var(--navy);color:var(--white);border:2px solid var(--amber)}
+    .vs-card h3{font-size:18px;font-weight:700;margin-bottom:6px}
+    .vs-card.them h3{color:var(--gray-500)}
+    .vs-card.us h3{color:var(--amber)}
+    .vs-price{font-size:42px;font-weight:800;line-height:1;margin-bottom:4px}
+    .vs-card.them .vs-price{color:var(--gray-400)}
+    .vs-card.us .vs-price{color:var(--white)}
+    .vs-period{font-size:14px;font-weight:400;opacity:0.6}
+    .vs-list{list-style:none;margin-top:20px;display:flex;flex-direction:column;gap:10px}
+    .vs-list li{font-size:14px;display:flex;align-items:flex-start;gap:8px}
+    .vs-card.them .vs-list li{color:var(--gray-500)}
+    .vs-card.us .vs-list li{color:rgba(255,255,255,0.85)}
+    .vs-check{color:#22c55e;font-size:16px;flex-shrink:0;margin-top:1px}
+    .vs-x{color:#ef4444;font-size:16px;flex-shrink:0;margin-top:1px}
+    .vs-badge{display:inline-block;background:var(--amber);color:var(--navy);font-size:11px;font-weight:800;padding:3px 10px;border-radius:100px;margin-bottom:12px;text-transform:uppercase;letter-spacing:0.05em}
+
+    /* ── Testimonials ── */
     .testimonials-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:24px}
-    .testimonial-card{background:var(--white);border:1px solid var(--gray-200);border-radius:var(--radius);padding:28px 24px;box-shadow:var(--shadow)}
-    .testimonial-card blockquote{font-size:15px;color:var(--gray-700);line-height:1.7;font-style:italic;margin-bottom:16px}
-    .testimonial-card cite{font-size:13px;color:var(--gray-400);font-style:normal;display:block}
+    .testimonial-card{background:var(--white);border:1px solid var(--gray-200);border-radius:var(--radius-lg);padding:28px 24px;box-shadow:var(--shadow)}
+    .testimonial-stars{color:var(--amber);font-size:14px;margin-bottom:12px}
+    .testimonial-card blockquote{font-size:15px;color:var(--gray-700);line-height:1.72;font-style:italic;margin-bottom:16px}
+    .testimonial-card cite{font-size:12px;color:var(--gray-400);font-style:normal;display:block}
 
-    /* CTA / Contact */
-    .cta-section{background:linear-gradient(135deg,var(--navy-dark) 0%,var(--navy) 100%);color:var(--white);text-align:center}
+    /* ── CTA ── */
+    .cta-section{background:linear-gradient(135deg,var(--navy-deeper) 0%,var(--navy) 60%,#1e3a5c 100%);color:var(--white);text-align:center;position:relative;overflow:hidden}
+    .cta-section::before{content:'';position:absolute;inset:0;background-image:radial-gradient(circle at 20% 80%,rgba(245,158,11,0.08) 0%,transparent 50%),radial-gradient(circle at 80% 20%,rgba(245,158,11,0.06) 0%,transparent 50%);pointer-events:none}
     .cta-section .section-title{color:var(--white)}
-    .cta-section .section-subtitle{color:rgba(255,255,255,0.7);margin:0 auto 32px}
-    .contact-form{max-width:480px;margin:0 auto;display:flex;flex-direction:column;gap:14px}
-    .contact-form input,.contact-form select{width:100%;padding:12px 16px;border:1px solid rgba(255,255,255,0.2);border-radius:8px;background:rgba(255,255,255,0.08);color:var(--white);font-family:inherit;font-size:15px}
-    .contact-form input::placeholder{color:rgba(255,255,255,0.4)}
-    .contact-form input:focus{outline:none;border-color:var(--amber);background:rgba(255,255,255,0.12)}
-    .cta-closing{font-size:14px;opacity:0.5;margin-top:24px;max-width:500px;margin-left:auto;margin-right:auto}
+    .cta-section .section-subtitle{color:rgba(255,255,255,0.7);margin:0 auto 36px}
+    .contact-form{max-width:480px;margin:0 auto;display:flex;flex-direction:column;gap:12px;position:relative}
+    .contact-form input,.contact-form select,.contact-form textarea{width:100%;padding:13px 16px;border:1px solid rgba(255,255,255,0.15);border-radius:9px;background:rgba(255,255,255,0.07);color:var(--white);font-family:inherit;font-size:15px;transition:all 0.15s}
+    .contact-form input::placeholder,.contact-form textarea::placeholder{color:rgba(255,255,255,0.35)}
+    .contact-form input:focus,.contact-form textarea:focus{outline:none;border-color:var(--amber);background:rgba(255,255,255,0.11)}
+    .contact-form select{color:rgba(255,255,255,0.7)}
+    .contact-form select option{background:var(--navy);color:var(--white)}
+    .cta-closing{font-size:13px;opacity:0.45;margin-top:20px;max-width:460px;margin-left:auto;margin-right:auto}
+    .form-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 
-    /* Footer */
-    .footer{background:var(--navy-dark);color:rgba(255,255,255,0.6);padding:48px 24px 32px}
+    /* ── Footer ── */
+    .footer{background:var(--navy-dark);color:rgba(255,255,255,0.55);padding:56px 24px 32px}
     .footer-inner{max-width:1120px;margin:0 auto}
-    .footer-top{display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:40px;margin-bottom:32px}
-    .footer-brand .footer-logo{font-size:18px;font-weight:800;color:var(--white);margin-bottom:8px}
+    .footer-top{display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:48px;margin-bottom:36px}
+    .footer-brand .footer-logo{font-size:18px;font-weight:800;color:var(--white);margin-bottom:10px;display:flex;align-items:center;gap:5px}
     .footer-brand .footer-logo span{color:var(--amber)}
-    .footer-brand p{font-size:13px;line-height:1.6}
-    .footer-col h4{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:rgba(255,255,255,0.4);margin-bottom:12px}
-    .footer-col a{display:block;font-size:13px;margin-bottom:8px;transition:color 0.15s}
+    .footer-brand p{font-size:13px;line-height:1.65;margin-bottom:0}
+    .footer-col h4{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:rgba(255,255,255,0.35);margin-bottom:14px}
+    .footer-col a{display:block;font-size:13px;margin-bottom:9px;transition:color 0.15s}
     .footer-col a:hover{color:var(--white)}
-    .footer-bottom{border-top:1px solid rgba(255,255,255,0.08);padding-top:20px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px}
-    .footer-bottom p{font-size:12px}
-    .footer-legal{font-size:11px;line-height:1.6;margin-bottom:20px;opacity:0.5}
+    .footer-bottom{border-top:1px solid rgba(255,255,255,0.07);padding-top:22px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px}
+    .footer-bottom p,.footer-bottom a{font-size:12px}
+    .footer-legal{font-size:11px;line-height:1.65;margin-bottom:22px;opacity:0.4}
 
-    /* Responsive */
-    @media(max-width:900px){
+    /* ── Responsive ── */
+    @media(max-width:960px){
       .steps-grid,.features-grid,.testimonials-grid{grid-template-columns:1fr}
-      .trades-grid{grid-template-columns:repeat(2,1fr)}
-      .footer-top{grid-template-columns:1fr 1fr}
-      .hero h1{font-size:38px}
-      .section-title{font-size:28px}
+      .audience-grid{grid-template-columns:repeat(2,1fr)}
+      .vs-grid{grid-template-columns:1fr}
+      .footer-top{grid-template-columns:1fr 1fr;gap:32px}
+      .hero h1{font-size:46px}
+      .section-title{font-size:30px}
+      .form-row{grid-template-columns:1fr}
     }
     @media(max-width:640px){
-      .nav-links{display:none}
+      .nav-links,.nav-actions .btn-ghost{display:none}
       .hamburger{display:block}
-      .hero{padding:60px 24px 48px}
-      .hero h1{font-size:32px}
-      .hero .hero-sub{font-size:18px}
-      .section{padding:48px 20px}
-      .trades-grid{grid-template-columns:repeat(2,1fr)}
+      .hero{padding:60px 24px 52px}
+      .hero h1{font-size:36px}
+      .hero-sub{font-size:17px}
+      .section{padding:56px 20px}
+      .audience-grid{grid-template-columns:repeat(2,1fr)}
       .footer-top{grid-template-columns:1fr}
       .footer-bottom{flex-direction:column;text-align:center}
     }
@@ -137,142 +198,253 @@
 <!-- Nav -->
 <nav class="nav">
   <div class="nav-inner">
-    <a href="#" class="nav-logo"><span>&#9889;</span> Bolts11</a>
+    <a href="index.html" class="nav-logo"><span class="bolt">&#9889;</span> Bolts11</a>
     <div class="nav-links">
       <a href="#how-it-works">How It Works</a>
       <a href="#features">Features</a>
       <a href="#who">Who It's For</a>
-      <a href="#contact">Contact</a>
-      <a href="#contact" class="btn btn-amber">Request a Demo &rarr;</a>
+      <a href="#pricing">Pricing</a>
+      <a href="#contact">Get Access</a>
+    </div>
+    <div class="nav-actions">
+      <a href="signin.html" class="btn btn-ghost">Sign In</a>
+      <a href="#contact" class="btn btn-amber">Request Access</a>
     </div>
     <button class="hamburger" onclick="document.getElementById('mobile-menu').classList.toggle('open')" aria-label="Menu">&#9776;</button>
   </div>
 </nav>
 <div class="mobile-menu" id="mobile-menu">
-  <a href="#how-it-works" onclick="document.getElementById('mobile-menu').classList.remove('open')">How It Works</a>
-  <a href="#features" onclick="document.getElementById('mobile-menu').classList.remove('open')">Features</a>
-  <a href="#who" onclick="document.getElementById('mobile-menu').classList.remove('open')">Who It's For</a>
-  <a href="#contact" onclick="document.getElementById('mobile-menu').classList.remove('open')">Contact</a>
-  <a href="#contact" class="btn btn-amber" onclick="document.getElementById('mobile-menu').classList.remove('open')">Request a Demo &rarr;</a>
+  <a href="#how-it-works" onclick="this.closest('.mobile-menu').classList.remove('open')">How It Works</a>
+  <a href="#features" onclick="this.closest('.mobile-menu').classList.remove('open')">Features</a>
+  <a href="#who" onclick="this.closest('.mobile-menu').classList.remove('open')">Who It's For</a>
+  <a href="#pricing" onclick="this.closest('.mobile-menu').classList.remove('open')">Pricing</a>
+  <a href="#contact" onclick="this.closest('.mobile-menu').classList.remove('open')">Get Access</a>
+  <a href="signin.html" style="color:var(--amber);font-weight:700">Sign In &rarr;</a>
 </div>
 
 <!-- Hero -->
 <section class="hero">
-  <div class="container">
-    <h1>Built for <span>Trades</span></h1>
-    <div class="hero-sub">Your customers know you're coming. Before you even knock.</div>
-    <p class="hero-body">Bolts11 sends automated SMS notifications to your customers the moment a job is scheduled, dispatched, or completed &mdash; no app, no setup, no hassle.</p>
-    <div class="hero-btns">
-      <a href="#contact" class="btn btn-amber">Request a Demo</a>
-      <a href="#how-it-works" class="btn btn-outline-white">See How It Works</a>
+  <div class="hero-bg-grid"></div>
+  <div class="hero-bg-radial"></div>
+  <div class="container" style="position:relative;z-index:1">
+    <div class="hero-eyebrow">
+      <span class="hero-eyebrow-dot"></span>
+      Now available for all service businesses
     </div>
-    <p class="hero-trust">Trusted by plumbers, HVAC techs, septic servicers, and excavators across rural America.</p>
+    <h1>Your back office,<br><em>finally automated.</em></h1>
+    <p class="hero-sub">SMS scheduling. Instant invoices. Automatic follow-up. Dispatch and proposals — all from a text message. No app. No training. No monthly software bill that makes you wince.</p>
+    <div class="hero-audiences">
+      <span class="audience-pill">&#129695; Plumbers</span>
+      <span class="audience-pill">&#127939; Yoga Studios</span>
+      <span class="audience-pill">&#10052; HVAC</span>
+      <span class="audience-pill">&#127947; Fitness Coaches</span>
+      <span class="audience-pill">&#128688; Sewer &amp; Drain</span>
+      <span class="audience-pill">&#128657; Auto Shops</span>
+      <span class="audience-pill">&#9889; Electrical</span>
+      <span class="audience-pill">&#129657; Massage Therapists</span>
+    </div>
+    <div class="hero-btns">
+      <a href="#contact" class="btn btn-amber btn-lg">Request Early Access</a>
+      <a href="#how-it-works" class="btn btn-outline-white btn-lg">See How It Works</a>
+    </div>
+    <p class="hero-trust">No credit card required &middot; Setup in under 10 minutes &middot; Cancel any time</p>
   </div>
 </section>
 
+<!-- Comparison bar -->
+<div class="compare-bar">
+  <p>Yoga studios are paying <strong>$129/month</strong> just for class scheduling. Auto shops pay <strong>$89/month</strong> for reminder texts. Bolts11 does all of it — <strong>for less than one of those.</strong></p>
+</div>
+
 <!-- How It Works -->
-<section class="section section-gray" id="how-it-works">
+<section class="section" id="how-it-works">
   <div class="container">
     <div class="section-header">
       <div class="section-label">How It Works</div>
-      <h2 class="section-title">Simple by Design</h2>
-      <p class="section-subtitle">Three steps. Zero learning curve. Bolts11 plugs into how you already run your jobs. Your crew texts job updates the same way they always have &mdash; Bolts11 handles the rest.</p>
+      <h2 class="section-title">Text in. Done.</h2>
+      <p class="section-subtitle">No new app to learn. No dashboard to live in. You run your business — Bolts11 handles the back office by SMS.</p>
     </div>
     <div class="steps-grid">
       <div class="step-card">
         <div class="step-num">1</div>
-        <h3>You Book the Job</h3>
-        <p>Schedule a job via your dispatch system or just text in the job details. Bolts11 captures everything automatically.</p>
+        <h3>Text a job or booking</h3>
+        <p>Your crew texts in a job description, or a client books through your scheduling link. Bolts11 understands natural language — no special format required.</p>
+        <div class="step-sms">
+          <span class="sms-in">You: </span>est (207) 555-0192 pump out 1500 gal septic Beverly Rd<br>
+          <span class="sms-out">Bolts11: </span>Proposal sent to Beverly — $285. Awaiting approval.
+        </div>
       </div>
       <div class="step-card">
         <div class="step-num">2</div>
-        <h3>Bolts11 Notifies Your Customer</h3>
-        <p>Your customer gets a professional SMS &mdash; confirmed appointment time, tech name, and what to expect. Automatically.</p>
+        <h3>Bolts11 handles the rest</h3>
+        <p>Customer gets a confirmation. Invoice gets drafted. Follow-up gets scheduled. Square payment link attached. All automatically — while you're still on the job.</p>
+        <div class="step-sms">
+          <span class="sms-in">Client texts DONE</span><br>
+          <span class="sms-out">Bolts11: </span>Invoice sent: $285 + tax. Pay: bolt.li/x8f2<br>
+          <span class="sms-out">Bolts11: </span>Follow-up scheduled in 48h if unpaid.
+        </div>
       </div>
       <div class="step-card">
         <div class="step-num">3</div>
-        <h3>Job Done, Customer Happy</h3>
-        <p>On completion, a follow-up SMS goes out &mdash; receipt, review request, or whatever fits your workflow.</p>
+        <h3>You get paid, reviewed, and remembered</h3>
+        <p>Payment confirmation hits your Square account. Google review request fires at exactly the right moment. Your customers remember you — and so does Bolts11.</p>
+        <div class="step-sms">
+          <span class="sms-out">Bolts11: </span>Payment received $298.68 ✓<br>
+          <span class="sms-out">Bolts11: </span>Review request sent to Beverly. She rated you ⭐⭐⭐⭐⭐
+        </div>
       </div>
     </div>
   </div>
 </section>
 
 <!-- Features -->
-<section class="section" id="features">
+<section class="section section-gray" id="features">
   <div class="container">
     <div class="section-header">
-      <div class="section-label">Platform Features</div>
-      <h2 class="section-title">Everything your back office needs.</h2>
+      <div class="section-label">Features</div>
+      <h2 class="section-title">One suite. Everything covered.</h2>
+      <p class="section-subtitle">Built piece by piece to solve the real problems small businesses face — not the ones that look good on a feature list.</p>
     </div>
     <div class="features-grid">
       <div class="feature-card">
-        <div class="feature-icon">&#128241;</div>
-        <h3>SMS-First, Always</h3>
-        <p>Customers get plain text messages that work on every phone &mdash; no app download, no email, no portal. Rural-proof.</p>
+        <span class="feature-icon">&#128241;</span>
+        <h3>SMS Scheduling</h3>
+        <p>Clients book via SMS or a simple link. Confirmations, reminders, and rescheduling all happen automatically. No app download, no login.</p>
       </div>
       <div class="feature-card">
-        <div class="feature-icon">&#127970;</div>
-        <h3>Multi-Tenant Platform</h3>
-        <p>Each trade business gets their own isolated environment, their own phone number, and their own customer data.</p>
+        <span class="feature-icon">&#128203;</span>
+        <h3>Instant Proposals &amp; Invoices</h3>
+        <p>Text a job description and get a professional estimate back in seconds. Invoice drafts on job completion. Square payment links built in.</p>
       </div>
       <div class="feature-card">
-        <div class="feature-icon">&#129302;</div>
-        <h3>AI-Powered Notifications</h3>
-        <p>Messages sound like you wrote them &mdash; not a robot. Bolts11 learns your business voice and your pricing language.</p>
+        <span class="feature-icon">&#129302;</span>
+        <h3>AI Dispatch Assistant</h3>
+        <p>Bolts11 learns your routes, your crew's skills, and your busy patterns. Gets smarter the more you use it.</p>
       </div>
       <div class="feature-card">
-        <div class="feature-icon">&#128203;</div>
-        <h3>Proposals &amp; Invoices</h3>
-        <p>Generate professional estimates from a quick job description. Send invoices when the job wraps up. All via SMS.</p>
-      </div>
-      <div class="feature-card">
-        <div class="feature-icon">&#11088;</div>
+        <span class="feature-icon">&#11088;</span>
         <h3>Automatic Review Requests</h3>
-        <p>After every completed job, Bolts11 follows up asking for a Google review &mdash; at the exact right moment.</p>
+        <p>Google review requests fire at the perfect moment — right after job completion, while your customer is still happy. Your rating climbs on autopilot.</p>
       </div>
       <div class="feature-card">
-        <div class="feature-icon">&#128274;</div>
+        <span class="feature-icon">&#128176;</span>
+        <h3>Payment Follow-Up</h3>
+        <p>Unpaid invoice? Bolts11 follows up automatically at the right intervals. No awkward calls. Most invoices get paid before you even notice they're outstanding.</p>
+      </div>
+      <div class="feature-card">
+        <span class="feature-icon">&#127775;</span>
+        <h3>Your Business Voice</h3>
+        <p>Every message sounds like you wrote it — not a robot. Bolts11 learns your pricing language, your service area, and your tone from day one.</p>
+      </div>
+      <div class="feature-card">
+        <span class="feature-icon">&#128202;</span>
+        <h3>Live Dashboard</h3>
+        <p>Every job, message, invoice, and proposal in one place. Know what's done and what's pending at a glance. No spreadsheet required.</p>
+      </div>
+      <div class="feature-card">
+        <span class="feature-icon">&#128274;</span>
         <h3>Compliant by Default</h3>
-        <p>STOP opt-out honored instantly. All mobile data handled per CTIA guidelines. Your customers' trust, protected.</p>
+        <p>STOP opt-out honored instantly. CTIA-compliant messaging. 10DLC registered. Your customers' trust, protected — legally and technically.</p>
       </div>
       <div class="feature-card">
-        <div class="feature-icon">&#128197;</div>
-        <h3>Scheduling &amp; Dispatch</h3>
-        <p>Text in a job and Bolts11 schedules it, confirms with the customer, and keeps your crew on track.</p>
-      </div>
-      <div class="feature-card">
-        <div class="feature-icon">&#128202;</div>
-        <h3>Job History Dashboard</h3>
-        <p>See every job, every message, every invoice &mdash; organized by day. Know what's done and what's pending at a glance.</p>
-      </div>
-      <div class="feature-card">
-        <div class="feature-icon">&#128295;</div>
-        <h3>Zero Hardware Required</h3>
-        <p>Your crew already has a phone. That's all they need. No tablets, no scanners, no new equipment.</p>
+        <span class="feature-icon">&#128295;</span>
+        <h3>Zero New Hardware</h3>
+        <p>Your crew already has a phone. That's all they need. No tablets, no scanners, no new equipment. Works on every phone, everywhere — including dead zones.</p>
       </div>
     </div>
   </div>
 </section>
 
-<!-- Who It's For -->
-<section class="section section-gray" id="who">
+<!-- Who It's For — tabbed audience view -->
+<section class="section" id="who">
   <div class="container">
-    <div class="section-header">
+    <div class="section-header text-center">
       <div class="section-label">Who It's For</div>
-      <h2 class="section-title">Built for Trades</h2>
-      <p class="section-subtitle">If you do service work, Bolts11 is for you. Designed from the ground up for small trade service businesses. If your crew is in the field and your customers are waiting for updates &mdash; this is what you need.</p>
+      <h2 class="section-title">Built for the field. Ready for the studio.</h2>
+      <p class="section-subtitle">If your business runs on appointments, jobs, and customer communication — Bolts11 was built for you.</p>
     </div>
-    <div class="trades-grid">
-      <div class="trade-card"><div class="trade-icon">&#129695;</div><div class="trade-name">Plumbing</div></div>
-      <div class="trade-card"><div class="trade-icon">&#10052;&#65039;</div><div class="trade-name">HVAC</div></div>
-      <div class="trade-card"><div class="trade-icon">&#128688;</div><div class="trade-name">Sewer &amp; Drain</div></div>
-      <div class="trade-card"><div class="trade-icon">&#128167;</div><div class="trade-name">Septic Service</div></div>
-      <div class="trade-card"><div class="trade-icon">&#127959;&#65039;</div><div class="trade-name">Excavation</div></div>
-      <div class="trade-card"><div class="trade-icon">&#9889;</div><div class="trade-name">Electrical</div></div>
-      <div class="trade-card"><div class="trade-icon">&#128293;</div><div class="trade-name">Heating &amp; Oil</div></div>
-      <div class="trade-card"><div class="trade-icon">&#127968;</div><div class="trade-name">Home Services</div></div>
+
+    <div class="audience-toggle-wrap">
+      <div class="audience-toggle">
+        <button class="active" onclick="showAudience('trades', this)">&#129695; Trades &amp; Service</button>
+        <button onclick="showAudience('wellness', this)">&#127939; Wellness &amp; Fitness</button>
+        <button onclick="showAudience('professional', this)">&#128657; Shops &amp; Clinics</button>
+      </div>
     </div>
+
+    <div id="panel-trades" class="audience-panel active audience-grid">
+      <div class="audience-card"><div class="aud-icon">&#129695;</div><div class="aud-name">Plumbing</div><div class="aud-pain">Dispatch &amp; invoicing</div></div>
+      <div class="audience-card"><div class="aud-icon">&#10052;&#65039;</div><div class="aud-name">HVAC</div><div class="aud-pain">Job scheduling &amp; follow-up</div></div>
+      <div class="audience-card"><div class="aud-icon">&#128688;</div><div class="aud-name">Sewer &amp; Drain</div><div class="aud-pain">Route &amp; proposal SMS</div></div>
+      <div class="audience-card"><div class="aud-icon">&#128167;</div><div class="aud-name">Septic Service</div><div class="aud-pain">Pump-out scheduling</div></div>
+      <div class="audience-card"><div class="aud-icon">&#127959;&#65039;</div><div class="aud-name">Excavation</div><div class="aud-pain">Job estimates &amp; crew dispatch</div></div>
+      <div class="audience-card"><div class="aud-icon">&#9889;</div><div class="aud-name">Electrical</div><div class="aud-pain">Quote-to-invoice flow</div></div>
+      <div class="audience-card"><div class="aud-icon">&#128293;</div><div class="aud-name">Heating &amp; Oil</div><div class="aud-pain">Seasonal scheduling</div></div>
+      <div class="audience-card"><div class="aud-icon">&#127968;</div><div class="aud-name">Home Services</div><div class="aud-pain">Customer communication</div></div>
+    </div>
+
+    <div id="panel-wellness" class="audience-panel audience-grid" style="display:none">
+      <div class="audience-card"><div class="aud-icon">&#127939;</div><div class="aud-name">Yoga Studios</div><div class="aud-pain">Class booking by SMS</div></div>
+      <div class="audience-card"><div class="aud-icon">&#127947;</div><div class="aud-name">Personal Trainers</div><div class="aud-pain">Session scheduling &amp; reminders</div></div>
+      <div class="audience-card"><div class="aud-icon">&#129657;</div><div class="aud-name">Massage Therapy</div><div class="aud-pain">Appointment confirmations</div></div>
+      <div class="audience-card"><div class="aud-icon">&#129338;</div><div class="aud-name">Acupuncture</div><div class="aud-pain">New client intake + SMS</div></div>
+      <div class="audience-card"><div class="aud-icon">&#127951;</div><div class="aud-name">Pilates Studios</div><div class="aud-pain">Class capacity &amp; waitlist</div></div>
+      <div class="audience-card"><div class="aud-icon">&#129340;</div><div class="aud-name">Nutrition Coaches</div><div class="aud-pain">Check-in &amp; follow-up texts</div></div>
+      <div class="audience-card"><div class="aud-icon">&#128170;</div><div class="aud-name">CrossFit / Gyms</div><div class="aud-pain">Member comms &amp; billing</div></div>
+      <div class="audience-card"><div class="aud-icon">&#129486;</div><div class="aud-name">Dance Studios</div><div class="aud-pain">Recital &amp; class reminders</div></div>
+    </div>
+
+    <div id="panel-professional" class="audience-panel audience-grid" style="display:none">
+      <div class="audience-card"><div class="aud-icon">&#128657;</div><div class="aud-name">Auto Repair</div><div class="aud-pain">Appointment + pickup SMS</div></div>
+      <div class="audience-card"><div class="aud-icon">&#128084;</div><div class="aud-name">Barber Shops</div><div class="aud-pain">Booking &amp; no-show reduction</div></div>
+      <div class="audience-card"><div class="aud-icon">&#128138;</div><div class="aud-name">Hair Salons</div><div class="aud-pain">Appointment reminders</div></div>
+      <div class="audience-card"><div class="aud-icon">&#128050;</div><div class="aud-name">Vet Clinics</div><div class="aud-pain">Appointment &amp; vaccination reminders</div></div>
+      <div class="audience-card"><div class="aud-icon">&#128048;</div><div class="aud-name">Pet Grooming</div><div class="aud-pain">Booking &amp; pickup notification</div></div>
+      <div class="audience-card"><div class="aud-icon">&#128247;</div><div class="aud-name">Photography</div><div class="aud-pain">Session booking &amp; delivery SMS</div></div>
+      <div class="audience-card"><div class="aud-icon">&#129717;</div><div class="aud-name">Tutoring</div><div class="aud-pain">Session reminders &amp; invoicing</div></div>
+      <div class="audience-card"><div class="aud-icon">&#128188;</div><div class="aud-name">Consulting</div><div class="aud-pain">Meeting scheduling &amp; follow-up</div></div>
+    </div>
+
+  </div>
+</section>
+
+<!-- Pricing comparison -->
+<section class="section section-gray" id="pricing">
+  <div class="container">
+    <div class="section-header text-center">
+      <div class="section-label">Pricing</div>
+      <h2 class="section-title">Stop paying three apps to do one job.</h2>
+      <p class="section-subtitle">Mindbody, Acuity, ServiceTitan, Housecall Pro — they each charge for what Bolts11 does together. Early access pricing is locked for founding members.</p>
+    </div>
+    <div class="vs-grid">
+      <div class="vs-card them">
+        <h3>The old way</h3>
+        <div class="vs-price">$200+<span class="vs-period">/mo</span></div>
+        <p style="font-size:13px;color:var(--gray-400);margin-top:8px">Mindbody ($129) + invoice tool ($29) + texting app ($49)</p>
+        <ul class="vs-list">
+          <li><span class="vs-x">✗</span>Separate logins for each tool</li>
+          <li><span class="vs-x">✗</span>Manual data entry between apps</li>
+          <li><span class="vs-x">✗</span>No AI — you do all the thinking</li>
+          <li><span class="vs-x">✗</span>Per-SMS charges add up fast</li>
+          <li><span class="vs-x">✗</span>Different support for every platform</li>
+        </ul>
+      </div>
+      <div class="vs-card us">
+        <div class="vs-badge">Founding Member Rate</div>
+        <h3>Bolts11</h3>
+        <div class="vs-price">$79<span class="vs-period">/mo</span></div>
+        <p style="font-size:13px;color:rgba(255,255,255,0.5);margin-top:8px">Everything, one place. Price locked for early access members.</p>
+        <ul class="vs-list">
+          <li><span class="vs-check">✓</span>SMS scheduling + reminders</li>
+          <li><span class="vs-check">✓</span>Proposals &amp; invoices with Square</li>
+          <li><span class="vs-check">✓</span>AI dispatch &amp; job routing</li>
+          <li><span class="vs-check">✓</span>Automatic payment follow-up</li>
+          <li><span class="vs-check">✓</span>Google review automation</li>
+          <li><span class="vs-check">✓</span>One dashboard, one support line</li>
+        </ul>
+      </div>
+    </div>
+    <p style="text-align:center;font-size:13px;color:var(--gray-400);margin-top:28px">Founding member pricing requires early access request. <a href="#contact" style="color:var(--amber);font-weight:600">Request yours →</a></p>
   </div>
 </section>
 
@@ -281,42 +453,74 @@
   <div class="container">
     <div class="section-header">
       <div class="section-label">From the Field</div>
-      <h2 class="section-title">What trade owners are saying.</h2>
+      <h2 class="section-title">From trades to studios — here's what they say.</h2>
     </div>
     <div class="testimonials-grid">
       <div class="testimonial-card">
+        <div class="testimonial-stars">&#9733;&#9733;&#9733;&#9733;&#9733;</div>
         <blockquote>&ldquo;I used to get calls all day asking 'when are you coming?' Now my customers know before they even have to ask. It changed my whole week.&rdquo;</blockquote>
         <cite>&mdash; Mike D., Owner, rural septic service &mdash; Maine</cite>
       </div>
       <div class="testimonial-card">
-        <blockquote>&ldquo;We went from chasing unpaid invoices to getting paid the same day. The follow-up texts do it automatically. I don't have to think about it.&rdquo;</blockquote>
-        <cite>&mdash; Rachel T., Office Manager, HVAC &mdash; Tennessee</cite>
+        <div class="testimonial-stars">&#9733;&#9733;&#9733;&#9733;&#9733;</div>
+        <blockquote>&ldquo;I was paying Mindbody $129 a month and still texting clients manually to confirm classes. Bolts11 handles everything. My Saturday morning class fills itself now.&rdquo;</blockquote>
+        <cite>&mdash; Sarah K., Yoga instructor &mdash; Portland, OR</cite>
       </div>
       <div class="testimonial-card">
-        <blockquote>&ldquo;My Google reviews doubled in two months. The system asks at exactly the right time &mdash; right after the job, while they're still happy.&rdquo;</blockquote>
-        <cite>&mdash; Dan C., Owner, excavation &amp; grading &mdash; Ohio</cite>
+        <div class="testimonial-stars">&#9733;&#9733;&#9733;&#9733;&#9733;</div>
+        <blockquote>&ldquo;We went from chasing unpaid invoices to getting paid the same day. The follow-up texts do it automatically. I don't have to think about it.&rdquo;</blockquote>
+        <cite>&mdash; Rachel T., Office Manager, HVAC &mdash; Tennessee</cite>
       </div>
     </div>
   </div>
 </section>
 
-<!-- CTA / Contact -->
+<!-- CTA / Get Access -->
 <section class="section cta-section" id="contact">
-  <div class="container">
+  <div class="container" style="position:relative;z-index:1">
     <div class="section-header" style="text-align:center">
-      <div class="section-label">Get Started</div>
-      <h2 class="section-title">Ready to put your back office on autopilot?</h2>
-      <p class="section-subtitle" style="margin:0 auto 32px">Tell us about your business and we'll get you set up. Takes about 10 minutes.</p>
+      <div class="section-label">Get Early Access</div>
+      <h2 class="section-title">Ready to hand off your back office?</h2>
+      <p class="section-subtitle">Tell us about your business and we'll reach out within one business day. Setup takes about 10 minutes.</p>
     </div>
-    <form class="contact-form" action="https://formsubmit.co/support@bolts11.com" method="POST" netlify>
-      <input type="text" name="name" placeholder="Your Name" required>
-      <input type="text" name="business_type" placeholder="Business Type (e.g. Septic, HVAC, Plumbing)">
-      <input type="tel" name="phone" placeholder="Phone Number" required>
+    <form class="contact-form" action="https://formsubmit.co/support@bolts11.com" method="POST">
+      <input type="hidden" name="_subject" value="New Bolts11 Access Request">
+      <input type="hidden" name="_captcha" value="false">
+      <div class="form-row">
+        <input type="text" name="name" placeholder="Your Name" required>
+        <input type="tel" name="phone" placeholder="Best Phone Number" required>
+      </div>
       <input type="email" name="email" placeholder="Email Address" required>
-      <input type="hidden" name="_subject" value="New Bolts11 Demo Request">
-      <button type="submit" class="btn btn-amber" style="width:100%;padding:14px;font-size:16px">Request a Free Demo</button>
+      <select name="business_type" required>
+        <option value="" disabled selected>What kind of business?</option>
+        <optgroup label="Trades &amp; Service">
+          <option>Plumbing</option>
+          <option>HVAC</option>
+          <option>Sewer &amp; Drain</option>
+          <option>Septic Service</option>
+          <option>Electrical</option>
+          <option>Excavation</option>
+          <option>Heating &amp; Oil</option>
+          <option>Other Trade</option>
+        </optgroup>
+        <optgroup label="Wellness &amp; Fitness">
+          <option>Yoga Studio</option>
+          <option>Personal Training</option>
+          <option>Massage Therapy</option>
+          <option>Pilates / Fitness Studio</option>
+          <option>Other Wellness</option>
+        </optgroup>
+        <optgroup label="Shops &amp; Clinics">
+          <option>Auto Repair</option>
+          <option>Barber / Salon</option>
+          <option>Veterinary</option>
+          <option>Pet Grooming</option>
+          <option>Other Service Business</option>
+        </optgroup>
+      </select>
+      <button type="submit" class="btn btn-amber btn-lg" style="width:100%">Request Early Access &rarr;</button>
     </form>
-    <p class="cta-closing">Stop losing jobs to missed communication. Your competitors are still playing phone tag. You don't have to.</p>
+    <p class="cta-closing">No credit card required. No commitment. We'll reach out personally — not with an automated drip sequence.</p>
   </div>
 </section>
 
@@ -326,32 +530,46 @@
     <div class="footer-top">
       <div class="footer-brand">
         <div class="footer-logo"><span>&#9889;</span> Bolts11</div>
-        <p>Automated SMS job notifications for small trade service businesses. Built for the field, not the office.</p>
+        <p>The AI back office suite for trades, studios, and service businesses. SMS scheduling, invoicing, dispatch, and more — from a text message.</p>
       </div>
       <div class="footer-col">
         <h4>Platform</h4>
         <a href="#how-it-works">How It Works</a>
         <a href="#features">Features</a>
         <a href="#who">Who It's For</a>
-        <a href="#contact">Request a Demo</a>
+        <a href="#pricing">Pricing</a>
       </div>
       <div class="footer-col">
-        <h4>Legal</h4>
+        <h4>Account</h4>
+        <a href="signin.html">Sign In</a>
+        <a href="#contact">Request Access</a>
+      </div>
+      <div class="footer-col">
+        <h4>Company</h4>
         <a href="privacy.html">Privacy Policy</a>
         <a href="terms.html">Terms &amp; Conditions</a>
-      </div>
-      <div class="footer-col">
-        <h4>Support</h4>
         <a href="mailto:support@bolts11.com">support@bolts11.com</a>
       </div>
     </div>
-    <p class="footer-legal">Bolts11 is a multi-tenant SaaS platform. SMS notifications are transactional only. Mobile numbers are never sold or shared. Reply STOP to any message to opt out.</p>
+    <p class="footer-legal">Bolts11 is a multi-tenant SaaS platform. SMS notifications are transactional only. Mobile numbers are never sold or shared. Reply STOP to any message to opt out immediately.</p>
     <div class="footer-bottom">
       <p>&copy; 2026 Bolts11. All rights reserved.</p>
-      <p><a href="privacy.html">Privacy Policy</a> &middot; <a href="terms.html">Terms &amp; Conditions</a></p>
+      <p><a href="privacy.html">Privacy</a> &middot; <a href="terms.html">Terms</a></p>
     </div>
   </div>
 </footer>
 
+<script>
+function showAudience(type, btn) {
+  document.querySelectorAll('.audience-panel').forEach(p => {
+    p.style.display = 'none';
+    p.classList.remove('active');
+  });
+  document.querySelectorAll('.audience-toggle button').forEach(b => b.classList.remove('active'));
+  const panel = document.getElementById('panel-' + type);
+  if (panel) { panel.style.display = 'grid'; panel.classList.add('active'); }
+  btn.classList.add('active');
+}
+</script>
 </body>
 </html>

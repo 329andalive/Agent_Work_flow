@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Sign In — Bolts11</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=DM+Serif+Display:ital@0;1&display=swap" rel="stylesheet">
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    :root{
+      --navy:#1a2e4a;--navy-dark:#132038;--navy-deeper:#0d1828;
+      --amber:#f59e0b;--amber-hover:#d97706;
+      --white:#ffffff;--gray-50:#f9fafb;--gray-100:#f3f4f6;--gray-200:#e5e7eb;
+      --gray-400:#9ca3af;--gray-500:#6b7280;--gray-700:#374151;
+      --radius:10px;--shadow-lg:0 4px 24px rgba(0,0,0,0.14);
+    }
+    html,body{height:100%}
+    body{font-family:'Inter',system-ui,sans-serif;background:var(--navy-deeper);color:var(--white);display:grid;grid-template-rows:auto 1fr auto;min-height:100vh}
+
+    /* Nav */
+    .nav{background:rgba(13,24,40,0.8);backdrop-filter:blur(8px);border-bottom:1px solid rgba(255,255,255,0.07);padding:0 24px}
+    .nav-inner{max-width:1120px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;height:64px}
+    .nav-logo{font-size:20px;font-weight:800;color:var(--white);display:flex;align-items:center;gap:6px;text-decoration:none}
+    .nav-logo span{color:var(--amber)}
+    .nav-back{font-size:14px;font-weight:500;color:rgba(255,255,255,0.45);text-decoration:none;transition:color 0.15s}
+    .nav-back:hover{color:var(--amber)}
+
+    /* Background grid */
+    .bg-grid{position:fixed;inset:0;background-image:linear-gradient(rgba(245,158,11,0.04) 1px,transparent 1px),linear-gradient(90deg,rgba(245,158,11,0.04) 1px,transparent 1px);background-size:48px 48px;pointer-events:none;z-index:0}
+    .bg-radial{position:fixed;inset:0;background:radial-gradient(ellipse 70% 60% at 50% 100%,rgba(26,46,74,0.6) 0%,transparent 70%);pointer-events:none;z-index:0}
+
+    /* Main layout */
+    .main{display:flex;align-items:center;justify-content:center;padding:48px 24px;position:relative;z-index:1}
+
+    /* Card */
+    .card{background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:20px;padding:44px 40px;width:100%;max-width:420px;box-shadow:0 24px 64px rgba(0,0,0,0.4);backdrop-filter:blur(12px)}
+    .card-logo{display:flex;align-items:center;justify-content:center;gap:6px;font-size:22px;font-weight:800;color:var(--white);margin-bottom:8px}
+    .card-logo span{color:var(--amber)}
+    .card-tagline{text-align:center;font-size:13px;color:rgba(255,255,255,0.4);margin-bottom:32px}
+    .card h1{font-family:'DM Serif Display',Georgia,serif;font-size:28px;font-weight:400;color:var(--white);margin-bottom:6px;text-align:center}
+    .card-sub{font-size:14px;color:rgba(255,255,255,0.5);text-align:center;margin-bottom:32px;line-height:1.6}
+
+    /* Form */
+    .form-group{margin-bottom:16px}
+    .form-label{display:block;font-size:12px;font-weight:600;color:rgba(255,255,255,0.5);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:7px}
+    .form-input{width:100%;padding:13px 16px;border:1px solid rgba(255,255,255,0.12);border-radius:9px;background:rgba(255,255,255,0.06);color:var(--white);font-family:inherit;font-size:15px;transition:all 0.15s}
+    .form-input::placeholder{color:rgba(255,255,255,0.3)}
+    .form-input:focus{outline:none;border-color:var(--amber);background:rgba(255,255,255,0.09);box-shadow:0 0 0 3px rgba(245,158,11,0.12)}
+    .form-input.error{border-color:#f87171;background:rgba(248,113,113,0.06)}
+
+    /* PIN input */
+    .pin-wrap{display:flex;gap:10px;justify-content:center}
+    .pin-input{width:52px;height:56px;text-align:center;font-size:20px;font-weight:700;border:1px solid rgba(255,255,255,0.12);border-radius:10px;background:rgba(255,255,255,0.06);color:var(--white);font-family:inherit;transition:all 0.15s;-webkit-text-security:disc}
+    .pin-input:focus{outline:none;border-color:var(--amber);background:rgba(255,255,255,0.09);box-shadow:0 0 0 3px rgba(245,158,11,0.12)}
+
+    /* Button */
+    .btn-submit{width:100%;padding:14px;border-radius:10px;border:none;background:var(--amber);color:var(--navy);font-size:16px;font-weight:700;cursor:pointer;font-family:inherit;transition:all 0.15s;margin-top:8px;display:flex;align-items:center;justify-content:center;gap:8px}
+    .btn-submit:hover:not(:disabled){background:var(--amber-hover);transform:translateY(-1px);box-shadow:0 6px 20px rgba(245,158,11,0.35)}
+    .btn-submit:disabled{opacity:0.55;cursor:not-allowed;transform:none;box-shadow:none}
+    .btn-submit .spinner{width:16px;height:16px;border:2px solid rgba(26,46,74,0.3);border-top-color:var(--navy);border-radius:50%;animation:spin 0.7s linear infinite;display:none}
+    .btn-submit.loading .spinner{display:block}
+    .btn-submit.loading .btn-text{display:none}
+
+    /* Error / status */
+    .status-msg{padding:12px 16px;border-radius:8px;font-size:13px;font-weight:500;margin-bottom:16px;display:none}
+    .status-msg.error{background:rgba(248,113,113,0.1);border:1px solid rgba(248,113,113,0.25);color:#fca5a5;display:block}
+    .status-msg.success{background:rgba(34,197,94,0.1);border:1px solid rgba(34,197,94,0.25);color:#86efac;display:block}
+    .status-msg.loading{background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.2);color:rgba(255,255,255,0.7);display:block}
+
+    /* Divider */
+    .divider{display:flex;align-items:center;gap:12px;margin:24px 0}
+    .divider::before,.divider::after{content:'';flex:1;height:1px;background:rgba(255,255,255,0.08)}
+    .divider span{font-size:12px;color:rgba(255,255,255,0.3)}
+
+    /* Help links */
+    .help-links{display:flex;flex-direction:column;align-items:center;gap:8px;margin-top:20px}
+    .help-links a{font-size:13px;color:rgba(255,255,255,0.4);transition:color 0.15s;text-decoration:none}
+    .help-links a:hover{color:var(--amber)}
+    .help-links .get-access{color:var(--amber);font-weight:600}
+
+    /* Footer */
+    .footer{position:relative;z-index:1;background:rgba(13,24,40,0.6);border-top:1px solid rgba(255,255,255,0.06);padding:18px 24px;text-align:center}
+    .footer p{font-size:12px;color:rgba(255,255,255,0.3)}
+    .footer a{color:rgba(255,255,255,0.3);transition:color 0.15s}
+    .footer a:hover{color:rgba(255,255,255,0.6)}
+
+    @keyframes spin{to{transform:rotate(360deg)}}
+    @media(max-width:480px){
+      .card{padding:32px 24px}
+      .pin-input{width:46px;height:50px;font-size:18px}
+    }
+  </style>
+</head>
+<body>
+
+<div class="bg-grid"></div>
+<div class="bg-radial"></div>
+
+<nav class="nav">
+  <div class="nav-inner">
+    <a href="index.html" class="nav-logo"><span>&#9889;</span> Bolts11</a>
+    <a href="index.html" class="nav-back">&larr; Back to home</a>
+  </div>
+</nav>
+
+<main class="main">
+  <div class="card">
+    <div class="card-logo"><span>&#9889;</span> Bolts11</div>
+    <p class="card-tagline">The AI Back Office Suite</p>
+    <h1>Welcome back.</h1>
+    <p class="card-sub">Enter your phone number and 4-digit PIN to access your dashboard.</p>
+
+    <div class="status-msg" id="status-msg"></div>
+
+    <form id="signin-form" novalidate>
+      <div class="form-group">
+        <label class="form-label" for="phone">Phone Number</label>
+        <input type="tel" class="form-input" id="phone" name="phone" placeholder="(207) 555-0100" autocomplete="tel" required>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" style="text-align:center;display:block;margin-bottom:12px">4-Digit PIN</label>
+        <div class="pin-wrap">
+          <input type="password" class="pin-input" id="pin1" maxlength="1" inputmode="numeric" pattern="[0-9]" autocomplete="off">
+          <input type="password" class="pin-input" id="pin2" maxlength="1" inputmode="numeric" pattern="[0-9]" autocomplete="off">
+          <input type="password" class="pin-input" id="pin3" maxlength="1" inputmode="numeric" pattern="[0-9]" autocomplete="off">
+          <input type="password" class="pin-input" id="pin4" maxlength="1" inputmode="numeric" pattern="[0-9]" autocomplete="off">
+        </div>
+      </div>
+
+      <button type="submit" class="btn-submit" id="signin-btn">
+        <span class="spinner"></span>
+        <span class="btn-text">Sign In to Dashboard &rarr;</span>
+      </button>
+    </form>
+
+    <div class="help-links">
+      <a href="mailto:support@bolts11.com">Forgot your PIN? Email support@bolts11.com</a>
+      <a href="index.html#contact" class="get-access">Don't have an account? Request access &rarr;</a>
+    </div>
+  </div>
+</main>
+
+<footer class="footer">
+  <p>&copy; 2026 Bolts11 &middot; <a href="privacy.html">Privacy</a> &middot; <a href="terms.html">Terms</a> &middot; <a href="mailto:support@bolts11.com">Support</a></p>
+</footer>
+
+<script>
+  // ── PIN box auto-advance ──
+  const pins = [document.getElementById('pin1'), document.getElementById('pin2'), document.getElementById('pin3'), document.getElementById('pin4')];
+  pins.forEach((el, i) => {
+    el.addEventListener('input', () => {
+      const v = el.value.replace(/\D/g, '');
+      el.value = v.slice(0, 1);
+      if (v && i < 3) pins[i + 1].focus();
+    });
+    el.addEventListener('keydown', e => {
+      if (e.key === 'Backspace' && !el.value && i > 0) {
+        pins[i - 1].focus();
+        pins[i - 1].value = '';
+      }
+    });
+    el.addEventListener('paste', e => {
+      e.preventDefault();
+      const digits = (e.clipboardData.getData('text') || '').replace(/\D/g, '').slice(0, 4);
+      digits.split('').forEach((d, j) => { if (pins[j]) pins[j].value = d; });
+      if (pins[digits.length - 1]) pins[digits.length - 1].focus();
+    });
+  });
+
+  // ── Phone formatting ──
+  document.getElementById('phone').addEventListener('input', function() {
+    let v = this.value.replace(/\D/g, '');
+    if (v.length >= 10) {
+      v = v.slice(0, 10);
+      this.value = '(' + v.slice(0,3) + ') ' + v.slice(3,6) + '-' + v.slice(6);
+    }
+  });
+
+  // ── Form submit ──
+  document.getElementById('signin-form').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const phoneRaw = document.getElementById('phone').value.replace(/\D/g, '');
+    const pin = pins.map(p => p.value).join('');
+    const statusEl = document.getElementById('status-msg');
+    const btn = document.getElementById('signin-btn');
+
+    // Basic validation
+    if (phoneRaw.length < 10) {
+      statusEl.className = 'status-msg error';
+      statusEl.textContent = 'Please enter a valid phone number.';
+      document.getElementById('phone').focus();
+      return;
+    }
+    if (pin.length < 4) {
+      statusEl.className = 'status-msg error';
+      statusEl.textContent = 'Please enter your 4-digit PIN.';
+      pins[0].focus();
+      return;
+    }
+
+    // Loading state
+    btn.disabled = true;
+    btn.classList.add('loading');
+    statusEl.className = 'status-msg loading';
+    statusEl.textContent = 'Signing you in…';
+
+    const phone = '+1' + phoneRaw;
+
+    try {
+      const res = await fetch('https://web-production-043dc.up.railway.app/api/auth/portal-login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone, pin })
+      });
+      const data = await res.json();
+
+      if (res.ok && data.redirect_url) {
+        statusEl.className = 'status-msg success';
+        statusEl.textContent = 'Signed in! Taking you to your dashboard…';
+        setTimeout(() => { window.location.href = data.redirect_url; }, 600);
+      } else {
+        statusEl.className = 'status-msg error';
+        statusEl.textContent = data.error || 'Incorrect phone or PIN. Try again.';
+        btn.disabled = false;
+        btn.classList.remove('loading');
+        pins.forEach(p => p.value = '');
+        pins[0].focus();
+      }
+    } catch (err) {
+      statusEl.className = 'status-msg error';
+      statusEl.textContent = 'Connection error. Please try again in a moment.';
+      btn.disabled = false;
+      btn.classList.remove('loading');
+    }
+  });
+</script>
+</body>
+</html>
