@@ -589,7 +589,7 @@ document.getElementById('access-form').addEventListener('submit', async function
   document.getElementById('btn-loading').style.display = 'inline';
 
   try {
-    const res = await fetch('https://web-production-043dc.up.railway.app/api/access-request', {
+    const res = await fetch('https://api.bolts11.com/api/access-request', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name, phone, email, business_type: biz })

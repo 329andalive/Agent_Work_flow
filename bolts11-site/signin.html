@@ -210,7 +210,7 @@
     const phone = '+1' + phoneRaw;
 
     try {
-      const res = await fetch('https://web-production-043dc.up.railway.app/api/auth/portal-login', {
+      const res = await fetch('https://api.bolts11.com/api/auth/portal-login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ phone, pin })
