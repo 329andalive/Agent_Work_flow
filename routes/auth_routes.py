@@ -20,7 +20,7 @@ from datetime import datetime
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from flask import Blueprint, render_template, request, redirect, session, flash, url_for, jsonify
+from flask import Blueprint, render_template, request, redirect, session, flash, url_for
 from werkzeug.security import generate_password_hash, check_password_hash
 
 auth_bp = Blueprint("auth_bp", __name__)
@@ -209,92 +209,3 @@ def set_pin_submit():
         print(f"[{_ts()}] ERROR auth: set_pin_submit failed — {e}")
         flash("Something went wrong. Please try again.", "error")
         return render_template("set_pin.html", phone=phone), 500
-
-
-# ---------------------------------------------------------------------------
-# CORS helper for cross-origin JSON responses (bolts11.com → Railway)
-# ---------------------------------------------------------------------------
-
-def _cors_json(data: dict, status: int):
-    """JSON response with CORS headers for bolts11.com."""
-    resp = jsonify(data)
-    resp.status_code = status
-    resp.headers['Access-Control-Allow-Origin'] = 'https://bolts11.com'
-    resp.headers['Access-Control-Allow-Credentials'] = 'true'
-    return resp
-
-
-# ---------------------------------------------------------------------------
-# POST /api/auth/portal-login — Bolts11.com sign-in portal endpoint
-# Called by signin.html via fetch(). Validates phone + PIN, returns redirect.
-# ---------------------------------------------------------------------------
-
-@auth_bp.route('/api/auth/portal-login', methods=['POST', 'OPTIONS'])
-def portal_login():
-    """
-    Called by bolts11.com signin.html.
-    Body: { "phone": "+12075550100", "pin": "1234" }
-    Returns: { "redirect_url": "https://…/dashboard/" }
-    Or:      { "error": "Incorrect phone or PIN." } with 401
-    """
-
-    # Handle CORS preflight
-    if request.method == 'OPTIONS':
-        response = jsonify({})
-        response.headers['Access-Control-Allow-Origin'] = 'https://bolts11.com'
-        response.headers['Access-Control-Allow-Methods'] = 'POST, OPTIONS'
-        response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
-        response.headers['Access-Control-Max-Age'] = '86400'
-        return response, 200
-
-    data = request.get_json(silent=True) or {}
-    phone = (data.get('phone') or '').strip()
-    pin = (data.get('pin') or '').strip()
-
-    if not phone or not pin:
-        return _cors_json({'error': 'Phone and PIN are required.'}, 400)
-
-    phone = normalize_phone(phone)
-
-    if not phone or len(phone) < 11:
-        return _cors_json({'error': 'Please enter a valid phone number.'}, 400)
-
-    try:
-        sb = _get_supabase()
-        result = sb.table("clients").select(
-            "id, pin_hash, business_name, active, owner_name, phone, is_super_admin"
-        ).eq("phone", phone).execute()
-
-        if not result.data:
-            return _cors_json({'error': 'Incorrect phone or PIN.'}, 401)
-
-        client = result.data[0]
-
-        if not client.get("active"):
-            return _cors_json({'error': 'Account inactive. Contact your Bolts11 representative.'}, 403)
-
-        if not client.get("pin_hash"):
-            # No PIN set — can't authenticate via portal
-            return _cors_json({'error': 'PIN not set. Please visit the dashboard to set up your PIN first.'}, 401)
-
-        if not check_password_hash(client["pin_hash"], pin):
-            print(f"[{_ts()}] WARN auth: Portal login — bad PIN: {phone}")
-            return _cors_json({'error': 'Incorrect phone or PIN.'}, 401)
-
-        # Success — set session
-        session["client_id"] = client["id"]
-        session["business_name"] = client.get("business_name", "")
-        session["owner_name"] = client.get("owner_name", "")
-        if client.get("is_super_admin"):
-            session["is_super_admin"] = True
-        session.permanent = True
-
-        base_url = os.environ.get('BOLTS11_BASE_URL', 'https://web-production-043dc.up.railway.app')
-        redirect_url = base_url.rstrip('/') + '/dashboard/'
-
-        print(f"[{_ts()}] INFO auth: Portal login success — {client.get('business_name')} ({phone})")
-        return _cors_json({'redirect_url': redirect_url}, 200)
-
-    except Exception as e:
-        print(f"[{_ts()}] ERROR auth: portal_login failed — {e}")
-        return _cors_json({'error': 'Service temporarily unavailable.'}, 503)
