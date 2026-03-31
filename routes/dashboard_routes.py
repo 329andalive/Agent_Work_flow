@@ -1057,21 +1057,33 @@ def api_send_invoice_email(invoice_id):
     base_url = os.environ.get("BOLTS11_BASE_URL", "https://web-production-043dc.up.railway.app")
 
     # Use public token URL so customer can view without logging in
-    inv_token = invoice.get("edit_token") or ""
-    if inv_token:
-        doc_url = f"{base_url}/i/{inv_token}"
-    else:
-        try:
-            link_result = sb.table("invoice_links").select("token").eq(
-                "job_id", invoice.get("job_id")
-            ).eq("type", "invoice").execute()
-            if link_result.data:
-                doc_url = f"{base_url}/i/{link_result.data[0]['token']}"
-            else:
-                doc_url = f"{base_url}/dashboard/invoice/{invoice_id}"
-                print(f"[{_ts()}] WARN send_invoice_email: no public token for invoice {invoice_id[:8]} — using dashboard URL")
-        except Exception:
-            doc_url = f"{base_url}/dashboard/invoice/{invoice_id}"
+    doc_url = None
+    try:
+        link_query = sb.table("invoice_links").select("token").eq("type", "invoice")
+        if invoice.get("job_id"):
+            link_query = link_query.eq("job_id", invoice["job_id"])
+        else:
+            link_query = link_query.eq("client_phone", client.get("phone", ""))
+        link_result = link_query.order("created_at", desc=True).limit(1).execute()
+
+        if link_result.data:
+            doc_url = f"{base_url}/i/{link_result.data[0]['token']}"
+        else:
+            from execution.token_generator import generate_token
+            new_token = generate_token(
+                job_id=invoice.get("job_id") or invoice_id,
+                client_phone=client.get("phone", ""),
+                link_type="invoice",
+            )
+            if new_token:
+                doc_url = f"{base_url}/i/{new_token}"
+                print(f"[{_ts()}] INFO send_invoice_email: Generated token {new_token} for invoice {invoice_id[:8]}")
+    except Exception as tok_err:
+        print(f"[{_ts()}] WARN send_invoice_email: token lookup/generate failed — {tok_err}")
+
+    if not doc_url:
+        doc_url = f"{base_url}/dashboard/invoice/{invoice_id}"
+        print(f"[{_ts()}] WARN send_invoice_email: no public token for invoice {invoice_id[:8]} — using dashboard URL as fallback")
 
     from execution.email_send import send_invoice_email
     result = send_invoice_email(
@@ -1174,22 +1186,36 @@ def api_send_proposal_email(proposal_id):
     base_url = os.environ.get("BOLTS11_BASE_URL", "https://web-production-043dc.up.railway.app")
 
     # Use public token URL so customer can view without logging in
-    token = proposal.get("edit_token") or ""
-    if token:
-        doc_url = f"{base_url}/p/{token}"
-    else:
-        # Fallback: try to find token from invoice_links table
-        try:
-            link_result = sb.table("invoice_links").select("token").eq(
-                "job_id", proposal.get("job_id")
-            ).eq("type", "proposal").execute()
-            if link_result.data:
-                doc_url = f"{base_url}/p/{link_result.data[0]['token']}"
-            else:
-                doc_url = f"{base_url}/dashboard/proposal/{proposal_id}"
-                print(f"[{_ts()}] WARN send_proposal_email: no public token for proposal {proposal_id[:8]} — using dashboard URL")
-        except Exception:
-            doc_url = f"{base_url}/dashboard/proposal/{proposal_id}"
+    # Look up existing token in invoice_links, or generate a new one
+    doc_url = None
+    try:
+        # First check invoice_links for an existing token
+        link_query = sb.table("invoice_links").select("token").eq("type", "proposal")
+        if proposal.get("job_id"):
+            link_query = link_query.eq("job_id", proposal["job_id"])
+        else:
+            link_query = link_query.eq("client_phone", client.get("phone", ""))
+        link_result = link_query.order("created_at", desc=True).limit(1).execute()
+
+        if link_result.data:
+            doc_url = f"{base_url}/p/{link_result.data[0]['token']}"
+        else:
+            # No token exists — generate one
+            from execution.token_generator import generate_token
+            new_token = generate_token(
+                job_id=proposal.get("job_id") or proposal_id,
+                client_phone=client.get("phone", ""),
+                link_type="proposal",
+            )
+            if new_token:
+                doc_url = f"{base_url}/p/{new_token}"
+                print(f"[{_ts()}] INFO send_proposal_email: Generated token {new_token} for proposal {proposal_id[:8]}")
+    except Exception as tok_err:
+        print(f"[{_ts()}] WARN send_proposal_email: token lookup/generate failed — {tok_err}")
+
+    if not doc_url:
+        doc_url = f"{base_url}/dashboard/proposal/{proposal_id}"
+        print(f"[{_ts()}] WARN send_proposal_email: no public token for proposal {proposal_id[:8]} — using dashboard URL as fallback")
 
     from execution.email_send import send_proposal_email
     result = send_proposal_email(
