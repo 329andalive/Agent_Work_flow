@@ -136,6 +136,18 @@ def fmt_short_date(d):
 def _base_context(active_page: str, client_id: str) -> dict:
     """Common template context for every page."""
     client = _load_client(client_id)
+
+    # Count unscheduled work orders for Planner sidebar badge
+    planner_badge = 0
+    try:
+        sb = _get_supabase()
+        wo_result = sb.table("jobs").select("id", count="exact").eq(
+            "client_id", client_id
+        ).eq("status", "work_order").is_("scheduled_date", "null").execute()
+        planner_badge = wo_result.count or 0
+    except Exception:
+        pass
+
     return {
         "active_page": active_page,
         "client_id": client_id,
@@ -144,6 +156,7 @@ def _base_context(active_page: str, client_id: str) -> dict:
         "current_date": datetime.now().strftime("%a %b %d, %Y"),
         "today": date.today().strftime("%A, %B %-d"),
         "_client": client,
+        "planner_badge": planner_badge,
     }
 
 

@@ -736,6 +736,24 @@ def accept_proposal(token):
         }
         sb.table("jobs").insert(wo_row).execute()
 
+        # Notify owner via email
+        try:
+            from execution.resend_agent import send_access_request_alert
+            client_record = sb.table("clients").select(
+                "business_name, owner_mobile"
+            ).eq("id", proposal["client_id"]).execute()
+            if client_record.data:
+                c = client_record.data[0]
+                amt = float(proposal.get("amount_estimate") or 0)
+                send_access_request_alert(
+                    name=f"Proposal #{proposal_id[:8].upper()} Accepted",
+                    email="support@bolts11.com",
+                    phone=c.get("owner_mobile", ""),
+                    business_type=f"${amt:,.2f} — work order added to Planner backlog",
+                )
+        except Exception as notify_err:
+            print(f"[{timestamp()}] WARN accept_proposal: notification failed — {notify_err}")
+
         print(f"[{timestamp()}] INFO accept_proposal: proposal {proposal_id[:8]} accepted via link — work order created")
         return jsonify({"success": True})
 

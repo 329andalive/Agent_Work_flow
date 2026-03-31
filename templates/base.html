@@ -714,6 +714,9 @@
        class="nav-single-link {{ 'active' if active_page == 'planner' else '' }}">
       <span style="display:flex;align-items:center;gap:10px;">
         <span class="nav-section-icon">📅</span> Planner
+        {% if planner_badge and planner_badge > 0 %}
+          <span class="badge badge-amber" style="font-size:10px;padding:1px 7px;margin-left:auto">{{ planner_badge }}</span>
+        {% endif %}
       </span>
     </a>
 
