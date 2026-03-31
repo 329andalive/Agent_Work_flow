@@ -23,7 +23,7 @@ import threading
 # Allow running as: python execution/sms_receive.py from project root
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from flask import Flask, request, jsonify, render_template
+from flask import Flask, request, jsonify, render_template, make_response
 from datetime import datetime
 from execution.sms_router import route_message
 from execution.db_webhook_log import is_duplicate, save_webhook, mark_processed, mark_error
@@ -525,14 +525,14 @@ def _resolve_token(token: str):
     link = get_link_by_token(token)
 
     if not link:
-        return None, None, render_template("error.html",
+        return None, None, make_response(render_template("error.html",
             title="Invalid Link",
             icon="?",
             heading="Link Not Found",
             message="This link is invalid. It may have been mistyped or already removed.",
             business_name=None,
             contact_phone=None,
-        ), 404
+        ), 404)
 
     # Load the client so we can show their business name in errors
     client = get_client_by_phone(link["client_phone"]) if link.get("client_phone") else None
@@ -540,14 +540,14 @@ def _resolve_token(token: str):
     contact = client.get("owner_mobile") or link.get("client_phone") or ""
 
     if is_expired(link):
-        return None, None, render_template("error.html",
+        return None, None, make_response(render_template("error.html",
             title="Link Expired",
             icon="!",
             heading="This Link Has Expired",
             message=f"This link is no longer active. Please contact {biz_name} for a new one.",
             business_name=biz_name,
             contact_phone=contact,
-        ), 410
+        ), 410)
 
     # Mark as viewed and log the view event
     mark_viewed(token)
