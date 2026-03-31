@@ -688,21 +688,21 @@ def accept_proposal(token):
     sb = get_supabase()
     now = datetime.now(timezone.utc).isoformat()
 
-    # Find the proposal linked to this token
-    proposal_id = link.get("proposal_id") or link.get("job_id")
-    if not proposal_id:
-        return jsonify({"success": False, "error": "No proposal linked to token"}), 400
+    job_id = link.get("job_id")
+    if not job_id:
+        return jsonify({"success": False, "error": "No job linked to token"}), 400
 
     try:
-        # Load proposal to get client_id and customer_id
-        result = sb.table("proposals").select(
+        # Look up the proposal by job_id
+        prop_lookup = sb.table("proposals").select(
             "id, client_id, customer_id, job_id, amount_estimate, status"
-        ).eq("id", proposal_id).execute()
+        ).eq("job_id", job_id).order("created_at", desc=True).limit(1).execute()
 
-        if not result.data:
-            return jsonify({"success": False, "error": "Proposal not found"}), 404
+        if not prop_lookup.data:
+            return jsonify({"success": False, "error": "No proposal found for this link"}), 404
 
-        proposal = result.data[0]
+        proposal = prop_lookup.data[0]
+        proposal_id = proposal["id"]
 
         if proposal.get("status") == "accepted":
             return jsonify({"success": True, "message": "Already accepted"})
