@@ -351,7 +351,9 @@
   }
   function updateSendBtn() {
     var has = false;
-    document.querySelectorAll('.worker-list').forEach(function(wl) { if (wl.children.length > 0) has = true; });
+    document.querySelectorAll('.worker-list').forEach(function(wl) {
+      if (wl.querySelectorAll('.slip-tab, .slip-card').length > 0) has = true;
+    });
     document.getElementById('btn-send').disabled = !has;
   }
 
@@ -370,7 +372,7 @@
     var asgn = [];
     document.querySelectorAll('.worker-list').forEach(function(wl) {
       var wid = wl.dataset.worker; if (!wid) return;
-      var jobs = []; wl.querySelectorAll('.slip-tab').forEach(function(tab, idx) { jobs.push({job_id:tab.dataset.jobId, sort_order:idx}); });
+      var jobs = []; wl.querySelectorAll('.slip-tab, .slip-card').forEach(function(el, idx) { if (el.dataset.jobId) jobs.push({job_id:el.dataset.jobId, sort_order:idx}); });
       if (jobs.length > 0) asgn.push({worker_id:wid, jobs:jobs});
     });
     if (!asgn.length) { btn.disabled = false; btn.textContent = 'Send Routes'; return; }
