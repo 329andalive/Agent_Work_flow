@@ -2359,7 +2359,7 @@ def workers_page():
     workers = []
     try:
         result = sb.table("employees").select(
-            "id, name, phone, role, active"
+            "id, name, phone, email, role, active"
         ).eq("client_id", client_id).order("active", desc=True).order("name").execute()
         workers = result.data or []
     except Exception as e:
@@ -2382,6 +2382,7 @@ def workers_create():
     data = request.get_json(silent=True) or {}
     name = (data.get("name") or "").strip()
     phone = (data.get("phone") or "").strip()
+    email = (data.get("email") or "").strip()
     role = (data.get("role") or "").strip()
 
     if not name:
@@ -2405,6 +2406,7 @@ def workers_create():
             "client_id": client_id,
             "name": name,
             "phone": phone,
+            "email": email or None,
             "role": role or None,
             "active": True,
         }).execute()
@@ -2445,6 +2447,8 @@ def workers_update():
             updates["phone"] = data["phone"].strip()
     if "role" in data:
         updates["role"] = data["role"] or None
+    if "email" in data:
+        updates["email"] = data["email"].strip() or None
     if "active" in data:
         updates["active"] = bool(data["active"])
 

@@ -165,6 +165,7 @@
         <div class="worker-name">{{ w.name or 'Unnamed' }}</div>
         <div class="worker-meta">
           <span class="worker-phone">{{ w.phone or '—' }}</span>
+          {% if w.email %}<span class="worker-phone">{{ w.email }}</span>{% endif %}
           {% if w.role %}
           <span class="role-badge role-badge--{{ w.role }}">{{ w.role|replace('_',' ')|title }}</span>
           {% endif %}
@@ -211,6 +212,10 @@
       <input type="tel" class="fg-input" id="wphone" placeholder="(207) 555-1234">
     </div>
     <div class="fg">
+      <label class="fg-label">Email</label>
+      <input type="email" class="fg-input" id="wemail" placeholder="worker@example.com">
+    </div>
+    <div class="fg">
       <label class="fg-label">Role</label>
       <select class="fg-select" id="wrole">
         <option value="">Select role</option>
@@ -240,6 +245,7 @@ function openAdd() {
   document.getElementById('wid').value = '';
   document.getElementById('wname').value = '';
   document.getElementById('wphone').value = '';
+  document.getElementById('wemail').value = '';
   document.getElementById('wrole').value = '';
   document.getElementById('wnotes').value = '';
   document.getElementById('msave').textContent = 'Add Worker';
@@ -253,6 +259,7 @@ function openEdit(w) {
   document.getElementById('wid').value = w.id || '';
   document.getElementById('wname').value = w.name || '';
   document.getElementById('wphone').value = w.phone || '';
+  document.getElementById('wemail').value = w.email || '';
   document.getElementById('wrole').value = w.role || '';
   document.getElementById('wnotes').value = w.notes || '';
   document.getElementById('msave').textContent = 'Save Changes';
@@ -271,6 +278,7 @@ async function save() {
   var id = document.getElementById('wid').value.trim();
   var name = document.getElementById('wname').value.trim();
   var phone = document.getElementById('wphone').value.trim();
+  var email = document.getElementById('wemail').value.trim();
   var role = document.getElementById('wrole').value;
   var notes = document.getElementById('wnotes').value.trim();
   if (!name) { showErr('Name is required.'); return; }
@@ -279,7 +287,7 @@ async function save() {
   btn.disabled = true; btn.textContent = 'Saving…';
   document.getElementById('merr').style.display = 'none';
   var url = id ? '/api/workers/update' : '/api/workers/create';
-  var body = { name: name, phone: phone, role: role, notes: notes };
+  var body = { name: name, phone: phone, email: email, role: role, notes: notes };
   if (id) body.id = id;
   try {
     var res = await fetch(url, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) });
