@@ -61,6 +61,7 @@
 .slip-badge--unknown { background:#f3f4f6; color:#6b7280; }
 .slip-badge--time { background:#FAEEDA; color:#854F0B; }
 .slip-badge--asap { background:#FCEBEB; color:#A32D2D; }
+.slip-badge--amt { background:#f3f4f6; color:#374151; }
 .slip-card__addr { font-family:'DM Mono',monospace; font-size:10px; color:var(--text-tertiary); margin-top:4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 
 .slip-tab { background:var(--bg-card); border:1px solid var(--border); border-radius:4px; padding:6px 10px; margin-bottom:4px; cursor:grab; display:flex; align-items:center; justify-content:space-between; font-size:12px; gap:4px; flex-wrap:wrap; }
@@ -211,7 +212,6 @@
     var zc = (job.zone_cluster || 'unknown').toLowerCase();
     var div = document.createElement('div');
     div.className = 'slip-card' + (isCF ? ' carry-forward' : '');
-    div.draggable = true;
     div.dataset.jobId = job.id || job.jobId || '';
     div.dataset.name = job.customer_name || job.name || '';
     div.dataset.desc = (job.job_notes || job.job_description || job.job_type || job.desc || '').toString().slice(0,50);
@@ -223,18 +223,36 @@
     div.dataset.price = job.estimated_amount ? '$' + Math.round(job.estimated_amount) : '';
     var cfFrom = job.carry_forward_from || job.scheduled_date || '';
     var cf = isCF ? '<div class="slip-card__cf">&#8617; carried from ' + cfFrom + '</div>' : '';
-    div.innerHTML = cf + '<div class="slip-card__name">' + (div.dataset.name || 'Customer') + '</div><div class="slip-card__desc">' + (div.dataset.desc || 'No description') + '</div><div class="slip-card__badges"><span class="slip-badge slip-badge--' + zc + '">' + (div.dataset.zone) + '</span>' + (div.dataset.time ? '<span class="slip-badge slip-badge--time">' + div.dataset.time + '</span>' : '') + '</div>' + (div.dataset.address ? '<div class="slip-card__addr">\ud83d\udccd ' + div.dataset.address + '</div>' : '');
-    div.addEventListener('click', function() { openPreview(div.dataset); });
-    bindDrag(div);
+    div.innerHTML =
+      '<div style="display:flex;align-items:flex-start;gap:6px">' +
+        '<span class="slip-card__handle" title="Drag to reorder">&#8942;&#8942;</span>' +
+        '<div style="flex:1;min-width:0">' +
+          cf +
+          '<div class="slip-card__name">' + (div.dataset.name || 'Customer') + '</div>' +
+          '<div class="slip-card__desc">' + (div.dataset.desc || 'No description') + '</div>' +
+          '<div class="slip-card__badges">' +
+            '<span class="slip-badge slip-badge--' + zc + '">' + div.dataset.zone + '</span>' +
+            (div.dataset.time ? '<span class="slip-badge slip-badge--time">' + div.dataset.time + '</span>' : '') +
+            (div.dataset.price ? '<span class="slip-badge slip-badge--amt">' + div.dataset.price + '</span>' : '') +
+          '</div>' +
+          (div.dataset.address ? '<div class="slip-card__addr">\ud83d\udccd ' + div.dataset.address + '</div>' : '') +
+        '</div>' +
+      '</div>';
+    div.addEventListener('click', function(e) {
+      if (!e.target.classList.contains('slip-card__handle')) openPreview(div.dataset);
+    });
     return div;
   }
 
   function makeTab(d) {
     var tab = document.createElement('div');
     tab.className = 'slip-tab';
-    tab.draggable = true;
     Object.keys(d).forEach(function(k) { tab.dataset[k] = d[k]; });
-    tab.innerHTML = '<span class="slip-tab__name">' + (d.name || d.customer_name || 'Customer') + '</span><span class="slip-tab__badge">' + (d.time || d.zone || '') + '</span><span class="slip-tab__remove">&times;</span>' + (d.address ? '<span class="slip-tab__addr">\ud83d\udccd ' + d.address + '</span>' : '');
+    tab.innerHTML =
+      '<span class="slip-tab__name">' + (d.name || d.customer_name || 'Customer') + '</span>' +
+      '<span class="slip-tab__badge">' + (d.time || d.zone || '') + '</span>' +
+      '<span class="slip-tab__remove">&times;</span>' +
+      (d.address ? '<span class="slip-tab__addr">\ud83d\udccd ' + d.address + '</span>' : '');
     tab.querySelector('.slip-tab__remove').addEventListener('click', function(e) {
       e.stopPropagation();
       var card = makeCard(d, false);
@@ -242,37 +260,33 @@
       tab.remove();
       updateCounts(); updateSendBtn();
     });
-    tab.addEventListener('click', function(e) { if (!e.target.classList.contains('slip-tab__remove')) openPreview(tab.dataset); });
-    bindDrag(tab);
+    tab.addEventListener('click', function(e) {
+      if (!e.target.classList.contains('slip-tab__remove')) openPreview(tab.dataset);
+    });
     return tab;
   }
 
-  function bindDrag(el) {
-    // Legacy — SortableJS handles drag now, but keep click handler
-  }
-
   function initDropZones() {
-    // SortableJS replaces native drag-and-drop — touch + mouse
+    // SortableJS — touch + mouse drag-and-drop, cross-column
     document.querySelectorAll('.queue-list, .worker-list').forEach(function(zone) {
       Sortable.create(zone, {
-        group: 'dispatch',
+        group:     'dispatch',
         animation: 150,
-        handle: window.innerWidth > 768 ? '.slip-card__handle' : undefined,
-        ghostClass: 'sortable-ghost',
+        ghostClass:  'sortable-ghost',
         chosenClass: 'sortable-chosen',
-        delay: window.innerWidth <= 768 ? 120 : 0,
+        dragClass:   'sortable-drag',
+        delay:       window.innerWidth <= 768 ? 120 : 0,
         delayOnTouchOnly: true,
         touchStartThreshold: 4,
 
         onEnd: function(evt) {
-          var item = evt.item;
+          var item    = evt.item;
           var fromCol = evt.from;
-          var toCol = evt.to;
-          var jid = item.dataset.jobId;
+          var toCol   = evt.to;
+          var jid     = item.dataset.jobId;
           var newWorker = toCol.dataset.worker || '';
-          var oldWorker = fromCol.dataset.worker || '';
 
-          // If moved between columns, handle assign/unassign
+          // If moved between columns, handle assign
           if (fromCol !== toCol && newWorker) {
             fetch('/api/dispatch/assign', {
               method: 'POST',
