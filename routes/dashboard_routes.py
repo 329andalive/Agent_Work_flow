@@ -808,19 +808,33 @@ def proposal_action(proposal_id):
                 ).data
                 if prop:
                     p = prop[0]
+
+                    # Load source job if it exists (may be null for some proposals)
+                    source_job = {}
+                    if p.get("job_id"):
+                        try:
+                            jr = sb.table("jobs").select("customer_id, job_type, job_description, job_notes").eq("id", p["job_id"]).execute()
+                            if jr.data:
+                                source_job = jr.data[0]
+                        except Exception:
+                            pass
+
                     wo = {
-                        "client_id": client_id,
-                        "customer_id": p.get("customer_id"),
-                        "status": "work_order",
-                        "scheduled_date": None,
-                        "job_type": "from_proposal",
-                        "job_description": p.get("proposal_text", ""),
-                        "estimated_amount": p.get("amount_estimate"),
+                        "client_id":          client_id,
+                        "customer_id":        p.get("customer_id") or source_job.get("customer_id"),
+                        "job_type":           source_job.get("job_type") or "service call",
+                        "status":             "work_order",
+                        "scheduled_date":     None,
+                        "job_description":    source_job.get("job_description") or p.get("proposal_text") or None,
+                        "job_notes":          source_job.get("job_notes") or None,
+                        "estimated_amount":   float(p.get("amount_estimate") or 0) or None,
                         "source_proposal_id": proposal_id,
-                        "created_at": now,
+                        "raw_input":          f"Auto-created from accepted proposal {proposal_id[:8].upper()}",
+                        "created_at":         now,
                     }
+                    print(f"[{_ts()}] INFO proposal_action: inserting work order — {wo}")
                     sb.table("jobs").insert(wo).execute()
-                    print(f"[{_ts()}] INFO dashboard_routes: Auto work order created from proposal {proposal_id[:8]}")
+                    print(f"[{_ts()}] INFO proposal_action: work order created from proposal {proposal_id[:8]}")
             except Exception as wo_err:
                 print(f"[{_ts()}] WARN dashboard_routes: Auto work order failed — {wo_err}")
 
