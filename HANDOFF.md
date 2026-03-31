@@ -86,6 +86,8 @@ MOD   execution/sms_receive.py                 — registered access_bp, session
 - **`access_requests` table** — verify exists in Supabase with correct columns
 - **10DLC approval** — outbound SMS still blocked
 - **Square production credentials** — still on sandbox
+- **SQL migration** — `ALTER TABLE jobs ADD COLUMN IF NOT EXISTS source_proposal_id uuid;`
+- **Rule added 2026-03-30:** All outbound email links must use token URLs (`/p/<token>`, `/i/<token>`). Never `/dashboard/` URLs. Enforced by `tests/test_email_links.py`.
 
 ---
 
