@@ -1055,7 +1055,23 @@ def api_send_invoice_email(invoice_id):
 
     client = _load_client(client_id)
     base_url = os.environ.get("BOLTS11_BASE_URL", "https://web-production-043dc.up.railway.app")
-    doc_url = f"{base_url}/dashboard/invoice/{invoice_id}"
+
+    # Use public token URL so customer can view without logging in
+    inv_token = invoice.get("edit_token") or ""
+    if inv_token:
+        doc_url = f"{base_url}/i/{inv_token}"
+    else:
+        try:
+            link_result = sb.table("invoice_links").select("token").eq(
+                "job_id", invoice.get("job_id")
+            ).eq("type", "invoice").execute()
+            if link_result.data:
+                doc_url = f"{base_url}/i/{link_result.data[0]['token']}"
+            else:
+                doc_url = f"{base_url}/dashboard/invoice/{invoice_id}"
+                print(f"[{_ts()}] WARN send_invoice_email: no public token for invoice {invoice_id[:8]} — using dashboard URL")
+        except Exception:
+            doc_url = f"{base_url}/dashboard/invoice/{invoice_id}"
 
     from execution.email_send import send_invoice_email
     result = send_invoice_email(
@@ -1156,7 +1172,24 @@ def api_send_proposal_email(proposal_id):
 
     client = _load_client(client_id)
     base_url = os.environ.get("BOLTS11_BASE_URL", "https://web-production-043dc.up.railway.app")
-    doc_url = f"{base_url}/dashboard/proposal/{proposal_id}"
+
+    # Use public token URL so customer can view without logging in
+    token = proposal.get("edit_token") or ""
+    if token:
+        doc_url = f"{base_url}/p/{token}"
+    else:
+        # Fallback: try to find token from invoice_links table
+        try:
+            link_result = sb.table("invoice_links").select("token").eq(
+                "job_id", proposal.get("job_id")
+            ).eq("type", "proposal").execute()
+            if link_result.data:
+                doc_url = f"{base_url}/p/{link_result.data[0]['token']}"
+            else:
+                doc_url = f"{base_url}/dashboard/proposal/{proposal_id}"
+                print(f"[{_ts()}] WARN send_proposal_email: no public token for proposal {proposal_id[:8]} — using dashboard URL")
+        except Exception:
+            doc_url = f"{base_url}/dashboard/proposal/{proposal_id}"
 
     from execution.email_send import send_proposal_email
     result = send_proposal_email(
