@@ -319,6 +319,50 @@ def dispatch_send():
 
 
 # ---------------------------------------------------------------------------
+# POST /api/jobs/reorder — persist drag-and-drop sort order
+# ---------------------------------------------------------------------------
+
+@dispatch_bp.route("/api/jobs/reorder", methods=["POST"])
+def reorder_jobs():
+    """
+    Persist run order after drag-and-drop reorder on dispatch or control board.
+    Body: { "moves": [ { "job_id": "uuid", "sort_order": 0, "assigned_worker_id": "uuid_or_null" }, ... ] }
+    """
+    client_id = _resolve_client_id()
+    if not client_id:
+        return jsonify({"success": False, "error": "not authenticated"}), 401
+
+    data = request.get_json(silent=True) or {}
+    moves = data.get("moves", [])
+
+    if not moves:
+        return jsonify({"success": True, "updated": 0})
+
+    sb = _get_supabase()
+    updated = 0
+
+    for m in moves:
+        job_id = m.get("job_id")
+        sort_order = m.get("sort_order")
+        worker_id = m.get("assigned_worker_id")
+
+        if not job_id or sort_order is None:
+            continue
+
+        patch = {"sort_order": sort_order}
+        if worker_id is not None:
+            patch["assigned_worker_id"] = worker_id if worker_id != "" else None
+
+        try:
+            sb.table("jobs").update(patch).eq("id", job_id).eq("client_id", client_id).execute()
+            updated += 1
+        except Exception as e:
+            print(f"[{timestamp()}] WARN reorder_jobs: job {job_id} — {e}")
+
+    return jsonify({"success": True, "updated": updated})
+
+
+# ---------------------------------------------------------------------------
 # POST /api/dispatch/unassign — worker reschedules a job
 # ---------------------------------------------------------------------------
 

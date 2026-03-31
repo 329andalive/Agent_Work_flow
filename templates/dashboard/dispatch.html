@@ -88,6 +88,15 @@
 .pv-label { font-family:'DM Mono',monospace; font-size:9px; text-transform:uppercase; letter-spacing:0.06em; color:var(--text-tertiary); margin-bottom:2px; }
 .pv-value { font-size:13px; color:var(--text-primary); }
 .dispatch-empty { text-align:center; padding:48px 20px; color:var(--text-tertiary); font-size:13px; }
+
+/* SortableJS drag styles */
+.slip-card.sortable-ghost, .slip-tab.sortable-ghost { opacity:.35; border:2px dashed #F5C843 !important; }
+.slip-card.sortable-chosen, .slip-tab.sortable-chosen { box-shadow:0 8px 28px rgba(0,0,0,.28); transform:rotate(1.5deg) scale(1.02); z-index:100; cursor:grabbing !important; }
+.slip-card__handle { cursor:grab; color:var(--text-tertiary); font-size:13px; padding:4px 6px 4px 0; flex-shrink:0; touch-action:none; -webkit-user-select:none; user-select:none; line-height:1; }
+.slip-card__handle:active { cursor:grabbing; }
+@media (max-width:768px) { .slip-card__handle { display:none; } .slip-card, .slip-tab { touch-action:none; } }
+.queue-list.sortable-over, .worker-list.sortable-over { background:rgba(245,200,67,0.06); border-color:#F5C843; }
+.slip-card__seq { font-family:'DM Mono',monospace; font-size:9px; color:var(--text-tertiary); font-weight:700; min-width:14px; text-align:center; flex-shrink:0; opacity:.5; }
 {% endblock %}
 
 {% block content %}
@@ -239,25 +248,63 @@
   }
 
   function bindDrag(el) {
-    el.addEventListener('dragstart', function(e) { draggedEl = el; el.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', el.dataset.jobId); });
-    el.addEventListener('dragend', function() { el.classList.remove('dragging'); draggedEl = null; document.querySelectorAll('.drag-over').forEach(function(z) { z.classList.remove('drag-over'); }); });
+    // Legacy — SortableJS handles drag now, but keep click handler
   }
 
   function initDropZones() {
+    // SortableJS replaces native drag-and-drop — touch + mouse
     document.querySelectorAll('.queue-list, .worker-list').forEach(function(zone) {
-      zone.addEventListener('dragover', function(e) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; zone.classList.add('drag-over'); });
-      zone.addEventListener('dragleave', function() { zone.classList.remove('drag-over'); });
-      zone.addEventListener('drop', function(e) {
-        e.preventDefault(); zone.classList.remove('drag-over');
-        if (!draggedEl) return;
-        var tw = zone.dataset.worker;
-        var sz = draggedEl.closest('.queue-list, .worker-list');
-        if (!sz || tw === sz.dataset.worker) return;
-        var jid = draggedEl.dataset.jobId;
-        var jd = Object.assign({}, draggedEl.dataset);
-        if (tw === '') { zone.appendChild(makeCard(jd, false)); } else { zone.appendChild(makeTab(jd)); }
-        draggedEl.remove(); updateCounts(); updateSendBtn();
-        if (tw) fetch('/api/dispatch/assign', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({job_id:jid, worker_id:tw, date:DISPATCH_DATE}) }).catch(function() {});
+      Sortable.create(zone, {
+        group: 'dispatch',
+        animation: 150,
+        handle: window.innerWidth > 768 ? '.slip-card__handle' : undefined,
+        ghostClass: 'sortable-ghost',
+        chosenClass: 'sortable-chosen',
+        delay: window.innerWidth <= 768 ? 120 : 0,
+        delayOnTouchOnly: true,
+        touchStartThreshold: 4,
+
+        onEnd: function(evt) {
+          var item = evt.item;
+          var fromCol = evt.from;
+          var toCol = evt.to;
+          var jid = item.dataset.jobId;
+          var newWorker = toCol.dataset.worker || '';
+          var oldWorker = fromCol.dataset.worker || '';
+
+          // If moved between columns, handle assign/unassign
+          if (fromCol !== toCol && newWorker) {
+            fetch('/api/dispatch/assign', {
+              method: 'POST',
+              headers: {'Content-Type': 'application/json'},
+              body: JSON.stringify({job_id: jid, worker_id: newWorker, date: DISPATCH_DATE})
+            }).catch(function() {});
+          }
+
+          // Persist sort order for all affected columns
+          var moves = [];
+          function collectCol(colEl) {
+            var wid = colEl.dataset.worker || '';
+            Array.from(colEl.children).forEach(function(card, idx) {
+              if (card.dataset && card.dataset.jobId) {
+                moves.push({job_id: card.dataset.jobId, sort_order: idx, assigned_worker_id: wid});
+              }
+            });
+          }
+          collectCol(toCol);
+          if (fromCol !== toCol) collectCol(fromCol);
+
+          if (moves.length > 0) {
+            fetch('/api/jobs/reorder', {
+              method: 'POST',
+              headers: {'Content-Type': 'application/json'},
+              body: JSON.stringify({moves: moves})
+            }).catch(function(e) { console.warn('[dispatch-sort] save failed:', e); });
+          }
+
+          updateCounts();
+          updateSendBtn();
+        }
       });
     });
   }

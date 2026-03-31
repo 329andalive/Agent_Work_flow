@@ -97,10 +97,11 @@
     </span>
     <a href="/dashboard/new-job" class="btn btn-navy">+ New Job</a>
   </div>
-  <div class="card-body-flush">
+  <div class="card-body-flush" id="control-job-list">
     {% if jobs %}
       {% for j in jobs %}
-      <a href="/dashboard/job/{{ j.id }}" class="job-card-row">
+      <div class="job-card-row" data-job-id="{{ j.id }}" style="touch-action:none;-webkit-user-select:none;user-select:none;cursor:grab;">
+        <a href="/dashboard/job/{{ j.id }}" style="display:contents;color:inherit;text-decoration:none;" onclick="event.stopPropagation()">
         <div>
           <div class="job-card-row__type">{{ j.job_type or 'Job' }}</div>
           <div class="job-card-row__desc">
@@ -115,7 +116,8 @@
           </span>
         </div>
         <span class="view-link">View →</span>
-      </a>
+        </a>
+      </div>
       {% endfor %}
     {% else %}
     <div class="empty-state">No jobs scheduled for today.</div>
@@ -155,4 +157,44 @@
     {% endif %}
   </div>
 </div>
+{% endblock %}
+
+{% block extra_css %}
+.job-card-row.sortable-ghost { opacity:.3; border:2px dashed #F5C843 !important; }
+.job-card-row.sortable-chosen { box-shadow:0 6px 20px rgba(0,0,0,.22); transform:scale(1.015); z-index:100; }
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function initControlSort() {
+  var list = document.getElementById('control-job-list');
+  if (!list || !list.querySelector('.job-card-row')) return;
+
+  Sortable.create(list, {
+    animation: 150,
+    ghostClass: 'sortable-ghost',
+    chosenClass: 'sortable-chosen',
+    delay: window.innerWidth <= 768 ? 120 : 0,
+    delayOnTouchOnly: true,
+    touchStartThreshold: 4,
+    filter: '.empty-state',
+
+    onEnd: function() {
+      var moves = [];
+      Array.from(list.querySelectorAll('.job-card-row')).forEach(function(row, idx) {
+        if (row.dataset.jobId) {
+          moves.push({ job_id: row.dataset.jobId, sort_order: idx });
+        }
+      });
+      fetch('/api/jobs/reorder', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ moves: moves }),
+      }).catch(function(e) {
+        console.warn('[control-sort] save failed:', e);
+      });
+    }
+  });
+})();
+</script>
 {% endblock %}

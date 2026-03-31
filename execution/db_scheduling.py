@@ -68,6 +68,7 @@ def get_todays_jobs(client_id: str, target_date: str = None) -> list:
                 )
                 .eq("client_id", client_id)
                 .eq("scheduled_date", target_date)
+                .order("sort_order")
                 .order("created_at")
                 .execute()
             )
