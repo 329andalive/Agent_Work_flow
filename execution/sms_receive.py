@@ -24,7 +24,7 @@ import threading
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from flask import Flask, request, jsonify, render_template, make_response
-from datetime import datetime
+from datetime import datetime, timezone
 from execution.sms_router import route_message
 from execution.db_webhook_log import is_duplicate, save_webhook, mark_processed, mark_error
 
@@ -605,21 +605,56 @@ def view_proposal(token):
         if prop_result.data:
             proposal = prop_result.data[0]
 
-    # Build template context from proposal text
+    # Build template context from proposal data
     proposal_text = proposal.get("proposal_text", "") if proposal else ""
     proposal_lines = [l for l in proposal_text.split("\n") if l.strip()]
+
+    # Parse line items
+    line_items = []
+    if proposal:
+        raw_items = proposal.get("line_items")
+        if isinstance(raw_items, str):
+            try:
+                import json as _json
+                line_items = _json.loads(raw_items)
+            except Exception:
+                pass
+        elif isinstance(raw_items, list):
+            line_items = raw_items
+
+    # Calculate totals
+    subtotal = sum(float(li.get("total") or li.get("amount") or 0) for li in line_items)
+    tax_rate = float(proposal.get("tax_rate") or 0) if proposal else 0
+    tax_amount = round(subtotal * tax_rate, 2)
+    total = round(subtotal + tax_amount, 2)
+    if not total and proposal:
+        total = float(proposal.get("amount_estimate") or 0)
+
+    # Format amounts for display
+    for li in line_items:
+        amt = float(li.get("total") or li.get("amount") or 0)
+        li["amount"] = f"${amt:,.2f}"
+    total_display = f"${total:,.2f}" if total else None
 
     # Try to load customer info
     customer_name = "Customer"
     customer_address = ""
-    if job and job.get("customer_id"):
-        cust_result = supabase.table("customers").select("*").eq("id", job["customer_id"]).execute()
+    customer_id = None
+    if proposal and proposal.get("customer_id"):
+        customer_id = proposal["customer_id"]
+    elif job and job.get("customer_id"):
+        customer_id = job["customer_id"]
+
+    if customer_id:
+        cust_result = supabase.table("customers").select("*").eq("id", customer_id).execute()
         if cust_result.data:
             customer_name = cust_result.data[0].get("customer_name", "Customer")
             customer_address = cust_result.data[0].get("customer_address", "")
 
     biz_name = client["business_name"] if client else "Business"
     date_str = datetime.now().strftime("%B %d, %Y")
+    proposal_id = proposal.get("id", "") if proposal else ""
+    proposal_status = proposal.get("status", "sent") if proposal else "sent"
 
     return render_template("proposal.html",
         business_name=biz_name,
@@ -627,11 +662,112 @@ def view_proposal(token):
         customer_address=customer_address,
         date=date_str,
         proposal_lines=proposal_lines,
-        line_items=[],
-        total=None,
+        line_items=line_items,
+        subtotal=f"${subtotal:,.2f}" if subtotal else None,
+        tax_amount=f"${tax_amount:,.2f}" if tax_amount else None,
+        total=total_display,
         client_phone=link.get("client_phone", ""),
         token=token,
+        proposal_id=proposal_id,
+        proposal_status=proposal_status,
     )
+
+
+@app.route("/p/<token>/accept", methods=["POST"])
+def accept_proposal(token):
+    """Customer taps Accept on the proposal page — marks accepted, creates work order."""
+    from execution.token_generator import get_link_by_token, is_expired
+    from execution.db_connection import get_client as get_supabase
+
+    link = get_link_by_token(token)
+    if not link or link.get("type") != "proposal":
+        return jsonify({"success": False, "error": "Invalid link"}), 404
+    if is_expired(link):
+        return jsonify({"success": False, "error": "This link has expired"}), 410
+
+    sb = get_supabase()
+    now = datetime.now(timezone.utc).isoformat()
+
+    # Find the proposal linked to this token
+    proposal_id = link.get("proposal_id") or link.get("job_id")
+    if not proposal_id:
+        return jsonify({"success": False, "error": "No proposal linked to token"}), 400
+
+    try:
+        # Load proposal to get client_id and customer_id
+        result = sb.table("proposals").select(
+            "id, client_id, customer_id, job_id, amount_estimate, status"
+        ).eq("id", proposal_id).execute()
+
+        if not result.data:
+            return jsonify({"success": False, "error": "Proposal not found"}), 404
+
+        proposal = result.data[0]
+
+        if proposal.get("status") == "accepted":
+            return jsonify({"success": True, "message": "Already accepted"})
+
+        # Mark accepted
+        sb.table("proposals").update({
+            "status": "accepted",
+            "accepted_at": now,
+        }).eq("id", proposal_id).execute()
+
+        # Auto-create work order — pull source job if exists
+        source_job = {}
+        if proposal.get("job_id"):
+            jr = sb.table("jobs").select(
+                "job_type, job_description, job_notes"
+            ).eq("id", proposal["job_id"]).execute()
+            if jr.data:
+                source_job = jr.data[0]
+
+        wo_row = {
+            "client_id":          proposal["client_id"],
+            "customer_id":        proposal.get("customer_id"),
+            "job_type":           source_job.get("job_type") or "service call",
+            "status":             "work_order",
+            "scheduled_date":     None,
+            "job_description":    source_job.get("job_description") or None,
+            "job_notes":          source_job.get("job_notes") or None,
+            "estimated_amount":   float(proposal.get("amount_estimate") or 0) or None,
+            "source_proposal_id": proposal_id,
+            "raw_input":          f"Customer accepted via proposal link — {proposal_id[:8].upper()}",
+        }
+        sb.table("jobs").insert(wo_row).execute()
+
+        print(f"[{timestamp()}] INFO accept_proposal: proposal {proposal_id[:8]} accepted via link — work order created")
+        return jsonify({"success": True})
+
+    except Exception as e:
+        print(f"[{timestamp()}] ERROR accept_proposal: {e}")
+        return jsonify({"success": False, "error": "Server error"}), 500
+
+
+@app.route("/p/<token>/decline", methods=["POST"])
+def decline_proposal(token):
+    """Customer taps Decline on the public proposal page."""
+    from execution.token_generator import get_link_by_token
+    from execution.db_connection import get_client as get_supabase
+
+    link = get_link_by_token(token)
+    if not link or link.get("type") != "proposal":
+        return jsonify({"success": False, "error": "Invalid token"}), 404
+
+    sb = get_supabase()
+    job_id = link.get("job_id")
+
+    try:
+        sb.table("proposals").update({
+            "status": "declined",
+            "response_type": "declined",
+        }).eq("job_id", job_id).execute()
+
+        print(f"[{timestamp()}] INFO decline_proposal: Proposal declined via public page — token {token}")
+        return jsonify({"success": True})
+    except Exception as e:
+        print(f"[{timestamp()}] ERROR decline_proposal: {e}")
+        return jsonify({"success": False, "error": "Server error"}), 500
 
 
 @app.route("/i/<token>")
