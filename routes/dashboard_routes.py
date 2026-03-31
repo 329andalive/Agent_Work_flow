@@ -2320,7 +2320,7 @@ def workers_page():
     workers = []
     try:
         result = sb.table("employees").select(
-            "id, name, phone, role, notes, active"
+            "id, name, phone, role, active"
         ).eq("client_id", client_id).order("active", desc=True).order("name").execute()
         workers = result.data or []
     except Exception as e:
@@ -2344,7 +2344,6 @@ def workers_create():
     name = (data.get("name") or "").strip()
     phone = (data.get("phone") or "").strip()
     role = (data.get("role") or "").strip()
-    notes = (data.get("notes") or "").strip()
 
     if not name:
         return jsonify({"success": False, "error": "Name is required"})
@@ -2368,7 +2367,6 @@ def workers_create():
             "name": name,
             "phone": phone,
             "role": role or None,
-            "notes": notes or None,
             "active": True,
         }).execute()
         worker_id = result.data[0]["id"]
@@ -2408,8 +2406,6 @@ def workers_update():
             updates["phone"] = data["phone"].strip()
     if "role" in data:
         updates["role"] = data["role"] or None
-    if "notes" in data:
-        updates["notes"] = data["notes"].strip() or None
     if "active" in data:
         updates["active"] = bool(data["active"])
 
