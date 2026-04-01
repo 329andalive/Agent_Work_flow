@@ -983,7 +983,7 @@ def invoice_action(invoice_id):
         print(f"[{_ts()}] ERROR dashboard_routes: invoice action — {e}")
         flash("Action failed.", "error")
 
-    return redirect(f"/dashboard/invoice/{invoice_id}")
+    return redirect("/dashboard/invoices/")
 
 
 # ---------------------------------------------------------------------------

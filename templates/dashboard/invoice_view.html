@@ -258,8 +258,8 @@ function emailInvoice() {
   .then(function(r) { return r.json(); })
   .then(function(data) {
     if (data.success) {
-      btn.textContent = 'Sent \u2713';
-      setTimeout(function() { btn.textContent = 'Email Invoice'; btn.disabled = false; }, 3000);
+      window.location.href = '/dashboard/invoices/';
+      return;
     } else if (data.error === 'no_email') {
       var email = prompt('No email on file. Enter customer email:');
       if (email) {
@@ -270,7 +270,7 @@ function emailInvoice() {
           body: JSON.stringify({email: email})
         }).then(function(r) { return r.json(); })
         .then(function(d2) {
-          if (d2.success) { btn.textContent = 'Sent \u2713'; setTimeout(function() { btn.textContent = 'Email Invoice'; btn.disabled = false; }, 3000); }
+          if (d2.success) { window.location.href = '/dashboard/invoices/'; return; }
           else { alert('Failed: ' + (d2.error || d2.message || 'Unknown error')); btn.textContent = 'Email Invoice'; btn.disabled = false; }
         }).catch(function() { alert('Network error'); btn.textContent = 'Email Invoice'; btn.disabled = false; });
       } else { btn.textContent = 'Email Invoice'; btn.disabled = false; }
