@@ -1,8 +1,57 @@
 Response
 
 # HANDOFF.md — Bolts11 Session Log
-> Last updated: March 30, 2026 — Backend Engineer
+> Last updated: March 31, 2026 — Backend Engineer
 > Read CLAUDE.md first every session before touching any code.
+
+---
+
+## Session — March 31, 2026
+
+### Strategic Pivot: Dual Delivery (Email Primary + Inbound SMS)
+
+**Decision:** Ship a partial release that uses inbound SMS for all commands
+but delivers all customer-facing outbound via email instead of SMS.
+
+**Why:** 10DLC campaign registration is a major friction point — slow approval,
+compliance overhead, and it blocks all outbound SMS to customers. A brand number
+(much simpler to register) handles inbound SMS just fine. Email delivery is
+already built (Resend agent, branded HTML templates) and works today.
+
+**What this means for the product:**
+- **Inbound SMS stays as-is** — techs text ESTIMATE, DONE, CLOCK IN/OUT, etc.
+  Brand number registration (not 10DLC) is all that's needed for inbound.
+- **Outbound to customers = email** — proposals, invoices, confirmations,
+  follow-ups, review requests all go via email (Resend API)
+- **Outbound to internal team = SMS allowed** — command confirmations and
+  alerts to owner/foreman/techs can still go via SMS on the brand number
+- **10DLC is deferred, not abandoned** — if/when approved, SMS becomes a
+  secondary outbound channel alongside email
+
+**Files updated:**
+```
+MOD   CLAUDE.md   — Communication Layer rewritten for dual delivery,
+                    Hard Rule #2 updated (email-first, not SMS opt-in),
+                    Build Status updated, file tree + env vars updated
+MOD   HANDOFF.md  — This session entry + pending items updated
+```
+
+**New pending items from this pivot:**
+- Email delivery wiring for follow-up agent and review request agent
+- Customer email collection workflow (prompt owner when email missing)
+- needs_attention card type: `missing_customer_email`
+- Audit all outbound paths — ensure no agent sends SMS to customers
+- Brand number registration with Telnyx (replaces 10DLC as priority)
+
+### Still Pending — Carry Forward
+- **Brand number registration** — register Telnyx number as brand (inbound SMS)
+- **Railway redeploy needed** — latest commit needs to be deployed
+- **admin.bolts11.com DNS** — CNAME record needed in Cloudflare
+- **ADMIN_PIN env var** — set in new Railway admin service
+- **RESEND_API_KEY** — confirm set in Railway env vars
+- **Square production credentials** — still on sandbox
+- **SQL migration** — `ALTER TABLE jobs ADD COLUMN IF NOT EXISTS source_proposal_id uuid;`
+- **`access_requests` table** — verify exists in Supabase with correct columns
 
 ---
 
@@ -79,12 +128,12 @@ MOD   execution/sms_receive.py                 — registered access_bp, session
 329andalive/bolts10           — bolts11.com static site (Cloudflare Pages)
 ```
 
-### Still Pending — Carry Forward
+### Still Pending — Carry Forward (superseded by March 31 session)
 - **Railway redeploy needed** — latest commit needs to be deployed (was on old commit)
 - **admin.bolts11.com DNS** — CNAME record needed in Cloudflare pointing to new Railway service
 - **ADMIN_PIN env var** — set in new Railway admin service
 - **`access_requests` table** — verify exists in Supabase with correct columns
-- **10DLC approval** — outbound SMS still blocked
+- ~~**10DLC approval** — outbound SMS still blocked~~ → **DEFERRED** (March 31 pivot: email-first delivery)
 - **Square production credentials** — still on sandbox
 - **SQL migration** — `ALTER TABLE jobs ADD COLUMN IF NOT EXISTS source_proposal_id uuid;`
 - **Rule added 2026-03-30:** All outbound email links must use token URLs (`/p/<token>`, `/i/<token>`). Never `/dashboard/` URLs. Enforced by `tests/test_email_links.py`.
@@ -335,7 +384,7 @@ Confirmed end-to-end at 6:26 PM:
 - [x] AI dispatch apprentice logging (dispatch_decisions table)
 
 ### Still Pending — Not Code, Just Waiting
-- [ ] **10DLC approval from Telnyx** — outbound SMS to real customers blocked until approved
+- [x] ~~**10DLC approval from Telnyx**~~ — **DEFERRED** (March 31 pivot: email-first outbound, brand number for inbound)
 - [ ] **Square production credentials** — flip env vars when ready for real money
 
 ### Next Session Priority

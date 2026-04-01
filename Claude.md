@@ -5,7 +5,7 @@
 You are building and operating an AI-powered back office system for 
 small trades businesses. The first client vertical is Sewer and Drain. 
 Every decision you make should be evaluated against one question: 
-would a 55-year-old rural Septic servicer actually use this?
+would a 55-year-old rural Tradesmen service actually use this?
 
 ---
 
@@ -75,11 +75,29 @@ Each agent has a directive in `directives/agents/{agent_name}.md`
 
 ## Communication Layer
 
-**Primary interface: SMS via Telnyx**
-- Inbound: plumber texts job description to dedicated number
-- Outbound: system texts back proposals, invoices, confirmations
+**Inbound: SMS via Telnyx (brand number)**
+- Plumber texts job descriptions, commands, completions to dedicated number
+- Brand number registration (not 10DLC) — simpler approval, inbound-only
 - No app required. Works on every phone. Rural friendly.
 - When service resumes after dead zones, SMS queues deliver
+- Keywords: ESTIMATE, DONE, CLOCK IN/OUT, SCHEDULE, ADD CUSTOMER, etc.
+
+**Outbound: Dual Delivery (Email primary, SMS secondary)**
+- Email is the primary outbound channel for all customer-facing documents:
+  proposals, invoices, confirmations, follow-ups, review requests
+- Email delivered via Resend API (`execution/resend_agent.py`)
+- Branded HTML templates (navy/amber) with line items, PAY NOW buttons
+- SMS outbound available for internal team notifications (owner, foreman, techs)
+  and brief confirmations back to employees who texted commands
+- Full 10DLC campaign is deferred — too much friction for initial release
+- If 10DLC is later approved, SMS becomes a second outbound channel to customers
+
+**Why email-first for outbound:**
+- 10DLC registration is slow, expensive, and blocks customer-facing SMS
+- Brand numbers allow inbound SMS with near-zero friction
+- Email delivery is instant, free (Resend free tier), and already built
+- Proposals/invoices are HTML documents — they're better as email anyway
+- Trades customers expect emailed estimates. SMS links are a nice-to-have.
 
 **Phase 2: ElevenLabs voice interface**
 - Owner speaks commands hands-free from truck
@@ -98,7 +116,7 @@ Each agent has a directive in `directives/agents/{agent_name}.md`
 ├── requirements.txt                   # 66 pinned packages — regenerate with pip freeze
 ├── execution/                         # Python scripts (deterministic)
 │   ├── sms_receive.py                 # Flask app entry point + blueprint registration
-│   ├── sms_send.py                    # Outbound SMS via Telnyx + sms_message_log
+│   ├── sms_send.py                    # Outbound SMS via Telnyx (internal team only until 10DLC)
 │   ├── sms_router.py                  # SMS routing + worker reply handler (DONE/BACK/etc)
 │   ├── call_claude.py                 # Claude API wrapper (Haiku/Sonnet/Opus)
 │   ├── context_loader.py             # Stateful context assembly for commands
@@ -120,7 +138,8 @@ Each agent has a directive in `directives/agents/{agent_name}.md`
 │   ├── db_messages.py               # Message logging
 │   ├── document_html.py             # Build edit/view HTML for documents
 │   ├── db_document.py               # DB ops for edit/learn system
-│   └── db_pricing.py                # Pricing benchmarks + adjustment logging
+│   ├── db_pricing.py                # Pricing benchmarks + adjustment logging
+│   └── resend_agent.py              # Email delivery via Resend (primary outbound channel)
 ├── routes/                            # Flask Blueprints
 │   ├── dashboard_routes.py           # All dashboard pages (20+ templates)
 │   ├── dispatch_routes.py           # /api/dispatch/* + /r/<token> worker route
@@ -169,6 +188,7 @@ SQUARE_ENVIRONMENT=sandbox
 SQUARE_LOCATION_ID=
 SQUARE_WEBHOOK_SIGNATURE_KEY=
 GOOGLE_MAPS_API_KEY=
+RESEND_API_KEY=
 ```
 
 Never hardcode credentials. Always load from `.env` using
@@ -211,15 +231,17 @@ Every customer record must have a phone number. No exceptions.
 - Any agent that creates a customer without a phone fails loudly
 - SQL: `ALTER TABLE customers ALTER COLUMN customer_phone SET NOT NULL`
 
-**HARD RULE #2 — SMS opt-in required before texting customers**
-Every customer must have explicit SMS opt-in before the platform
-texts them. This is a legal requirement (10DLC/CTIA).
-- Columns: `sms_consent boolean DEFAULT false`, `sms_consent_at timestamptz`, `sms_consent_src text`
-- Every agent that sends SMS to a CUSTOMER (not employee) must check
-  `customer.sms_consent` first
-- If false: block the SMS, log `sms_blocked_no_optin` to agent_activity
-- Opt-in is set via: `SET OPTIN +1XXXXXXXXXX` from owner's phone,
-  or customer replies START to the business number
+**HARD RULE #2 — Customer-facing outbound goes via email (not SMS)**
+Until 10DLC is approved, all customer-facing outbound (proposals, 
+invoices, confirmations, follow-ups) must be delivered via email.
+- SMS outbound to customers is blocked — no 10DLC = no customer SMS
+- SMS outbound to internal team (owner, foreman, techs) is allowed
+  via the brand number for command confirmations and alerts
+- Email requires a customer email address on file
+- If no email: log `delivery_blocked_no_email` to agent_activity,
+  surface a needs_attention card so owner can provide the email
+- SMS opt-in columns remain in schema for future 10DLC activation
+- When 10DLC is approved, re-enable SMS as a secondary delivery channel
 
 ## SMS Routing Order (sms_router.py)
 
@@ -574,21 +596,27 @@ Test client record: create a record in Supabase for your own number
 - Never make the output sound generic — that defeats the purpose
 
 ## Current Build Status
-Phase 1 — In Progress
+Phase 1 — Partial Release (Inbound SMS + Email Delivery)
 
 Working:
-- Inbound SMS webhook routing
+- Inbound SMS webhook routing (brand number, no 10DLC needed)
 - Role-based permissions (owner, foreman, field_tech, office)
-- Proposal generation via Claude → styled HTML → SMS link
+- Proposal generation via Claude → styled HTML → email delivery
+- Invoice generation → styled HTML → email with PAY NOW link
 - Proposal follow-up tracking (accepted/declined/lost)
 - Clock in/out stub
 - Scheduling agent (SMS parse → job + schedule → confirm)
 - Job list query by day
+- Email delivery via Resend (proposals, invoices, confirmations)
+- Dashboard (20+ pages, dispatch board, planner, control board)
+- Square payment links (sandbox)
 
 Pending:
-- 10DLC registration (SMS sending blocked until approved)
-- GUI dashboard (not started)
-- needs_attention card system (not started)
+- Email delivery for all remaining outbound (follow-ups, review requests)
+- Customer email collection workflow (prompt when missing)
+- needs_attention card for missing customer email
+- 10DLC registration (deferred — not blocking release)
+- Square production credentials
 - Customer matching logic (not started)
 
 Do not suggest features beyond Phase 1 and Phase 2 
