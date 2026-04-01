@@ -669,19 +669,18 @@
       <span class="nav-single-inner"><span class="nav-section-icon">⊞</span> Dashboard</span>
     </a>
 
-    <div class="nav-section">
-      <div class="nav-section-header {% if active_page in ['estimates','invoices','payments','customers'] %}active open{% endif %}"
-           onclick="toggleNav(this)">
-        <span class="nav-section-label"><span class="nav-section-icon">💳</span> Sales & Payments</span>
-        <span class="nav-chevron">▼</span>
-      </div>
-      <div class="nav-children {% if active_page in ['estimates','invoices','payments','customers'] %}open{% endif %}">
-        <a href="/dashboard/estimates/" class="nav-child-link {{ 'active' if active_page == 'estimates' else '' }}">Estimates</a>
-        <a href="/dashboard/invoices/"  class="nav-child-link {{ 'active' if active_page == 'invoices'  else '' }}">Invoices</a>
-        <a href="/dashboard/payments/"  class="nav-child-link {{ 'active' if active_page == 'payments'  else '' }}">Payments</a>
-        <a href="/dashboard/customers/" class="nav-child-link {{ 'active' if active_page == 'customers' else '' }}">Customers</a>
-      </div>
-    </div>
+    <a href="/dashboard/estimates/" class="nav-single-link {{ 'active' if active_page == 'estimates' else '' }}">
+      <span class="nav-single-inner"><span class="nav-section-icon">📋</span> Estimates</span>
+    </a>
+    <a href="/dashboard/invoices/" class="nav-single-link {{ 'active' if active_page == 'invoices' else '' }}">
+      <span class="nav-single-inner"><span class="nav-section-icon">💳</span> Invoices</span>
+    </a>
+    <a href="/dashboard/payments/" class="nav-single-link {{ 'active' if active_page == 'payments' else '' }}">
+      <span class="nav-single-inner"><span class="nav-section-icon">💰</span> Payments</span>
+    </a>
+    <a href="/dashboard/customers/" class="nav-single-link {{ 'active' if active_page == 'customers' else '' }}">
+      <span class="nav-single-inner"><span class="nav-section-icon">👥</span> Customers</span>
+    </a>
 
     <div class="nav-section">
       <div class="nav-section-header {{ 'open' if active_page == 'purchases' else '' }}" onclick="toggleNav(this)">
