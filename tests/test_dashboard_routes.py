@@ -101,3 +101,53 @@ def test_dashboard_invoices_returns_200(app_client):
 def test_dashboard_workers_returns_200(app_client):
     resp = app_client.get("/dashboard/workers")
     assert resp.status_code == 200, f"/dashboard/workers → {resp.status_code}"
+
+
+def test_dashboard_workers_trailing_slash(app_client):
+    resp = app_client.get("/dashboard/workers/")
+    assert resp.status_code in (200, 301, 302, 308), f"/dashboard/workers/ → {resp.status_code}"
+
+
+# ---------------------------------------------------------------------------
+# Missing routes — /jobs and /proposals (should redirect)
+# ---------------------------------------------------------------------------
+
+def test_dashboard_jobs_redirects(app_client):
+    """GET /dashboard/jobs should redirect to control board."""
+    resp = app_client.get("/dashboard/jobs")
+    assert resp.status_code in (301, 302, 308), f"/dashboard/jobs → {resp.status_code}"
+
+
+def test_dashboard_jobs_trailing_slash_redirects(app_client):
+    resp = app_client.get("/dashboard/jobs/")
+    assert resp.status_code in (301, 302, 308), f"/dashboard/jobs/ → {resp.status_code}"
+
+
+def test_dashboard_proposals_redirects(app_client):
+    """GET /dashboard/proposals should redirect to estimates."""
+    resp = app_client.get("/dashboard/proposals")
+    assert resp.status_code in (301, 302, 308), f"/dashboard/proposals → {resp.status_code}"
+
+
+def test_dashboard_proposals_trailing_slash_redirects(app_client):
+    resp = app_client.get("/dashboard/proposals/")
+    assert resp.status_code in (301, 302, 308), f"/dashboard/proposals/ → {resp.status_code}"
+
+
+# ---------------------------------------------------------------------------
+# Trailing slash consistency — routes that had slash should work without
+# ---------------------------------------------------------------------------
+
+def test_dashboard_estimates_no_slash(app_client):
+    resp = app_client.get("/dashboard/estimates")
+    assert resp.status_code in (200, 301, 302, 308), f"/dashboard/estimates → {resp.status_code}"
+
+
+def test_dashboard_invoices_no_slash(app_client):
+    resp = app_client.get("/dashboard/invoices")
+    assert resp.status_code in (200, 301, 302, 308), f"/dashboard/invoices → {resp.status_code}"
+
+
+def test_dashboard_customers_no_slash(app_client):
+    resp = app_client.get("/dashboard/customers")
+    assert resp.status_code in (200, 301, 302, 308), f"/dashboard/customers → {resp.status_code}"

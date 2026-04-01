@@ -341,7 +341,7 @@ def office_billing():
 # GET /dashboard/estimates/ — Estimates (proposals) page
 # ---------------------------------------------------------------------------
 
-@dashboard_bp.route("/dashboard/estimates/")
+@dashboard_bp.route("/dashboard/estimates/", strict_slashes=False)
 def estimates_page():
     client_id = _resolve_client_id()
     if not client_id:
@@ -504,7 +504,7 @@ def api_create_estimate():
 # GET /dashboard/invoices/ — Invoices page
 # ---------------------------------------------------------------------------
 
-@dashboard_bp.route("/dashboard/invoices/")
+@dashboard_bp.route("/dashboard/invoices/", strict_slashes=False)
 def invoices_page():
     client_id = _resolve_client_id()
     if not client_id:
@@ -667,7 +667,7 @@ def api_create_invoice():
 # GET /dashboard/payments/ — Payments page (paid invoices only)
 # ---------------------------------------------------------------------------
 
-@dashboard_bp.route("/dashboard/payments/")
+@dashboard_bp.route("/dashboard/payments/", strict_slashes=False)
 def payments_page():
     client_id = _resolve_client_id()
     if not client_id:
@@ -1752,7 +1752,7 @@ def customer_detail(customer_id):
 # GET /dashboard/dispatch — Dispatch Board
 # ---------------------------------------------------------------------------
 
-@dashboard_bp.route("/dashboard/dispatch")
+@dashboard_bp.route("/dashboard/dispatch", strict_slashes=False)
 def dispatch_board():
     client_id = _resolve_client_id()
     if not client_id:
@@ -1842,7 +1842,7 @@ def dispatch_board():
 # GET /dashboard/planner — Schedule Planner (weekly grid)
 # ---------------------------------------------------------------------------
 
-@dashboard_bp.route("/dashboard/planner")
+@dashboard_bp.route("/dashboard/planner", strict_slashes=False)
 def schedule_planner():
     client_id = _resolve_client_id()
     if not client_id:
@@ -2071,7 +2071,7 @@ def api_create_work_order():
 # GET /dashboard/classes — Class/Slot management
 # ---------------------------------------------------------------------------
 
-@dashboard_bp.route("/dashboard/classes")
+@dashboard_bp.route("/dashboard/classes", strict_slashes=False)
 def classes_page():
     client_id = _resolve_client_id()
     if not client_id:
@@ -2252,7 +2252,7 @@ def api_cancel_slot():
 # GET /dashboard/schedule — Appointment schedule (vertical timeline)
 # ---------------------------------------------------------------------------
 
-@dashboard_bp.route("/dashboard/schedule")
+@dashboard_bp.route("/dashboard/schedule", strict_slashes=False)
 def schedule_page():
     client_id = _resolve_client_id()
     if not client_id:
@@ -2347,7 +2347,7 @@ def schedule_page():
 # GET /dashboard/workers — Worker roster management
 # ---------------------------------------------------------------------------
 
-@dashboard_bp.route("/dashboard/workers")
+@dashboard_bp.route("/dashboard/workers", strict_slashes=False)
 def workers_page():
     client_id = _resolve_client_id()
     if not client_id:
@@ -2538,7 +2538,7 @@ def approve_scope(job_id):
 # GET /dashboard/admin — Super admin heartbeat view
 # ---------------------------------------------------------------------------
 
-@dashboard_bp.route("/dashboard/admin")
+@dashboard_bp.route("/dashboard/admin", strict_slashes=False)
 def admin_heartbeat():
     if not session.get("is_super_admin"):
         abort(403)
@@ -2625,10 +2625,26 @@ def admin_heartbeat():
     return render_template("dashboard/admin.html", **ctx)
 
 # ---------------------------------------------------------------------------
+# Alias routes — convenience redirects
+# ---------------------------------------------------------------------------
+
+@dashboard_bp.route("/dashboard/jobs", strict_slashes=False)
+def jobs_redirect():
+    """Jobs are shown on the Control Board — redirect there."""
+    return redirect("/dashboard/")
+
+
+@dashboard_bp.route("/dashboard/proposals", strict_slashes=False)
+def proposals_redirect():
+    """Proposals are listed under Estimates — redirect there."""
+    return redirect("/dashboard/estimates/")
+
+
+# ---------------------------------------------------------------------------
 # Stub routes — coming soon pages
 # ---------------------------------------------------------------------------
 
-@dashboard_bp.route("/dashboard/customers/")
+@dashboard_bp.route("/dashboard/customers/", strict_slashes=False)
 def customers():
     client_id = _resolve_client_id()
     if not client_id:
