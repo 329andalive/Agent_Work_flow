@@ -233,6 +233,14 @@
       <div class="card">
         <h2>What do you typically charge?</h2>
         <div class="sub">This helps your AI give accurate estimates. All prices are private — customers never see your cost sheet.</div>
+        <!-- CSV upload for services -->
+        <div class="upload-area" onclick="document.getElementById('svc-csv-file').click()" id="svc-csv-drop" style="padding:20px 16px;margin-bottom:16px">
+          <div class="icon" style="font-size:24px">&#128196;</div>
+          <p style="font-size:13px">Upload a CSV of your common jobs</p>
+          <p style="font-size:11px;color:#aaa;margin-top:2px">Columns: Service, Low, Typical, High</p>
+        </div>
+        <input type="file" id="svc-csv-file" accept=".csv,.txt" style="display:none" onchange="handleServiceCSV(this)">
+
         <table class="price-table"><thead><tr><th>Service</th><th style="width:60px">Low $</th><th style="width:60px">Typical $</th><th style="width:60px">High $</th><th style="width:28px"></th></tr></thead><tbody id="price-body"></tbody></table>
         <button class="add-btn" onclick="addPriceRow()">+ Add custom service</button>
         <div class="hint" style="margin-top:8px">Your AI will use these ranges when generating estimates.</div>
@@ -469,6 +477,48 @@
         typical:parseFloat(r.querySelector('.svc-typ')?.value)||0,
         high:parseFloat(r.querySelector('.svc-high').value)||0
       })).filter(p=>p.service);
+    }
+
+    /* ── Service CSV Import (Step 6 pricing) ─────────────────── */
+    function handleServiceCSV(input){
+      if(!input.files||!input.files[0])return;
+      const reader=new FileReader();
+      reader.onload=function(e){
+        const lines=e.target.result.split(/\r?\n/).filter(l=>l.trim());
+        if(lines.length<2){alert('CSV appears empty');return}
+        const hdr=lines[0].toLowerCase();
+        const cols=hdr.split(/[,\t]/);
+        const idx={svc:-1,low:-1,typ:-1,high:-1};
+        cols.forEach((c,i)=>{
+          const cl=c.trim().replace(/['"]/g,'');
+          if(cl.includes('service')||cl.includes('job')||cl.includes('name')||cl.includes('description'))idx.svc=i;
+          if(cl.includes('low')||cl.includes('min'))idx.low=i;
+          if(cl.includes('typical')||cl.includes('avg')||cl.includes('average')||cl.includes('mid'))idx.typ=i;
+          if(cl.includes('high')||cl.includes('max'))idx.high=i;
+          if(cl.includes('price')||cl.includes('rate')||cl.includes('amount')){
+            if(idx.typ<0)idx.typ=i;
+          }
+        });
+        if(idx.svc<0){idx.svc=0}
+        var count=0;
+        for(var r=1;r<lines.length;r++){
+          var vals=lines[r].split(/[,\t]/).map(function(v){return v.trim().replace(/^["']|["']$/g,'')});
+          var svc=vals[idx.svc]||'';
+          if(!svc)continue;
+          var low=idx.low>=0?parseFloat(vals[idx.low])||0:0;
+          var typ=idx.typ>=0?parseFloat(vals[idx.typ])||0:0;
+          var high=idx.high>=0?parseFloat(vals[idx.high])||0:0;
+          if(!typ&&low&&high)typ=Math.round((low+high)/2);
+          var tr=document.createElement('tr');
+          tr.innerHTML='<td><input class="svc-name" value="'+svc.replace(/"/g,'&quot;')+'"><span style="font-size:10px;color:#888;display:block">per job</span></td><td><input type="number" class="svc-low" value="'+low+'"></td><td><input type="number" class="svc-typ" value="'+typ+'"></td><td><input type="number" class="svc-high" value="'+high+'"></td><td><button class="rm-btn" onclick="this.closest(\'tr\').remove()">&times;</button></td>';
+          document.getElementById('price-body').appendChild(tr);
+          count++;
+        }
+        if(count){
+          document.getElementById('svc-csv-drop').innerHTML='<div class="icon" style="font-size:24px">&#9989;</div><p style="font-size:13px">'+count+' services loaded from CSV</p><p style="font-size:11px;color:#aaa">Click to upload a different file</p>';
+        }else{alert('No services found in CSV')}
+      };
+      reader.readAsText(input.files[0]);
     }
 
     /* ── Customer Import (Step 5) ──────────────────────────────── */
