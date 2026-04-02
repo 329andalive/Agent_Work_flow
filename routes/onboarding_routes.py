@@ -362,32 +362,62 @@ def complete_onboarding(token):
         # so they appear on the dashboard without waiting for admin approval
         client_id = session.get("client_id")
         if client_id:
+            import re as _re
             customers_data = session.get("customers_json") or []
             if isinstance(customers_data, str):
                 try:
                     customers_data = json.loads(customers_data)
                 except Exception:
                     customers_data = []
+
+            print(f"[{timestamp()}] INFO onboarding: customers_json has {len(customers_data)} entries for client_id={client_id}")
+
             cust_count = 0
+            skipped = 0
             for cust in customers_data:
-                phone = cust.get("phone", "")
-                name = cust.get("name", "")
-                if not phone and not name:
+                phone_raw = cust.get("phone", "").strip()
+                name = cust.get("name", "").strip()
+                email = cust.get("email", "").strip()
+                address = cust.get("address", "").strip()
+
+                if not name and not phone_raw:
+                    skipped += 1
                     continue
+
+                # Normalize phone to E.164
+                digits = _re.sub(r"\D", "", phone_raw)
+                if len(digits) == 10:
+                    phone = f"+1{digits}"
+                elif len(digits) == 11 and digits.startswith("1"):
+                    phone = f"+{digits}"
+                elif digits:
+                    phone = f"+{digits}"
+                else:
+                    phone = ""
+
+                # customer_phone is NOT NULL — skip rows without a phone
+                if not phone:
+                    print(f"[{timestamp()}] WARN onboarding: Skipping customer '{name}' — no phone number")
+                    skipped += 1
+                    continue
+
                 try:
                     supabase.table("customers").insert({
                         "client_id": client_id,
-                        "customer_name": name,
-                        "customer_phone": phone or None,
-                        "customer_email": cust.get("email", "") or None,
-                        "customer_address": cust.get("address", "") or None,
+                        "customer_name": name or "Customer",
+                        "customer_phone": phone,
+                        "customer_email": email or None,
+                        "customer_address": address or None,
                         "sms_consent": False,
                     }).execute()
                     cust_count += 1
                 except Exception as e:
-                    print(f"[{timestamp()}] WARN onboarding: Customer insert on complete failed — {e}")
-            if cust_count:
-                print(f"[{timestamp()}] INFO onboarding: Inserted {cust_count} customers on complete for client_id={client_id}")
+                    print(f"[{timestamp()}] WARN onboarding: Customer insert failed for '{name}' ({phone}) — {e}")
+                    skipped += 1
+
+            print(f"[{timestamp()}] INFO onboarding: Customer import on complete — inserted={cust_count} skipped={skipped}")
+        else:
+            print(f"[{timestamp()}] WARN onboarding: No client_id on session — cannot insert customers")
 
         # Notify admin via SMS (if SMS active)
         company = session.get("company_name", "A new client")
@@ -505,6 +535,7 @@ def approve_onboarding(token):
                     print(f"[{timestamp()}] WARN onboarding: Employee insert failed — {e}")
 
             # Create customers from session data (skip if already inserted on complete)
+            import re as _re
             customers = session.get("customers_json") or []
             if isinstance(customers, str):
                 try:
@@ -523,19 +554,33 @@ def approve_onboarding(token):
                     pass
                 cust_count = 0
                 for cust in customers:
-                    phone = cust.get("phone", "")
-                    name = cust.get("name", "")
-                    if not phone and not name:
+                    phone_raw = cust.get("phone", "").strip()
+                    name = cust.get("name", "").strip()
+                    if not phone_raw and not name:
                         continue
-                    if phone and phone in existing_phones:
+
+                    # Normalize phone
+                    digits = _re.sub(r"\D", "", phone_raw)
+                    if len(digits) == 10:
+                        phone = f"+1{digits}"
+                    elif len(digits) == 11 and digits.startswith("1"):
+                        phone = f"+{digits}"
+                    elif digits:
+                        phone = f"+{digits}"
+                    else:
+                        phone = ""
+
+                    if not phone:
+                        continue
+                    if phone in existing_phones:
                         continue
                     try:
                         supabase.table("customers").insert({
                             "client_id": client_id,
-                            "customer_name": name,
-                            "customer_phone": phone or None,
-                            "customer_email": cust.get("email", "") or None,
-                            "customer_address": cust.get("address", "") or None,
+                            "customer_name": name or "Customer",
+                            "customer_phone": phone,
+                            "customer_email": cust.get("email", "").strip() or None,
+                            "customer_address": cust.get("address", "").strip() or None,
                             "sms_consent": False,
                         }).execute()
                         cust_count += 1
