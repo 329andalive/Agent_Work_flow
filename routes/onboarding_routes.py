@@ -354,9 +354,40 @@ def complete_onboarding(token):
             "status": "completed",
             "completed_at": now,
             "last_activity_at": now,
-            "step_reached": 6,
+            "step_reached": 7,
             "personality_md": personality_md,
         }).eq("token", token).execute()
+
+        # Insert customers from session into the customers table immediately
+        # so they appear on the dashboard without waiting for admin approval
+        client_id = session.get("client_id")
+        if client_id:
+            customers_data = session.get("customers_json") or []
+            if isinstance(customers_data, str):
+                try:
+                    customers_data = json.loads(customers_data)
+                except Exception:
+                    customers_data = []
+            cust_count = 0
+            for cust in customers_data:
+                phone = cust.get("phone", "")
+                name = cust.get("name", "")
+                if not phone and not name:
+                    continue
+                try:
+                    supabase.table("customers").insert({
+                        "client_id": client_id,
+                        "customer_name": name,
+                        "customer_phone": phone or None,
+                        "customer_email": cust.get("email", "") or None,
+                        "customer_address": cust.get("address", "") or None,
+                        "sms_consent": False,
+                    }).execute()
+                    cust_count += 1
+                except Exception as e:
+                    print(f"[{timestamp()}] WARN onboarding: Customer insert on complete failed — {e}")
+            if cust_count:
+                print(f"[{timestamp()}] INFO onboarding: Inserted {cust_count} customers on complete for client_id={client_id}")
 
         # Notify admin via SMS (if SMS active)
         company = session.get("company_name", "A new client")
@@ -473,33 +504,45 @@ def approve_onboarding(token):
                 except Exception as e:
                     print(f"[{timestamp()}] WARN onboarding: Employee insert failed — {e}")
 
-            # Create customers from session data
+            # Create customers from session data (skip if already inserted on complete)
             customers = session.get("customers_json") or []
             if isinstance(customers, str):
                 try:
                     customers = json.loads(customers)
                 except Exception:
                     customers = []
-            cust_count = 0
-            for cust in customers:
-                phone = cust.get("phone", "")
-                name = cust.get("name", "")
-                if not phone and not name:
-                    continue
+            if customers:
+                # Check which phones already exist to avoid duplicates
+                existing_phones = set()
                 try:
-                    supabase.table("customers").insert({
-                        "client_id": client_id,
-                        "customer_name": name,
-                        "customer_phone": phone or None,
-                        "customer_email": cust.get("email", "") or None,
-                        "customer_address": cust.get("address", "") or None,
-                        "sms_consent": False,
-                    }).execute()
-                    cust_count += 1
-                except Exception as e:
-                    print(f"[{timestamp()}] WARN onboarding: Customer insert failed — {e}")
-            if cust_count:
-                print(f"[{timestamp()}] INFO onboarding: Created {cust_count} customers for client_id={client_id}")
+                    existing = supabase.table("customers").select("customer_phone").eq(
+                        "client_id", client_id
+                    ).execute()
+                    existing_phones = {r.get("customer_phone") for r in (existing.data or []) if r.get("customer_phone")}
+                except Exception:
+                    pass
+                cust_count = 0
+                for cust in customers:
+                    phone = cust.get("phone", "")
+                    name = cust.get("name", "")
+                    if not phone and not name:
+                        continue
+                    if phone and phone in existing_phones:
+                        continue
+                    try:
+                        supabase.table("customers").insert({
+                            "client_id": client_id,
+                            "customer_name": name,
+                            "customer_phone": phone or None,
+                            "customer_email": cust.get("email", "") or None,
+                            "customer_address": cust.get("address", "") or None,
+                            "sms_consent": False,
+                        }).execute()
+                        cust_count += 1
+                    except Exception as e:
+                        print(f"[{timestamp()}] WARN onboarding: Customer insert failed — {e}")
+                if cust_count:
+                    print(f"[{timestamp()}] INFO onboarding: Created {cust_count} customers on approve for client_id={client_id}")
 
         print(f"[{timestamp()}] INFO onboarding: Approved {session.get('company_name')} | client_id={client_id}")
         return jsonify({"success": True})
