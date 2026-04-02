@@ -222,8 +222,9 @@ def save_step(token):
             2: ["trade_vertical", "trade_specialties", "service_radius_miles", "service_area_desc"],
             3: ["tone_preference", "customer_type", "pricing_style", "tagline", "how_they_found_us"],
             4: ["employees_json"],
-            5: ["pricing_json"],
-            6: ["logo_url"],
+            5: ["customers_json"],
+            6: ["pricing_json"],
+            7: ["logo_url"],
         }
 
         allowed = field_map.get(step, [])
@@ -238,6 +239,94 @@ def save_step(token):
 
     except Exception as e:
         print(f"[{timestamp()}] ERROR onboarding: save_step failed — {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+# ---------------------------------------------------------------------------
+# POST /api/onboarding/<token>/import-customers — bulk customer import
+# ---------------------------------------------------------------------------
+
+@onboarding_bp.route("/api/onboarding/<token>/import-customers", methods=["POST"])
+def import_customers(token):
+    """
+    Import customers from CSV rows, contacts, or manual entries.
+    Accepts: { customers: [{name, phone, email, address}, ...] }
+    Dedupes by phone within the batch. Stores as customers_json on session.
+    """
+    import re
+
+    try:
+        data = request.get_json(force=True, silent=True) or {}
+        rows = data.get("customers", [])
+
+        if not rows:
+            return jsonify({"success": True, "imported": 0, "skipped": 0})
+
+        supabase = _get_supabase()
+        session_result = supabase.table("onboarding_sessions").select(
+            "id, client_id, customers_json"
+        ).eq("token", token).execute()
+
+        if not session_result.data:
+            return jsonify({"success": False, "error": "Session not found"}), 404
+
+        session = session_result.data[0]
+        session_id = session["id"]
+        client_id = session["client_id"]
+
+        # Load existing customers_json to avoid duplicates
+        existing = session.get("customers_json") or []
+        if isinstance(existing, str):
+            import json as _json
+            existing = _json.loads(existing)
+        existing_phones = {c.get("phone", "") for c in existing}
+
+        imported = 0
+        skipped = 0
+        for row in rows:
+            name = (row.get("name") or "").strip()
+            phone_raw = (row.get("phone") or "").strip()
+            email = (row.get("email") or "").strip()
+            address = (row.get("address") or "").strip()
+
+            # Normalize phone
+            digits = re.sub(r"\D", "", phone_raw)
+            if len(digits) == 10:
+                phone = f"+1{digits}"
+            elif len(digits) == 11 and digits.startswith("1"):
+                phone = f"+{digits}"
+            else:
+                phone = f"+{digits}" if digits else ""
+
+            if not name and not phone:
+                skipped += 1
+                continue
+
+            if phone and phone in existing_phones:
+                skipped += 1
+                continue
+
+            existing.append({
+                "name": name,
+                "phone": phone,
+                "email": email,
+                "address": address,
+            })
+            if phone:
+                existing_phones.add(phone)
+            imported += 1
+
+        # Save back to session
+        supabase.table("onboarding_sessions").update({
+            "customers_json": existing,
+            "last_activity_at": datetime.now(timezone.utc).isoformat(),
+        }).eq("id", session_id).execute()
+
+        print(f"[{timestamp()}] INFO onboarding: Imported {imported} customers, skipped {skipped} for token={token[:12]}")
+        return jsonify({"success": True, "imported": imported, "skipped": skipped, "total": len(existing)})
+
+    except Exception as e:
+        print(f"[{timestamp()}] ERROR onboarding: import_customers failed — {e}")
         return jsonify({"success": False, "error": str(e)}), 500
 
 
@@ -383,6 +472,34 @@ def approve_onboarding(token):
                     }).execute()
                 except Exception as e:
                     print(f"[{timestamp()}] WARN onboarding: Employee insert failed — {e}")
+
+            # Create customers from session data
+            customers = session.get("customers_json") or []
+            if isinstance(customers, str):
+                try:
+                    customers = json.loads(customers)
+                except Exception:
+                    customers = []
+            cust_count = 0
+            for cust in customers:
+                phone = cust.get("phone", "")
+                name = cust.get("name", "")
+                if not phone and not name:
+                    continue
+                try:
+                    supabase.table("customers").insert({
+                        "client_id": client_id,
+                        "customer_name": name,
+                        "customer_phone": phone or None,
+                        "customer_email": cust.get("email", "") or None,
+                        "customer_address": cust.get("address", "") or None,
+                        "sms_consent": False,
+                    }).execute()
+                    cust_count += 1
+                except Exception as e:
+                    print(f"[{timestamp()}] WARN onboarding: Customer insert failed — {e}")
+            if cust_count:
+                print(f"[{timestamp()}] INFO onboarding: Created {cust_count} customers for client_id={client_id}")
 
         print(f"[{timestamp()}] INFO onboarding: Approved {session.get('company_name')} | client_id={client_id}")
         return jsonify({"success": True})

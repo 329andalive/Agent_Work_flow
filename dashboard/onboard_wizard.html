@@ -108,7 +108,7 @@
       <div class="hdr-logo">BOLTS11</div>
       <div class="hdr-sub" id="hdr-sub">Business Setup</div>
       <div class="progress" id="progress"></div>
-      <div class="step-label" id="step-label">Step 1 of 6</div>
+      <div class="step-label" id="step-label">Step 1 of 7</div>
       <a class="save-later" onclick="saveLater()">Save & continue later</a>
     </div>
 
@@ -187,21 +187,62 @@
       </div>
     </div>
 
-    <!-- Step 5: Pricing -->
+    <!-- Step 5: Customer Import -->
     <div class="step" id="step-5">
+      <div class="card">
+        <h2>Got existing customers?</h2>
+        <div class="sub">Import your customer list so your AI knows who's who from day one. You can always add more later.</div>
+
+        <!-- CSV Upload -->
+        <div class="upload-area" onclick="document.getElementById('csv-file').click()" id="csv-drop">
+          <div class="icon">&#128196;</div>
+          <p>Upload a CSV or QuickBooks export</p>
+          <p style="font-size:12px;color:#aaa;margin-top:4px">Columns: Name, Phone, Email, Address</p>
+        </div>
+        <input type="file" id="csv-file" accept=".csv,.txt" style="display:none" onchange="handleCSV(this)">
+
+        <!-- Mobile Contacts Picker (only shown on supported devices) -->
+        <div id="contacts-wrap" style="display:none;margin-bottom:16px">
+          <button class="add-btn" onclick="pickContacts()" style="font-size:14px;padding:10px 0">&#128222; Import from Phone Contacts</button>
+        </div>
+
+        <!-- Manual Add -->
+        <div style="margin-bottom:12px">
+          <button class="add-btn" onclick="addCustomerRow()">+ Add a customer manually</button>
+        </div>
+
+        <!-- Customer list preview -->
+        <div id="cust-list-wrap" style="display:none">
+          <h3 style="font-size:14px;font-weight:600;margin-bottom:8px">Customers to import (<span id="cust-count">0</span>)</h3>
+          <div style="max-height:260px;overflow-y:auto;border:1px solid #eee;border-radius:8px">
+            <table class="price-table" style="margin:0">
+              <thead><tr><th>Name</th><th>Phone</th><th>Email</th><th style="width:28px"></th></tr></thead>
+              <tbody id="cust-body"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <a class="skip-link" onclick="goToStep(6)" style="margin-top:12px">Skip — I'll add customers later</a>
+        <button class="btn-next" onclick="nextStep(5)">Next: Your Pricing &rarr;</button>
+        <a class="btn-back" onclick="goToStep(4)">&larr; Back</a>
+      </div>
+    </div>
+
+    <!-- Step 6: Pricing -->
+    <div class="step" id="step-6">
       <div class="card">
         <h2>What do you typically charge?</h2>
         <div class="sub">This helps your AI give accurate estimates. All prices are private — customers never see your cost sheet.</div>
         <table class="price-table"><thead><tr><th>Service</th><th style="width:60px">Low $</th><th style="width:60px">Typical $</th><th style="width:60px">High $</th><th style="width:28px"></th></tr></thead><tbody id="price-body"></tbody></table>
         <button class="add-btn" onclick="addPriceRow()">+ Add custom service</button>
         <div class="hint" style="margin-top:8px">Your AI will use these ranges when generating estimates.</div>
-        <button class="btn-next" onclick="nextStep(5)">Next: Your Logo &rarr;</button>
-        <a class="btn-back" onclick="goToStep(4)">&larr; Back</a>
+        <button class="btn-next" onclick="nextStep(6)">Next: Your Logo &rarr;</button>
+        <a class="btn-back" onclick="goToStep(5)">&larr; Back</a>
       </div>
     </div>
 
-    <!-- Step 6: Logo + Summary -->
-    <div class="step" id="step-6">
+    <!-- Step 7: Logo + Summary -->
+    <div class="step" id="step-7">
       <div class="card">
         <h2>One last thing — your logo</h2>
         <div class="sub">Optional, but it makes your proposals and invoices look great.</div>
@@ -217,7 +258,7 @@
         <h2 style="font-size:17px;margin-bottom:12px">Does everything look right?</h2>
         <div id="summary"></div>
         <button class="btn-next" onclick="submitWizard()">Submit & Finish Setup &rarr;</button>
-        <a class="btn-back" onclick="goToStep(5)">&larr; Go Back and Edit</a>
+        <a class="btn-back" onclick="goToStep(6)">&larr; Go Back and Edit</a>
       </div>
     </div>
 
@@ -251,7 +292,7 @@
     const TOKEN = window.location.pathname.split('/').pop();
     let session = {};
     let currentStep = 1;
-    const STEP_NAMES = ['','Company','Trade','Personality','Team','Pricing','Logo'];
+    const STEP_NAMES = ['','Company','Trade','Personality','Team','Customers','Pricing','Logo'];
     let TRADES = []; // Loaded dynamically from /api/verticals
     const TONES = [{label:'Friendly & Casual'},{label:'Professional'},{label:'Short & Direct'},{label:'Warm & Personal'}];
     const CUSTOMERS = [{label:'Homeowners'},{label:'Property Managers'},{label:'Businesses / Commercial'},{label:'Mix of all of these'}];
@@ -322,17 +363,17 @@
       currentStep=step;
       const bar=document.getElementById('progress');
       bar.innerHTML='';
-      for(let i=1;i<=6;i++){
+      for(let i=1;i<=7;i++){
         const seg=document.createElement('div');
         seg.className='seg'+(i<step?' done':'')+(i===step?' active':'');
         bar.appendChild(seg);
       }
-      document.getElementById('step-label').textContent='Step '+step+' of 6 — '+STEP_NAMES[step];
+      document.getElementById('step-label').textContent='Step '+step+' of 7 — '+STEP_NAMES[step];
       document.querySelectorAll('.step').forEach(s=>s.classList.remove('active'));
       const el=document.getElementById('step-'+step)||document.getElementById('step-success');
       if(el)el.classList.add('active');
       window.scrollTo(0,0);
-      if(step<=6){
+      if(step<=7){
         document.getElementById('hdr-sub').textContent=(session.company_name||'Business')+' Setup';
       }
     }
@@ -430,6 +471,92 @@
       })).filter(p=>p.service);
     }
 
+    /* ── Customer Import (Step 5) ──────────────────────────────── */
+    // Show contacts picker if browser supports it
+    if('contacts' in navigator && 'ContactsManager' in window){
+      document.getElementById('contacts-wrap').style.display='block';
+    }
+
+    function handleCSV(input){
+      if(!input.files||!input.files[0])return;
+      const reader=new FileReader();
+      reader.onload=function(e){
+        const lines=e.target.result.split(/\r?\n/).filter(l=>l.trim());
+        if(lines.length<2){alert('CSV appears empty');return}
+        // Parse header to find columns
+        const hdr=lines[0].toLowerCase();
+        const cols=hdr.split(/[,\t]/);
+        const idx={name:-1,first:-1,last:-1,phone:-1,email:-1,address:-1};
+        cols.forEach((c,i)=>{
+          const cl=c.trim().replace(/['"]/g,'');
+          if(cl.includes('first')&&cl.includes('name'))idx.first=i;
+          else if(cl.includes('last')&&cl.includes('name'))idx.last=i;
+          else if((cl==='name'||cl==='customer name'||cl==='customer_name'||cl==='full name')&&idx.name<0)idx.name=i;
+          if(cl.includes('phone')||cl.includes('mobile')||cl.includes('cell'))idx.phone=i;
+          if(cl.includes('email')||cl.includes('e-mail'))idx.email=i;
+          if(cl.includes('address')||cl.includes('street'))idx.address=i;
+        });
+        // Parse rows
+        const customers=[];
+        for(let r=1;r<lines.length;r++){
+          const vals=lines[r].split(/[,\t]/).map(v=>v.trim().replace(/^["']|["']$/g,''));
+          let name='';
+          if(idx.name>=0)name=vals[idx.name]||'';
+          else if(idx.first>=0)name=((vals[idx.first]||'')+' '+(vals[idx.last]||'')).trim();
+          const phone=vals[idx.phone]||'';
+          const email=idx.email>=0?vals[idx.email]||'':'';
+          const address=idx.address>=0?vals[idx.address]||'':'';
+          if(name||phone)customers.push({name,phone,email,address});
+        }
+        if(!customers.length){alert('No customers found in CSV');return}
+        customers.forEach(c=>addCustomerToTable(c.name,c.phone,c.email,c.address));
+        document.getElementById('csv-drop').innerHTML='<div class="icon">&#9989;</div><p>'+customers.length+' customers loaded from CSV</p><p style="font-size:12px;color:#aaa">Click to upload a different file</p>';
+      };
+      reader.readAsText(input.files[0]);
+    }
+
+    async function pickContacts(){
+      try{
+        const props=['name','tel','email'];
+        const contacts=await navigator.contacts.select(props,{multiple:true});
+        contacts.forEach(c=>{
+          const name=(c.name&&c.name[0])||'';
+          const phone=(c.tel&&c.tel[0])||'';
+          const email=(c.email&&c.email[0])||'';
+          if(name||phone)addCustomerToTable(name,phone,email,'');
+        });
+      }catch(e){
+        if(e.name!=='TypeError')console.error(e);
+      }
+    }
+
+    function addCustomerRow(){
+      addCustomerToTable('','','','');
+    }
+
+    function addCustomerToTable(name,phone,email,address){
+      const tbody=document.getElementById('cust-body');
+      const tr=document.createElement('tr');
+      tr.innerHTML='<td><input class="cust-name" value="'+escAttr(name)+'" placeholder="Name" style="font-size:13px;padding:6px;min-height:36px"></td>'+
+        '<td><input class="cust-phone" value="'+escAttr(phone)+'" placeholder="Phone" style="font-size:13px;padding:6px;min-height:36px"></td>'+
+        '<td><input class="cust-email" value="'+escAttr(email)+'" placeholder="Email" style="font-size:13px;padding:6px;min-height:36px"></td>'+
+        '<td><button class="rm-btn" onclick="this.closest(\'tr\').remove();updateCustCount()">&times;</button></td>';
+      tbody.appendChild(tr);
+      updateCustCount();
+      document.getElementById('cust-list-wrap').style.display='block';
+    }
+    function escAttr(s){return(s||'').replace(/"/g,'&quot;').replace(/</g,'&lt;')}
+    function updateCustCount(){document.getElementById('cust-count').textContent=document.querySelectorAll('#cust-body tr').length}
+
+    function collectCustomers(){
+      return[...document.querySelectorAll('#cust-body tr')].map(r=>({
+        name:r.querySelector('.cust-name').value.trim(),
+        phone:toE164(r.querySelector('.cust-phone').value),
+        email:r.querySelector('.cust-email').value.trim(),
+        address:''
+      })).filter(c=>c.name||c.phone);
+    }
+
     /* ── Logo ───────────────────────────────────────────────────── */
     function previewLogo(input){
       if(input.files&&input.files[0]){
@@ -438,14 +565,16 @@
         reader.readAsDataURL(input.files[0]);
       }
     }
-    function skipLogo(){buildSummary();goToStep(6)}
+    function skipLogo(){buildSummary()}
 
     /* ── Summary ────────────────────────────────────────────────── */
     function buildSummary(){
       const emps=collectEmployees();const pricing=collectPricing();
+      const custCount=document.querySelectorAll('#cust-body tr').length;
       const rows=[
         ['Business',v('s1-name')],['Trade',getSelectedRadio('s2-trades')],
         ['Service Area',v('s2-area')||'Not specified'],['Team',emps.length+' member'+(emps.length!==1?'s':'')],
+        ['Customers',custCount?custCount+' imported':'None yet'],
         ['Pricing Items',pricing.length+' service'+(pricing.length!==1?'s':'')],
         ['Logo',document.getElementById('logo-preview').src?'Uploaded':'Not added']
       ];
@@ -465,10 +594,10 @@
         });
         const d=await res.json();
         if(!d.success){alert('Save failed — '+d.error);btn.disabled=false;btn.textContent=btn.dataset.orig||'Next';return}
-        if(from===5)buildSummary();
+        if(from===6)buildSummary();
         goToStep(from+1);
       }catch(e){alert('Connection error — try again')}
-      btn.disabled=false;btn.textContent=['','Next: Your Trade →','Next: Your Style →','Next: Your Team →','Next: Your Pricing →','Next: Your Logo →','Submit & Finish Setup →'][from]||'Next';
+      btn.disabled=false;btn.textContent=['','Next: Your Trade →','Next: Your Style →','Next: Your Team →','Next: Customers →','Next: Your Pricing →','Next: Your Logo →','Submit & Finish Setup →'][from]||'Next';
     }
 
     function collectStepData(step){
@@ -476,8 +605,9 @@
       if(step===2){const specs=[...document.querySelectorAll('#s2-specs .check-pill.selected')].map(e=>e.textContent);return{trade_vertical:getSelectedRadio('s2-trades'),trade_specialties:specs,service_radius_miles:parseInt(v('s2-radius')),service_area_desc:v('s2-area')}}
       if(step===3)return{tone_preference:getSelectedRadio('s3-tones'),customer_type:getSelectedRadio('s3-customers'),pricing_style:getSelectedRadio('s3-pricing'),tagline:v('s3-tagline'),how_they_found_us:v('s3-source')};
       if(step===4)return{employees_json:collectEmployees()};
-      if(step===5)return{pricing_json:collectPricing()};
-      if(step===6)return{};
+      if(step===5)return{customers_json:collectCustomers()};
+      if(step===6)return{pricing_json:collectPricing()};
+      if(step===7)return{};
       return{};
     }
 
@@ -504,10 +634,10 @@
     function clearErrors(){document.querySelectorAll('.field-error').forEach(e=>e.style.display='none')}
 
     async function submitWizard(){
-      const btn=document.querySelector('#step-6 .btn-next');
+      const btn=document.querySelector('#step-7 .btn-next');
       btn.disabled=true;btn.textContent='Finishing...';
-      // Save step 6 first
-      try{await fetch(API_BASE+'/api/onboarding/'+TOKEN+'/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({step:6,data:{}})});}catch(e){}
+      // Save step 7 first
+      try{await fetch(API_BASE+'/api/onboarding/'+TOKEN+'/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({step:7,data:{}})});}catch(e){}
       // Complete
       try{
         const res=await fetch(API_BASE+'/api/onboarding/'+TOKEN+'/complete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({})});

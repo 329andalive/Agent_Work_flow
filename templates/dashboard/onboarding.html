@@ -96,10 +96,10 @@
       const tb=document.getElementById('pipeline-body');
       if(!sessions.length){tb.innerHTML='<tr><td colspan="6" class="empty-state">No clients yet</td></tr>';return}
       document.getElementById('pipeline-count').textContent=sessions.length+' clients';
-      const names=['Co','Trade','Style','Team','Price','Logo'];
+      const names=['Co','Trade','Style','Team','Cust','Price','Logo'];
       tb.innerHTML=sessions.map(s=>{
         const steps=[];const reached=s.step_reached||0;
-        for(let n=1;n<=6;n++){let c=n<reached?'done':n===reached?'cur':'';steps.push('<div class="step-sq '+c+'" title="'+names[n-1]+'"></div>')}
+        for(let n=1;n<=7;n++){let c=n<reached?'done':n===reached?'cur':'';steps.push('<div class="step-sq '+c+'" title="'+names[n-1]+'"></div>')}
         const badge=s.status==='pending'?'<span class="badge badge-amber">waiting</span>':s.status==='in_progress'?'<span class="badge badge-blue">in progress</span>':s.status==='completed'?'<span class="badge badge-green">review</span>':'<span class="badge badge-green">active</span>';
         return '<tr><td><strong>'+esc(s.company_name||'—')+'</strong></td><td>'+esc(s.owner_name||'—')+'</td><td class="id-short">'+esc(s.trade_vertical||'—')+'</td><td><div class="steps-bar">'+steps.join('')+'</div></td><td>'+badge+'</td><td class="id-short"><a href="'+API+'/onboard/'+s.token+'" target="_blank">link</a></td></tr>'
       }).join('');
