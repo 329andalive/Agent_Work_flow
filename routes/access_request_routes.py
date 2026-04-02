@@ -17,8 +17,8 @@ from werkzeug.security import check_password_hash
 
 access_bp      = Blueprint("access_bp", __name__)
 SUPPORT_EMAIL  = "support@bolts11.com"
-BOLTS11_ORIGIN = "https://bolts11.com"
-BASE_URL       = os.environ.get("BOLTS11_BASE_URL", "https://web-production-043dc.up.railway.app")
+ALLOWED_ORIGINS = ["https://bolts11.com", "https://www.bolts11.com", "https://api.bolts11.com"]
+BASE_URL       = os.environ.get("BOLTS11_BASE_URL", "https://agentworkflow-production.up.railway.app")
 TEMP_PIN       = "5555"
 
 
@@ -27,8 +27,9 @@ def _ts():
 
 
 def _cors(resp, status=200):
+    origin = request.headers.get("Origin", "")
     resp.status_code = status
-    resp.headers["Access-Control-Allow-Origin"]      = BOLTS11_ORIGIN
+    resp.headers["Access-Control-Allow-Origin"]      = origin if origin in ALLOWED_ORIGINS else ALLOWED_ORIGINS[0]
     resp.headers["Access-Control-Allow-Credentials"] = "true"
     resp.headers["Access-Control-Allow-Headers"]     = "Content-Type"
     resp.headers["Access-Control-Allow-Methods"]     = "POST, OPTIONS"
@@ -47,18 +48,12 @@ def _get_supabase():
     return get_client()
 
 
-# ── CORS preflight ────────────────────────────────────────────────────────────
-
-@access_bp.route("/api/access-request", methods=["OPTIONS"])
-@access_bp.route("/api/auth/portal-login", methods=["OPTIONS"])
-def handle_preflight():
-    return _cors(jsonify({}), 200)
-
-
 # ── POST /api/access-request ──────────────────────────────────────────────────
 
-@access_bp.route("/api/access-request", methods=["POST"])
+@access_bp.route("/api/access-request", methods=["POST", "OPTIONS"])
 def access_request():
+    if request.method == "OPTIONS":
+        return _cors(jsonify({}), 200)
     data          = request.get_json(silent=True) or {}
     name          = (data.get("name")          or "").strip()
     email         = (data.get("email")         or "").strip()
@@ -93,7 +88,7 @@ def access_request():
 
 # ── POST /api/auth/portal-login ───────────────────────────────────────────────
 
-@access_bp.route("/api/auth/portal-login", methods=["POST"])
+@access_bp.route("/api/auth/portal-login", methods=["POST", "OPTIONS"])
 def portal_login():
     """
     Login flow for bolts11.com/signin.html
@@ -106,6 +101,9 @@ def portal_login():
       - Correct PIN → redirect to /dashboard/
       - Wrong PIN → error
     """
+    if request.method == "OPTIONS":
+        return _cors(jsonify({}), 200)
+
     data  = request.get_json(silent=True) or {}
     phone = _normalize_phone(data.get("phone", ""))
     pin   = (data.get("pin") or "").strip()
