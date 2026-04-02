@@ -53,6 +53,7 @@ def create_onboarding():
         telnyx_phone = data.get("telnyx_phone", "").strip()
         owner_name = data.get("owner_name", "").strip()
         owner_mobile = data.get("owner_mobile", "").strip()
+        owner_email = data.get("owner_email", "").strip()
         trade_vertical = data.get("trade_vertical", "").strip()
         admin_note = data.get("admin_note", "").strip()
 
@@ -85,6 +86,7 @@ def create_onboarding():
             "status": "pending",
             "company_name": client_name,
             "owner_name": owner_name or None,
+            "owner_email": owner_email or None,
             "owner_mobile": owner_mobile or None,
             "trade_vertical": trade_vertical or None,
         }
@@ -97,11 +99,29 @@ def create_onboarding():
 
         print(f"[{timestamp()}] INFO onboarding: Created session for {client_name} → {onboarding_url}")
 
+        # Auto-send setup link email if owner_email provided
+        email_sent = False
+        if owner_email:
+            try:
+                from execution.resend_agent import send_onboarding_invite
+                result = send_onboarding_invite(
+                    name=owner_name or client_name,
+                    email=owner_email,
+                    business_name=client_name,
+                    onboarding_url=onboarding_url,
+                )
+                email_sent = result.get("success", False)
+                print(f"[{timestamp()}] INFO onboarding: Setup email → {owner_email} sent={email_sent}")
+            except Exception as e:
+                print(f"[{timestamp()}] ERROR onboarding: Failed to send setup email — {e}")
+
         return jsonify({
             "success": True,
             "client_id": client_id,
             "token": token,
             "onboarding_url": onboarding_url,
+            "email_sent": email_sent,
+            "email_to": owner_email if email_sent else None,
         })
 
     except Exception as e:

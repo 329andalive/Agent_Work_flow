@@ -39,6 +39,7 @@
       <div class="fg"><label>Owner Mobile *</label><input id="c-mobile" placeholder="+15551234567"></div>
     </div>
     <div class="ob-form">
+      <div class="fg"><label>Owner Email *</label><input id="c-email" type="email" placeholder="owner@example.com"></div>
       <div class="fg"><label>Trade Vertical</label>
         <select id="c-vertical"><option value="">Select...</option><option>Septic & Sewer</option><option>Plumbing</option><option>HVAC</option><option>Electrical</option><option>Excavation</option><option>Drain Cleaning</option><option>General Contracting</option><option>Landscaping</option><option>Property Maintenance</option></select>
       </div>
@@ -48,6 +49,7 @@
     <div class="ob-success" id="ob-success">
       Setup link created: <a id="ob-link" href="#" target="_blank"></a>
       <button style="margin-left:8px;font-size:11px;padding:3px 8px;border:1px solid var(--border);border-radius:4px;background:none;cursor:pointer" onclick="navigator.clipboard.writeText(document.getElementById('ob-link').href)">Copy</button>
+      <span id="ob-email-status" style="display:block;margin-top:6px;font-size:12px;color:#16a34a"></span>
     </div>
   </div>
 </div>
@@ -73,11 +75,15 @@
   async function createClient(){
     const btn=document.getElementById('create-btn');btn.disabled=true;btn.textContent='Creating...';
     try{
-      const r=await fetch(API+'/api/onboarding/create',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({client_name:v('c-name'),owner_name:v('c-owner'),owner_mobile:v('c-mobile'),trade_vertical:v('c-vertical'),telnyx_phone:v('c-telnyx')})});
+      const r=await fetch(API+'/api/onboarding/create',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({client_name:v('c-name'),owner_name:v('c-owner'),owner_mobile:v('c-mobile'),owner_email:v('c-email'),trade_vertical:v('c-vertical'),telnyx_phone:v('c-telnyx')})});
       const d=await r.json();
       if(d.success){
         const el=document.getElementById('ob-link');el.href=d.onboarding_url;el.textContent=d.onboarding_url;
-        document.getElementById('ob-success').style.display='block';loadPipeline();
+        document.getElementById('ob-success').style.display='block';
+        var es=document.getElementById('ob-email-status');
+        es.textContent=d.email_sent?'Setup link emailed to '+d.email_to:'No email address provided — share the link manually.';
+        es.style.color=d.email_sent?'#16a34a':'#92400e';
+        loadPipeline();
       }
     }catch(e){}
     btn.disabled=false;btn.textContent='Create Client & Send Setup Link →';

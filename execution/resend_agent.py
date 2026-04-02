@@ -183,7 +183,44 @@ def send_welcome_email(
     return _send(to=[email], subject=subject, html=_wrap(body), reply_to=SUPPORT_EMAIL)
 
 
-# ── 4. Invoice / proposal email delivery ──────────────────────────────────────
+# ── 4. Onboarding invite — setup link sent on client creation ─────────────────
+
+def send_onboarding_invite(
+    name: str,
+    email: str,
+    business_name: str,
+    onboarding_url: str,
+) -> dict:
+    first = name.split()[0] if name else "there"
+    subject = f"{first}, set up your Bolts11 back office in 10 minutes"
+    body = f"""
+<h1>Hey {first} — let's get {business_name} set up.</h1>
+<p>Your Bolts11 back office is ready to configure. Click below to walk through a quick setup wizard — it takes about 10 minutes and covers your business info, team, pricing, and voice.</p>
+
+<p><a href="{onboarding_url}" class="btn">Start Setup &rarr;</a></p>
+
+<div class="steps">
+  <p>
+    1. Business info &amp; contact details<br>
+    2. Your trade &amp; service area<br>
+    3. Your voice &amp; pricing style<br>
+    4. Add your team members<br>
+    5. Review your pricing<br>
+    6. Upload your logo &amp; review
+  </p>
+</div>
+
+<div class="highlight">
+  <p><strong>This link expires in 7 days.</strong> You can save your progress and come back anytime before it expires.</p>
+</div>
+
+<p>Questions? Just reply to this email.</p>
+<p>— The Bolts11 Team</p>
+"""
+    return _send(to=[email], subject=subject, html=_wrap(body), reply_to=SUPPORT_EMAIL)
+
+
+# ── 5. Invoice / proposal email delivery ──────────────────────────────────────
 
 def send_document_email(
     to_email: str,
