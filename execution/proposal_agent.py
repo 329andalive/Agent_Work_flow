@@ -84,72 +84,59 @@ def detect_job_type(text: str, vertical_key: str = "sewer_drain") -> str:
     return _get_default_job_type(vertical_key)
 
 
-def extract_customer_name(text: str) -> str:
+def parse_job_fields(raw_input: str) -> dict:
     """
-    Try to pull a customer name from the message.
+    Use Claude Haiku to extract structured fields from a natural language
+    job description texted from the field.
 
-    Handles two patterns:
-      1. Trigger phrases: "for Mike", "customer is Sarah", "name is John"
-      2. Leading name: "CAROL Duggan needs a pump out at..."
-         — owner names the customer first, then describes the job
-    Returns "Customer" if nothing found — agents can ask later.
+    Returns dict with keys: name, address, job_type, price, notes
+    All keys always present. Unknown values return empty string or None.
     """
-    import re
+    import json, re
 
-    text_lower = text.lower()
+    if not raw_input or not raw_input.strip():
+        return {"name": "", "address": "", "job_type": "service", "price": None, "notes": ""}
 
-    # Pattern 1 — trigger phrases
-    name_triggers = ["for ", "customer is ", "name is ", "my name is ", "it's ", "its "]
-    for trigger in name_triggers:
-        idx = text_lower.find(trigger)
-        if idx != -1:
-            after = text[idx + len(trigger):].strip()
-            name = after.split()[0].strip(".,!?").title()
-            # Reject prices ($275), numbers, and single chars — not a name
-            if len(name) > 1 and name[0].isalpha():
-                return name
-
-    # Pattern 2 — "FirstName [LastName] needs/wants/has/is ..."
-    # Handles all-caps names like "CAROL Duggan"
-    leading = re.match(
-        r"^([A-Za-z]+(?:\s+[A-Za-z]+)?)\s+(needs|wants|has|is\s+requesting|called|requesting)\b",
-        text.strip(),
-        re.IGNORECASE,
+    system_prompt = (
+        "You extract structured job details from short text messages sent by trades business owners. "
+        "Return only valid JSON. No explanation. No markdown fences."
     )
-    if leading:
-        candidate = leading.group(1).strip()
-        # Reject single common words that aren't names
-        if candidate.lower() not in {"i", "we", "he", "she", "they", "it", "customer", "owner"}:
-            return candidate.title()
 
-    return "Customer"
+    user_prompt = f"""Extract job details from this text message sent by a trades business owner.
 
+Message: "{raw_input}"
 
-def extract_address(text: str) -> str:
-    """
-    Try to pull a location or address from the message.
-    Looks for route numbers, road names, town names.
-    Returns empty string if nothing found.
-    """
-    import re
-    # Match "route X", "rt X", "road", "street", "lane", "drive", "way"
-    patterns = [
-        r"route\s+\d+",
-        r"rt\.?\s+\d+",
-        r"\d+\s+\w+\s+(road|rd|street|st|lane|ln|drive|dr|way|ave|avenue)",
-        r"on\s+(.{3,40}?)\s+(in|near|by|at)",
-    ]
-    for pattern in patterns:
-        match = re.search(pattern, text, re.IGNORECASE)
-        if match:
-            return match.group(0).strip()
+Return ONLY a JSON object with these exact keys:
+{{
+  "name": "customer full name or empty string if not found",
+  "address": "address, street, road, or location mentioned or empty string",
+  "job_type": "pump_out | repair | inspection | cleanout | install | service | other",
+  "price": dollar amount as number or null,
+  "notes": "any other relevant job details"
+}}
 
-    # Look for "in [Town]" or "near [Town]"
-    location_match = re.search(r"\b(in|near|at)\s+([A-Z][a-z]+(?:\s[A-Z][a-z]+)?)\b", text)
-    if location_match:
-        return location_match.group(0)
+Rules:
+- name: extract any person's name mentioned. Lowercase is fine — capitalize it. "jeremy holt" → "Jeremy Holt". If no name found, return empty string.
+- address: extract any location — street address, road name, route number, town name. "12 school st" → "12 School St". Empty string if none found.
+- job_type: pick the closest match from the list above.
+- price: number only, no $ sign. null if not mentioned.
+- notes: everything else useful about the job."""
 
-    return ""
+    try:
+        response = call_claude(
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            model="haiku",
+            max_tokens=256,
+        )
+        if response:
+            clean = re.sub(r"```[a-z]*\n?", "", response).strip().rstrip("`")
+            return json.loads(clean)
+    except Exception as e:
+        print(f"[{timestamp()}] WARN proposal_agent: parse_job_fields Haiku call failed — {e}")
+
+    # Safe fallback — never crash the proposal flow
+    return {"name": "", "address": "", "job_type": "service", "price": None, "notes": raw_input}
 
 
 def summarize_job(raw_input: str) -> str:
@@ -285,10 +272,20 @@ def run(client_phone: str, customer_phone: str, raw_input: str) -> str | None:
     # ------------------------------------------------------------------
     vertical_key    = client.get("trade_vertical", "sewer_drain")
     job_type        = detect_job_type(raw_input, vertical_key=vertical_key)
-    customer_name   = extract_customer_name(raw_input)
-    customer_address = extract_address(raw_input)
 
-    print(f"[{timestamp()}] INFO proposal_agent: Parsed → job_type={job_type} name={customer_name} address='{customer_address}'")
+    # Use Claude Haiku to extract name, address, price from natural text
+    parsed = parse_job_fields(raw_input)
+    customer_name    = parsed.get("name", "")
+    customer_address = parsed.get("address", "")
+    price_hint       = parsed.get("price")
+
+    # Haiku may also detect job_type — use it if keyword detection returned the default
+    default_jt = _get_default_job_type(vertical_key)
+    haiku_jt = parsed.get("job_type", "")
+    if job_type == default_jt and haiku_jt and haiku_jt != "service" and haiku_jt != "other":
+        job_type = haiku_jt
+
+    print(f"[{timestamp()}] INFO proposal_agent: Parsed → job_type={job_type} name={customer_name!r} address={customer_address!r} price_hint={price_hint}")
 
     # ------------------------------------------------------------------
     # Step 4: HARD RULE — owner phones must never become customers
@@ -329,13 +326,37 @@ def run(client_phone: str, customer_phone: str, raw_input: str) -> str | None:
                 try:
                     from execution.db_connection import get_client as get_supabase
                     sb = get_supabase()
+                    name_parts = customer_name.strip().split()
+                    found = None
+
+                    # Try full name first
                     name_results = sb.table("customers").select(
                         "id, customer_name, customer_phone, customer_address"
                     ).eq("client_id", client_id).ilike(
                         "customer_name", f"%{customer_name}%"
                     ).limit(1).execute()
+
                     if name_results.data:
                         found = name_results.data[0]
+                    elif len(name_parts) >= 2:
+                        # Fallback: search by last name (most distinctive)
+                        last_name = name_parts[-1]
+                        name_results = sb.table("customers").select(
+                            "id, customer_name, customer_phone, customer_address"
+                        ).eq("client_id", client_id).ilike(
+                            "customer_name", f"%{last_name}%"
+                        ).limit(3).execute()
+                        if name_results.data:
+                            # If multiple matches, prefer the one whose first name also matches
+                            first_name = name_parts[0].lower()
+                            for candidate in name_results.data:
+                                if first_name in candidate.get("customer_name", "").lower():
+                                    found = candidate
+                                    break
+                            if not found:
+                                found = name_results.data[0]
+
+                    if found:
                         customer_id = found["id"]
                         customer_name = found.get("customer_name", customer_name)
                         customer_address = found.get("customer_address", customer_address) or customer_address
