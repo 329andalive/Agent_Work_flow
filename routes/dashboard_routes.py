@@ -1454,6 +1454,33 @@ def api_get_pricing():
                 pricing = json.loads(raw)
             elif isinstance(raw, list):
                 pricing = raw
+
+        # Fallback: if no pricing saved, load the vertical's template
+        if not pricing:
+            try:
+                client_result = sb.table("clients").select("trade_vertical").eq("id", client_id).execute()
+                vertical = (client_result.data[0].get("trade_vertical") if client_result.data else None)
+                if vertical:
+                    from execution.db_pricing import get_benchmarks
+                    services = get_benchmarks(vertical)
+                    if not services:
+                        from execution.onboarding_templates import get_template
+                        services = [
+                            {"service_name": t["service"], "price_low": t["low"],
+                             "price_typical": (t["low"] + t["high"]) / 2,
+                             "price_high": t["high"]}
+                            for t in get_template(vertical)
+                        ]
+                    pricing = [
+                        {"service": s.get("service_name") or s.get("service", ""),
+                         "low": s.get("price_low") or s.get("low", 0),
+                         "typical": s.get("price_typical") or s.get("typical", 0),
+                         "high": s.get("price_high") or s.get("high", 0)}
+                        for s in services
+                    ]
+            except Exception as tmpl_err:
+                print(f"[{_ts()}] WARN api_get_pricing: template fallback failed — {tmpl_err}")
+
         return jsonify({"success": True, "pricing": pricing})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500

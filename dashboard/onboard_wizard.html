@@ -349,29 +349,36 @@
       }catch(e){console.error(e)}
     }
 
+    function decodeHTML(str){
+      if(!str)return str;
+      const txt=document.createElement('textarea');
+      txt.innerHTML=str;
+      return txt.value;
+    }
+
     function populateFields(){
       const s=session;
-      if(s.company_name)document.getElementById('s1-name').value=s.company_name;
-      if(s.owner_name)document.getElementById('s1-owner').value=s.owner_name;
+      if(s.company_name)document.getElementById('s1-name').value=decodeHTML(s.company_name);
+      if(s.owner_name)document.getElementById('s1-owner').value=decodeHTML(s.owner_name);
       if(s.owner_mobile)document.getElementById('s1-mobile').value=formatPhone(s.owner_mobile);
       if(s.company_phone)document.getElementById('s1-phone').value=formatPhone(s.company_phone);
-      if(s.company_address)document.getElementById('s1-address').value=s.company_address;
-      if(s.company_city)document.getElementById('s1-city').value=s.company_city;
+      if(s.company_address)document.getElementById('s1-address').value=decodeHTML(s.company_address);
+      if(s.company_city)document.getElementById('s1-city').value=decodeHTML(s.company_city);
       if(s.company_state)document.getElementById('s1-state').value=s.company_state;
       if(s.company_zip)document.getElementById('s1-zip').value=s.company_zip;
       if(s.years_in_business)document.getElementById('s1-years').value=s.years_in_business;
       if(s.trade_vertical)selectRadio('s2-trades',TRADES.map(t=>t.icon+' '+t.label).find(l=>l.includes(s.trade_vertical))||'');
       if(s.service_radius_miles){document.getElementById('s2-radius').value=s.service_radius_miles;document.getElementById('s2-radius-label').textContent=s.service_radius_miles+' miles'}
-      if(s.service_area_desc)document.getElementById('s2-area').value=s.service_area_desc;
+      if(s.service_area_desc)document.getElementById('s2-area').value=decodeHTML(s.service_area_desc);
       if(s.tone_preference)selectRadio('s3-tones',s.tone_preference);
       if(s.customer_type)selectRadio('s3-customers',s.customer_type);
       if(s.pricing_style)selectRadio('s3-pricing',s.pricing_style);
-      if(s.tagline)document.getElementById('s3-tagline').value=s.tagline;
+      if(s.tagline)document.getElementById('s3-tagline').value=decodeHTML(s.tagline);
       if(s.how_they_found_us)document.getElementById('s3-source').value=s.how_they_found_us;
       // Restore "Other" trade text
       if(s.other_trade_desc){
         document.getElementById('s2-other-wrap').style.display='block';
-        document.getElementById('s2-other').value=s.other_trade_desc;
+        document.getElementById('s2-other').value=decodeHTML(s.other_trade_desc);
       }
       // Pre-fill owner as first employee
       if(!session.employees_json||!session.employees_json.length){
@@ -469,10 +476,12 @@
       const list=document.getElementById('emp-list');
       const idx=list.children.length;
       const row=document.createElement('div');row.className='emp-row';
-      row.innerHTML=`<div class="fg"><label>Name</label><input type="text" class="emp-name" placeholder="Tim Reynolds" value="${name||''}"></div>
-        <div class="fg"><label>Mobile</label><input type="tel" class="emp-phone" placeholder="(555) 555-0123" value="${phone?formatPhone(phone):''}"></div>
+      row.innerHTML=`<div class="fg"><label>Name</label><input type="text" class="emp-name" placeholder="Tim Reynolds"></div>
+        <div class="fg"><label>Mobile</label><input type="tel" class="emp-phone" placeholder="(555) 555-0123"></div>
         <div class="fg" style="min-width:100px"><label>Role</label><select class="emp-role"${locked?' disabled':''}><option>Owner</option><option>Foreman</option><option>Field Tech</option><option>Office</option></select></div>
         ${locked?'':'<button class="emp-remove" onclick="this.parentElement.remove()">&times;</button>'}`;
+      row.querySelector('.emp-name').value=name||'';
+      row.querySelector('.emp-phone').value=phone?formatPhone(phone):'';
       if(role)row.querySelector('.emp-role').value=role;
       list.appendChild(row);
     }
