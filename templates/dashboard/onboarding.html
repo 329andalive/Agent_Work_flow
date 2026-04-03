@@ -26,9 +26,22 @@
   .step-sq.done { background: var(--green); }
   .step-sq.cur { background: var(--blue); animation: pulse 1.5s infinite; }
   @keyframes pulse { 0%,100%{opacity:1}50%{opacity:.5} }
+  /* Client self-service card */
+  .wizard-launch { text-align: center; padding: 40px 20px; }
+  .wizard-launch .icon { font-size: 48px; margin-bottom: 12px; }
+  .wizard-launch h2 { font-size: 20px; font-weight: 700; margin-bottom: 8px; }
+  .wizard-launch p { font-size: 14px; color: var(--text-secondary); margin-bottom: 6px; max-width: 420px; margin-left: auto; margin-right: auto; }
+  .wizard-launch .ob-btn { font-size: 15px; padding: 14px 32px; margin-top: 16px; display: inline-block; text-decoration: none; }
+  .wizard-steps-list { text-align: left; max-width: 340px; margin: 20px auto 0; font-size: 13px; color: var(--text-secondary); line-height: 2; }
+  /* Admin footer */
+  .admin-footer { text-align: center; padding: 16px; margin-top: 24px; font-size: 12px; font-weight: 700; color: #dc2626; letter-spacing: 0.05em; text-transform: uppercase; }
 {% endblock %}
 
 {% block content %}
+
+{% if is_super_admin %}
+{# ── ADMIN VIEW: Create New Client + Pipeline ── #}
+
 <!-- Create new client -->
 <div class="card" style="margin-bottom: 16px;">
   <div class="card-header"><span class="card-title">Create New Client</span></div>
@@ -64,6 +77,36 @@
     </table>
   </div>
 </div>
+
+<div class="admin-footer">Working as Admin</div>
+
+{% else %}
+{# ── CLIENT VIEW: Launch Setup Wizard ── #}
+
+<div class="card">
+  <div class="wizard-launch">
+    <div class="icon">&#129497;</div>
+    <h2>Set Up Your Business</h2>
+    <p>Walk through a quick setup wizard to configure your AI back office — your voice, your team, your pricing, and your customers.</p>
+    <p style="font-size:12px;color:var(--text-tertiary)">Takes about 10 minutes. You can save and come back anytime.</p>
+    <button class="ob-btn" id="launch-btn" onclick="launchWizard()">Start Setup Wizard &rarr;</button>
+    <div class="wizard-steps-list">
+      1. Business info &amp; contact details<br>
+      2. Your trade &amp; service area<br>
+      3. Your voice &amp; pricing style<br>
+      4. Add your team members<br>
+      5. Import your customers<br>
+      6. Set your pricing<br>
+      7. Upload your logo &amp; review
+    </div>
+    <div class="ob-success" id="ob-success" style="margin-top:16px">
+      <a id="ob-link" href="#" target="_blank">Open Setup Wizard</a>
+    </div>
+  </div>
+</div>
+
+{% endif %}
+
 {% endblock %}
 
 {% block extra_js %}
@@ -72,6 +115,8 @@
   function v(id){return document.getElementById(id)?.value?.trim()||''}
   function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
 
+{% if is_super_admin %}
+  {# ── Admin JS ── #}
   async function createClient(){
     const btn=document.getElementById('create-btn');btn.disabled=true;btn.textContent='Creating...';
     try{
@@ -106,5 +151,25 @@
     }catch(e){console.error(e)}
   }
   loadPipeline();setInterval(loadPipeline,60000);
+
+{% else %}
+  {# ── Client JS ── #}
+  async function launchWizard(){
+    const btn=document.getElementById('launch-btn');btn.disabled=true;btn.textContent='Creating...';
+    try{
+      const r=await fetch(API+'/api/onboarding/create',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({client_name:'{{ business_name }}',owner_name:'{{ owner_name }}'})});
+      const d=await r.json();
+      if(d.success){
+        window.location.href=d.onboarding_url;
+      }else{
+        alert('Could not start wizard — '+(d.error||'unknown error'));
+        btn.disabled=false;btn.textContent='Start Setup Wizard →';
+      }
+    }catch(e){
+      alert('Connection error — try again');
+      btn.disabled=false;btn.textContent='Start Setup Wizard →';
+    }
+  }
+{% endif %}
 </script>
 {% endblock %}

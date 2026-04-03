@@ -1276,6 +1276,7 @@ def onboarding():
             "current_date": datetime.now().strftime("%a %b %d, %Y"),
             "today": date.today().strftime("%A, %B %-d"),
         }
+    ctx["is_super_admin"] = session.get("is_super_admin", False)
     return render_template("dashboard/onboarding.html", **ctx)
 
 
