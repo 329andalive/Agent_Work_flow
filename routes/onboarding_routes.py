@@ -21,7 +21,7 @@ from datetime import datetime, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from flask import Blueprint, request, jsonify, send_from_directory
+from flask import Blueprint, request, jsonify, send_from_directory, session as flask_session
 
 onboarding_bp = Blueprint("onboarding_bp", __name__)
 
@@ -62,20 +62,29 @@ def create_onboarding():
 
         supabase = _get_supabase()
 
-        # Create client row with pending_setup status
-        client_record = {
-            "business_name": client_name,
-            "owner_name": owner_name or None,
-            "phone": telnyx_phone or None,
-            "owner_mobile": owner_mobile or None,
-            "trade_vertical": trade_vertical or None,
-            "active": False,
-        }
-        client_result = supabase.table("clients").insert(client_record).execute()
-        if not client_result.data:
-            return jsonify({"success": False, "error": "Failed to create client"}), 500
+        # If the user is logged in (has a session client_id), use their
+        # existing client record instead of creating a duplicate.
+        existing_client_id = flask_session.get("client_id")
 
-        client_id = client_result.data[0]["id"]
+        if existing_client_id:
+            # Logged-in user — attach wizard to their existing client
+            client_id = existing_client_id
+            print(f"[{timestamp()}] INFO onboarding: Using existing client_id={client_id} from session")
+        else:
+            # Admin pipeline or external link — create a new client
+            client_record = {
+                "business_name": client_name,
+                "owner_name": owner_name or None,
+                "phone": telnyx_phone or None,
+                "owner_mobile": owner_mobile or None,
+                "trade_vertical": trade_vertical or None,
+                "active": False,
+            }
+            client_result = supabase.table("clients").insert(client_record).execute()
+            if not client_result.data:
+                return jsonify({"success": False, "error": "Failed to create client"}), 500
+            client_id = client_result.data[0]["id"]
+            print(f"[{timestamp()}] INFO onboarding: Created new client_id={client_id}")
 
         # Generate unique token for the onboarding session
         token = secrets.token_urlsafe(24)
@@ -357,6 +366,45 @@ def complete_onboarding(token):
             "step_reached": 7,
             "personality_md": personality_md,
         }).eq("token", token).execute()
+
+        # If this is an existing (active) client, update their record immediately
+        # so personality, trade info, and employees are live without waiting for admin approval
+        client_id = session.get("client_id")
+        if client_id:
+            try:
+                client_check = supabase.table("clients").select("active").eq("id", client_id).execute()
+                if client_check.data and client_check.data[0].get("active"):
+                    client_update = {
+                        "personality": personality_md,
+                        "business_name": session.get("company_name"),
+                        "owner_name": session.get("owner_name"),
+                        "owner_mobile": session.get("owner_mobile"),
+                        "trade_vertical": session.get("trade_vertical"),
+                        "service_area": session.get("service_area_desc"),
+                    }
+                    supabase.table("clients").update(client_update).eq("id", client_id).execute()
+                    print(f"[{timestamp()}] INFO onboarding: Updated existing client record for {session.get('company_name')}")
+
+                    # Insert employees for existing client
+                    employees = session.get("employees_json") or []
+                    if isinstance(employees, str):
+                        try:
+                            employees = json.loads(employees)
+                        except Exception:
+                            employees = []
+                    for emp in employees:
+                        try:
+                            supabase.table("employees").insert({
+                                "client_id": client_id,
+                                "name": emp.get("name", ""),
+                                "phone": emp.get("phone", ""),
+                                "role": emp.get("role", "field_tech"),
+                                "active": True,
+                            }).execute()
+                        except Exception:
+                            pass  # Duplicate or missing field — non-fatal
+            except Exception as e:
+                print(f"[{timestamp()}] WARN onboarding: Client update on complete failed — {e}")
 
         # Insert customers from session into the customers table immediately
         # so they appear on the dashboard without waiting for admin approval
