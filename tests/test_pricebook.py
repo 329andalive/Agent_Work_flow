@@ -114,6 +114,115 @@ def test_proposal_prompt_includes_pricebook():
     assert "Pump-out (1,000 gal): $275" not in system  # hardcoded fallback should NOT appear
 
 
+# ---------------------------------------------------------------------------
+# learn_from_adjustments
+# ---------------------------------------------------------------------------
+
+def test_learn_from_adjustments_updates_price():
+    """3+ consistent adjustments should update the pricebook price_mid."""
+    mock_sb = MagicMock()
+
+    def _table(name):
+        t = MagicMock()
+        for m in ("select", "insert", "update", "delete", "eq", "neq",
+                  "order", "limit", "ilike", "in_"):
+            getattr(t, m).return_value = t
+        r = MagicMock()
+
+        if name == "pricing_adjustments":
+            r.data = [
+                {"service_name": "Pump-Out", "original_price": 275, "adjusted_price": 325, "delta": 50, "direction": "up", "created_at": "2026-04-01"},
+                {"service_name": "Pump-Out", "original_price": 275, "adjusted_price": 330, "delta": 55, "direction": "up", "created_at": "2026-04-02"},
+                {"service_name": "Pump-Out", "original_price": 275, "adjusted_price": 320, "delta": 45, "direction": "up", "created_at": "2026-04-03"},
+            ]
+        elif name == "pricebook_items":
+            r.data = [
+                {"id": "pb-1", "job_name": "Pump-Out", "price_low": 250, "price_mid": 275, "price_high": 350, "is_active": True, "sort_order": 0},
+            ]
+        else:
+            r.data = []
+        r.count = len(r.data)
+        t.execute.return_value = r
+        return t
+
+    mock_sb.table.side_effect = _table
+
+    with patch("execution.db_pricebook.get_supabase", return_value=mock_sb):
+        from execution.db_pricebook import learn_from_adjustments
+        result = learn_from_adjustments(FAKE_CLIENT_ID)
+
+    assert result["services_updated"] == 1
+    assert result["details"][0]["direction"] == "up"
+    assert result["details"][0]["old_price"] == 275
+    # New price should be avg of last 3: (325+330+320)/3 = 325
+    assert result["details"][0]["new_price"] == 325.0
+
+
+def test_learn_skips_when_insufficient_adjustments():
+    """Fewer than 3 adjustments should not trigger an update."""
+    mock_sb = MagicMock()
+
+    def _table(name):
+        t = MagicMock()
+        for m in ("select", "insert", "update", "delete", "eq", "neq",
+                  "order", "limit", "ilike", "in_"):
+            getattr(t, m).return_value = t
+        r = MagicMock()
+        if name == "pricing_adjustments":
+            r.data = [
+                {"service_name": "Pump-Out", "original_price": 275, "adjusted_price": 325, "delta": 50, "direction": "up", "created_at": "2026-04-01"},
+                {"service_name": "Pump-Out", "original_price": 275, "adjusted_price": 330, "delta": 55, "direction": "up", "created_at": "2026-04-02"},
+            ]
+        elif name == "pricebook_items":
+            r.data = [{"id": "pb-1", "job_name": "Pump-Out", "price_low": 250, "price_mid": 275, "price_high": 350, "is_active": True, "sort_order": 0}]
+        else:
+            r.data = []
+        r.count = len(r.data)
+        t.execute.return_value = r
+        return t
+
+    mock_sb.table.side_effect = _table
+
+    with patch("execution.db_pricebook.get_supabase", return_value=mock_sb):
+        from execution.db_pricebook import learn_from_adjustments
+        result = learn_from_adjustments(FAKE_CLIENT_ID)
+
+    assert result["services_updated"] == 0
+
+
+def test_learn_skips_mixed_directions():
+    """Mixed up/down adjustments should not trigger an update."""
+    mock_sb = MagicMock()
+
+    def _table(name):
+        t = MagicMock()
+        for m in ("select", "insert", "update", "delete", "eq", "neq",
+                  "order", "limit", "ilike", "in_"):
+            getattr(t, m).return_value = t
+        r = MagicMock()
+        if name == "pricing_adjustments":
+            r.data = [
+                {"service_name": "Pump-Out", "original_price": 275, "adjusted_price": 325, "delta": 50, "direction": "up", "created_at": "2026-04-01"},
+                {"service_name": "Pump-Out", "original_price": 325, "adjusted_price": 275, "delta": -50, "direction": "down", "created_at": "2026-04-02"},
+                {"service_name": "Pump-Out", "original_price": 275, "adjusted_price": 300, "delta": 25, "direction": "up", "created_at": "2026-04-03"},
+            ]
+        elif name == "pricebook_items":
+            r.data = [{"id": "pb-1", "job_name": "Pump-Out", "price_low": 250, "price_mid": 275, "price_high": 350, "is_active": True, "sort_order": 0}]
+        else:
+            r.data = []
+        r.count = len(r.data)
+        t.execute.return_value = r
+        return t
+
+    mock_sb.table.side_effect = _table
+
+    with patch("execution.db_pricebook.get_supabase", return_value=mock_sb):
+        from execution.db_pricebook import learn_from_adjustments
+        result = learn_from_adjustments(FAKE_CLIENT_ID)
+
+    assert result["services_updated"] == 0
+
+
 def test_proposal_prompt_falls_back_when_no_pricebook():
     """When pricebook is empty, prompt should use hardcoded fallback."""
     with patch("execution.db_pricebook.get_pricebook_for_prompt", return_value=""):

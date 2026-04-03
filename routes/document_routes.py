@@ -257,11 +257,20 @@ def save_document():
             except Exception as e:
                 print(f"[{timestamp()}] WARN document_routes: Square link regeneration error — {e}")
 
-        # Step 7: Trigger learning update
+        # Step 7: Trigger learning update (style preferences)
         try:
             _run_learning_update(client_id, doc_type)
         except Exception as e:
             print(f"[{timestamp()}] WARN document_routes: Learning update failed — {e}")
+
+        # Step 7b: Trigger pricebook learning (auto-update prices from consistent edits)
+        try:
+            from execution.db_pricebook import learn_from_adjustments
+            learn_result = learn_from_adjustments(client_id)
+            if learn_result.get("services_updated"):
+                print(f"[{timestamp()}] INFO document_routes: Pricebook learned {learn_result['services_updated']} price updates")
+        except Exception as e:
+            print(f"[{timestamp()}] WARN document_routes: Pricebook learning failed — {e}")
 
         print(f"[{timestamp()}] INFO document_routes: Saved {doc_type} {doc_id} total=${total}")
         return jsonify({"success": True, "html_url": html_url})

@@ -273,3 +273,140 @@ def increment_usage(item_id: str) -> None:
             }).eq("id", item_id).execute()
     except Exception:
         pass  # Non-fatal
+
+
+# ---------------------------------------------------------------------------
+# Self-learning: update pricebook from consistent price adjustments
+# ---------------------------------------------------------------------------
+
+# Minimum adjustments in the same direction before auto-updating
+LEARNING_THRESHOLD = 3
+# Confidence assigned after auto-update
+LEARNED_CONFIDENCE = 0.85
+
+
+def learn_from_adjustments(client_id: str) -> dict:
+    """
+    Read pricing_adjustments for this client, find services where the
+    owner has consistently adjusted prices in the same direction 3+ times,
+    and update the pricebook's price_mid to reflect the learned preference.
+
+    Also updates the confidence column on matched pricebook items.
+
+    Returns:
+        dict with keys: services_analyzed, services_updated, details[]
+    """
+    result = {"services_analyzed": 0, "services_updated": 0, "details": []}
+
+    try:
+        sb = get_supabase()
+
+        # Fetch all adjustments for this client
+        adj_result = sb.table("pricing_adjustments").select(
+            "service_name, original_price, adjusted_price, delta, direction, created_at"
+        ).eq("client_id", client_id).order("created_at").execute()
+
+        adjustments = adj_result.data or []
+        if not adjustments:
+            return result
+
+        # Group by service_name (lowercased for matching)
+        from collections import defaultdict
+        by_service = defaultdict(list)
+        for adj in adjustments:
+            name = (adj.get("service_name") or "").strip()
+            if name:
+                by_service[name.lower()].append(adj)
+
+        result["services_analyzed"] = len(by_service)
+
+        # Load current pricebook for matching
+        pricebook = get_pricebook(client_id)
+        pb_lookup = {item["job_name"].lower(): item for item in pricebook}
+
+        for service_key, adjs in by_service.items():
+            if len(adjs) < LEARNING_THRESHOLD:
+                continue
+
+            # Check if adjustments are consistently in one direction
+            directions = [a.get("direction") for a in adjs]
+            up_count = directions.count("up")
+            down_count = directions.count("down")
+            total = len(directions)
+
+            # Need 70%+ consistency in one direction
+            if up_count / total >= 0.7:
+                consistent_direction = "up"
+            elif down_count / total >= 0.7:
+                consistent_direction = "down"
+            else:
+                continue  # Mixed signals — don't learn yet
+
+            # Calculate the new price: average of last 3 adjusted prices
+            recent = adjs[-LEARNING_THRESHOLD:]
+            avg_adjusted = round(
+                sum(float(a.get("adjusted_price", 0)) for a in recent) / len(recent), 2
+            )
+
+            # Find the matching pricebook item
+            pb_item = pb_lookup.get(service_key)
+            if not pb_item:
+                # Try fuzzy match
+                for pb_name, pb in pb_lookup.items():
+                    if service_key in pb_name or pb_name in service_key:
+                        pb_item = pb
+                        break
+
+            if not pb_item:
+                continue
+
+            current_mid = float(pb_item.get("price_mid") or 0)
+            if abs(current_mid - avg_adjusted) < 1.0:
+                continue  # Difference too small to matter
+
+            # Update the pricebook item
+            try:
+                update = {
+                    "price_mid": avg_adjusted,
+                    "confidence": LEARNED_CONFIDENCE,
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                }
+
+                # Also adjust low/high proportionally
+                if current_mid > 0:
+                    ratio = avg_adjusted / current_mid
+                    old_low = float(pb_item.get("price_low") or 0)
+                    old_high = float(pb_item.get("price_high") or 0)
+                    if old_low:
+                        update["price_low"] = round(old_low * ratio, 2)
+                    if old_high:
+                        update["price_high"] = round(old_high * ratio, 2)
+
+                sb.table("pricebook_items").update(update).eq(
+                    "id", pb_item["id"]
+                ).execute()
+
+                detail = {
+                    "service": adjs[-1].get("service_name", service_key),
+                    "direction": consistent_direction,
+                    "adjustments": len(adjs),
+                    "old_price": current_mid,
+                    "new_price": avg_adjusted,
+                }
+                result["details"].append(detail)
+                result["services_updated"] += 1
+
+                print(
+                    f"[{timestamp()}] INFO db_pricebook: Learned price for "
+                    f"'{detail['service']}' — ${current_mid:.2f} → ${avg_adjusted:.2f} "
+                    f"({consistent_direction}, {len(adjs)} adjustments, "
+                    f"confidence={LEARNED_CONFIDENCE})"
+                )
+
+            except Exception as e:
+                print(f"[{timestamp()}] WARN db_pricebook: pricebook update failed for {service_key} — {e}")
+
+    except Exception as e:
+        print(f"[{timestamp()}] ERROR db_pricebook: learn_from_adjustments failed — {e}")
+
+    return result
