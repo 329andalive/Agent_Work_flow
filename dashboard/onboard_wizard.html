@@ -322,8 +322,15 @@
         TRADES=[{icon:'🚽',label:'Septic & Sewer',key:'septic'},{icon:'🔧',label:'Plumbing',key:'plumbing'},{icon:'❄️',label:'HVAC',key:'hvac'},{icon:'⚡',label:'Electrical',key:'electrical'},{icon:'🚜',label:'Excavation',key:'excavation'},{icon:'🌊',label:'Drain Cleaning',key:'drain'},{icon:'🔨',label:'General Contracting',key:'general'},{icon:'🌿',label:'Landscaping',key:'landscaping'},{icon:'🏠',label:'Property Maintenance',key:'property_mgmt'}];
       }
       buildRadioCards('s2-trades', TRADES.map(t=>t.icon+' '+t.label), onTradeSelect);
-      loadSession();
+      await loadSession();
+      reapplyTradeSelection();
     })();
+
+    function reapplyTradeSelection(){
+      if(!session.trade_vertical)return;
+      const label=TRADES.map(t=>t.icon+' '+t.label).find(l=>l.toLowerCase().includes(session.trade_vertical.toLowerCase()));
+      if(label)selectRadio('s2-trades',label);
+    }
     buildRadioCards('s3-tones', TONES.map(t=>t.label));
     buildRadioCards('s3-customers', CUSTOMERS.map(t=>t.label));
     buildRadioCards('s3-pricing', PRICINGS.map(t=>t.label));
@@ -335,7 +342,7 @@
         if(!d.success)return;
         session=d.session||{};
         populateFields();
-        if((session.step_reached||1)>1){
+        if(d.session&&Object.keys(d.session).some(k=>d.session[k]&&k!=='id'&&k!=='token'&&k!=='status'&&k!=='client_id')){
           document.getElementById('resume-banner').style.display='block';
         }
         updateProgress(1);
@@ -361,10 +368,29 @@
       if(s.pricing_style)selectRadio('s3-pricing',s.pricing_style);
       if(s.tagline)document.getElementById('s3-tagline').value=s.tagline;
       if(s.how_they_found_us)document.getElementById('s3-source').value=s.how_they_found_us;
+      // Restore "Other" trade text
+      if(s.other_trade_desc){
+        document.getElementById('s2-other-wrap').style.display='block';
+        document.getElementById('s2-other').value=s.other_trade_desc;
+      }
       // Pre-fill owner as first employee
       if(!session.employees_json||!session.employees_json.length){
         initEmployees([{name:s.owner_name||'',phone:s.owner_mobile||'',role:'Owner'}]);
       }else{initEmployees(typeof s.employees_json==='string'?JSON.parse(s.employees_json):s.employees_json)}
+      // Restore saved customers into step 5 preview table
+      const custs=typeof s.customers_json==='string'?JSON.parse(s.customers_json||'[]'):(s.customers_json||[]);
+      if(custs.length){
+        document.getElementById('cust-body').innerHTML='';
+        custs.forEach(c=>addCustomerToTable(c.name||c.customer_name||'',c.phone||c.customer_phone||'',c.email||c.customer_email||'',c.address||c.customer_address||''));
+      }
+      // Restore saved pricing into step 6 table
+      const pricing=typeof s.pricing_json==='string'?JSON.parse(s.pricing_json||'[]'):(s.pricing_json||[]);
+      if(pricing.length){loadPricingTable(pricing)}
+      // Restore logo preview
+      if(s.logo_url){
+        const img=document.getElementById('logo-preview');
+        img.src=s.logo_url;img.style.display='block';
+      }
     }
 
     function resumeSession(){document.getElementById('resume-banner').style.display='none';goToStep(session.step_reached||1)}
@@ -424,10 +450,13 @@
         const d=await res.json();
         const specs=d.specialties||[];
         document.getElementById('s2-specs').innerHTML=specs.map(s=>`<div class="check-pill" onclick="this.classList.toggle('selected')">${s}</div>`).join('');
-        // Pre-load pricing benchmarks for step 5
+        // Re-select saved specialties
+        const saved=session.trade_specialties||[];
+        if(saved.length){document.querySelectorAll('#s2-specs .check-pill').forEach(pill=>{if(saved.includes(pill.textContent.trim()))pill.classList.add('selected')})}
+        // Pre-load pricing benchmarks for step 6 (only if table is empty)
         const pRes=await fetch(API_BASE+'/api/onboarding/pricing-template/'+encodeURIComponent(key));
         const pD=await pRes.json();
-        loadPricingTable(pD.services||[]);
+        if(!document.getElementById('price-body').children.length){loadPricingTable(pD.services||[])}
       }catch(e){console.error(e)}
     }
 
@@ -724,7 +753,7 @@
 
     function collectStepData(step){
       if(step===1)return{company_name:v('s1-name'),owner_name:v('s1-owner'),owner_mobile:toE164(v('s1-mobile')),company_phone:toE164(v('s1-phone')),company_address:v('s1-address'),company_city:v('s1-city'),company_state:v('s1-state'),company_zip:v('s1-zip'),years_in_business:v('s1-years')};
-      if(step===2){const specs=[...document.querySelectorAll('#s2-specs .check-pill.selected')].map(e=>e.textContent);return{trade_vertical:getSelectedRadio('s2-trades'),trade_specialties:specs,service_radius_miles:parseInt(v('s2-radius')),service_area_desc:v('s2-area')}}
+      if(step===2){const specs=[...document.querySelectorAll('#s2-specs .check-pill.selected')].map(e=>e.textContent);return{trade_vertical:getSelectedRadio('s2-trades'),trade_specialties:specs,service_radius_miles:parseInt(v('s2-radius')),service_area_desc:v('s2-area'),other_trade_desc:v('s2-other')}}
       if(step===3)return{tone_preference:getSelectedRadio('s3-tones'),customer_type:getSelectedRadio('s3-customers'),pricing_style:getSelectedRadio('s3-pricing'),tagline:v('s3-tagline'),how_they_found_us:v('s3-source')};
       if(step===4)return{employees_json:collectEmployees()};
       if(step===5)return{customers_json:collectCustomers()};

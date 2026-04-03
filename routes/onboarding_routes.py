@@ -228,7 +228,7 @@ def save_step(token):
             1: ["company_name", "owner_name", "owner_email", "owner_mobile",
                 "company_address", "company_city", "company_state", "company_zip",
                 "company_phone", "years_in_business"],
-            2: ["trade_vertical", "trade_specialties", "service_radius_miles", "service_area_desc"],
+            2: ["trade_vertical", "trade_specialties", "service_radius_miles", "service_area_desc", "other_trade_desc"],
             3: ["tone_preference", "customer_type", "pricing_style", "tagline", "how_they_found_us"],
             4: ["employees_json"],
             5: ["customers_json"],
