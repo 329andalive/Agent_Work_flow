@@ -173,18 +173,44 @@ def build_structured_prompt(client: dict, customer_name: str, customer_address: 
     personality = client.get("personality", "")
     address_line = customer_address if customer_address else "address not provided"
 
+    # Load pricing from pricebook_items (falls back to hardcoded defaults)
+    pricing_context = ""
+    try:
+        from execution.db_pricebook import get_pricebook_for_prompt
+        pricing_context = get_pricebook_for_prompt(client["id"])
+    except Exception:
+        pass
+
+    if pricing_context:
+        pricing_rules = (
+            f"PRICE BOOK — Use these prices for matching services:\n"
+            f"{pricing_context}\n\n"
+            f"PRICING RULES:\n"
+            f"- Match the job description to the closest service in the price book above.\n"
+            f"- Use the standard (mid) price unless the owner specified a different amount.\n"
+            f"- If the owner stated a specific price for any item, use that price exactly.\n"
+            f"- For labor-only items, multiply hours × the hourly rate from the personality layer.\n"
+            f"- If no matching service exists in the price book, use the price the owner stated,\n"
+            f"  or estimate based on similar services. Never $0.\n"
+        )
+    else:
+        # Hardcoded fallback for clients with no pricebook
+        pricing_rules = (
+            f"PRICING RULES — NON-NEGOTIABLE:\n"
+            f"- Pump-out (1,000 gal): $275. Pump-out (1,500 gal): $325. Never $0.\n"
+            f"- Baffle replacement: $175 minimum. Never $0.\n"
+            f"- Riser and cover (12\"): use the price stated by the owner if given.\n"
+            f"- Labor: multiply hours stated by owner × $125/hr. Show as \"Labor: X hrs @ $125/hr\"\n"
+            f"- Travel: if owner mentions travel, add as a separate line item using minimum charge $150\n"
+            f"  unless owner stated a different amount.\n"
+            f"- If the owner stated a specific price for any item, use that price exactly.\n"
+            f"- If no price is stated, use the standard rate from the personality layer.\n"
+        )
+
     system_prompt = (
         f"You are generating a professional trade services proposal for {client['business_name']}.\n\n"
         f"PERSONALITY AND VOICE:\n{personality}\n\n"
-        f"PRICING RULES — NON-NEGOTIABLE:\n"
-        f"- Pump-out (1,000 gal): $275. Pump-out (1,500 gal): $325. Never $0.\n"
-        f"- Baffle replacement: $175 minimum. Never $0.\n"
-        f"- Riser and cover (12\"): use the price stated by the owner if given.\n"
-        f"- Labor: multiply hours stated by owner × $125/hr. Show as \"Labor: X hrs @ $125/hr\"\n"
-        f"- Travel: if owner mentions travel, add as a separate line item using minimum charge $150\n"
-        f"  unless owner stated a different amount.\n"
-        f"- If the owner stated a specific price for any item, use that price exactly.\n"
-        f"- If no price is stated, use the standard rate from the personality layer.\n"
+        f"{pricing_rules}"
         f"- NEVER produce a $0.00 line item. If you don't know the price, use the minimum charge.\n"
         f"- NEVER duplicate line items across multiple locations unless the owner explicitly\n"
         f"  states there are multiple job sites.\n\n"

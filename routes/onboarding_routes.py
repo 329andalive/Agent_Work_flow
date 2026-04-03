@@ -481,6 +481,23 @@ def complete_onboarding(token):
                     skipped += 1
 
             print(f"[{timestamp()}] INFO onboarding: Customer import on complete — inserted={cust_count} skipped={skipped}")
+
+            # Seed pricebook_items from pricing_json (or vertical template)
+            try:
+                from execution.db_pricebook import seed_from_pricing_json, seed_from_benchmarks
+                pricing_data = session.get("pricing_json") or []
+                if isinstance(pricing_data, str):
+                    pricing_data = json.loads(pricing_data)
+                vertical = session.get("trade_vertical")
+                if pricing_data:
+                    pb_count = seed_from_pricing_json(client_id, pricing_data, vertical, source="onboarding")
+                    print(f"[{timestamp()}] INFO onboarding: Seeded {pb_count} pricebook items from wizard pricing")
+                elif vertical:
+                    pb_count = seed_from_benchmarks(client_id, vertical)
+                    print(f"[{timestamp()}] INFO onboarding: Seeded {pb_count} pricebook items from vertical template")
+            except Exception as e:
+                print(f"[{timestamp()}] WARN onboarding: Pricebook seeding failed — {e}")
+
         else:
             print(f"[{timestamp()}] WARN onboarding: No client_id on session — cannot insert customers")
 

@@ -1434,7 +1434,7 @@ def api_list_workers():
 
 
 # ---------------------------------------------------------------------------
-# GET /api/pricing — Fetch pricing from most recent onboarding session
+# GET /api/pricing — Fetch pricing from pricebook_items (primary) or fallback
 # ---------------------------------------------------------------------------
 
 @dashboard_bp.route("/api/pricing", methods=["GET"])
@@ -1442,8 +1442,20 @@ def api_get_pricing():
     client_id = _resolve_client_id()
     if not client_id:
         return jsonify({"success": False, "error": "Not authenticated"}), 401
-    sb = _get_supabase()
     try:
+        # Primary: read from pricebook_items table
+        from execution.db_pricebook import get_pricebook
+        items = get_pricebook(client_id)
+        if items:
+            pricing = [
+                {"service": i.get("job_name", ""), "low": i.get("price_low", 0),
+                 "typical": i.get("price_mid", 0), "high": i.get("price_high", 0)}
+                for i in items
+            ]
+            return jsonify({"success": True, "pricing": pricing})
+
+        # Fallback 1: pricing_json from onboarding session
+        sb = _get_supabase()
         result = sb.table("onboarding_sessions").select("pricing_json").eq(
             "client_id", client_id
         ).order("created_at", desc=True).limit(1).execute()
@@ -1455,7 +1467,7 @@ def api_get_pricing():
             elif isinstance(raw, list):
                 pricing = raw
 
-        # Fallback: if no pricing saved, load the vertical's template
+        # Fallback 2: vertical template
         if not pricing:
             try:
                 client_result = sb.table("clients").select("trade_vertical").eq("id", client_id).execute()
@@ -1487,7 +1499,7 @@ def api_get_pricing():
 
 
 # ---------------------------------------------------------------------------
-# POST /api/pricing/save — Save pricing to most recent onboarding session
+# POST /api/pricing/save — Save pricing to pricebook_items table
 # ---------------------------------------------------------------------------
 
 @dashboard_bp.route("/api/pricing/save", methods=["POST"])
@@ -1495,18 +1507,12 @@ def api_save_pricing():
     client_id = _resolve_client_id()
     if not client_id:
         return jsonify({"success": False, "error": "Not authenticated"}), 401
-    sb = _get_supabase()
     data = request.get_json(silent=True) or {}
     pricing = data.get("pricing", [])
     try:
-        result = sb.table("onboarding_sessions").select("id").eq(
-            "client_id", client_id
-        ).order("created_at", desc=True).limit(1).execute()
-        if not result.data:
-            return jsonify({"success": False, "error": "No session found"}), 404
-        session_id = result.data[0]["id"]
-        sb.table("onboarding_sessions").update({"pricing_json": pricing}).eq("id", session_id).execute()
-        return jsonify({"success": True})
+        from execution.db_pricebook import save_pricebook
+        count = save_pricebook(client_id, pricing)
+        return jsonify({"success": True, "saved": count})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
