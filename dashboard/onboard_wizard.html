@@ -753,7 +753,7 @@
 
     function collectStepData(step){
       if(step===1)return{company_name:v('s1-name'),owner_name:v('s1-owner'),owner_mobile:toE164(v('s1-mobile')),company_phone:toE164(v('s1-phone')),company_address:v('s1-address'),company_city:v('s1-city'),company_state:v('s1-state'),company_zip:v('s1-zip'),years_in_business:v('s1-years')};
-      if(step===2){const specs=[...document.querySelectorAll('#s2-specs .check-pill.selected')].map(e=>e.textContent);return{trade_vertical:getSelectedRadio('s2-trades'),trade_specialties:specs,service_radius_miles:parseInt(v('s2-radius')),service_area_desc:v('s2-area'),other_trade_desc:v('s2-other')}}
+      if(step===2){const specs=[...document.querySelectorAll('#s2-specs .check-pill.selected')].map(e=>e.textContent);return{trade_vertical:getSelectedRadio('s2-trades'),trade_specialties:specs,service_radius_miles:parseInt(v('s2-radius')),service_area_desc:v('s2-area')}}
       if(step===3)return{tone_preference:getSelectedRadio('s3-tones'),customer_type:getSelectedRadio('s3-customers'),pricing_style:getSelectedRadio('s3-pricing'),tagline:v('s3-tagline'),how_they_found_us:v('s3-source')};
       if(step===4)return{employees_json:collectEmployees()};
       if(step===5)return{customers_json:collectCustomers()};
