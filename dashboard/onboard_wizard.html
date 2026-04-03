@@ -216,7 +216,7 @@
           <h3 style="font-size:14px;font-weight:600;margin-bottom:8px">Customers to import (<span id="cust-count">0</span>)</h3>
           <div style="max-height:260px;overflow-y:auto;border:1px solid #eee;border-radius:8px">
             <table class="price-table" style="margin:0">
-              <thead><tr><th>Name</th><th>Phone</th><th>Email</th><th style="width:28px"></th></tr></thead>
+              <thead><tr><th>Name</th><th>Phone</th><th>Email</th><th>Address</th><th style="width:28px"></th></tr></thead>
               <tbody id="cust-body"></tbody>
             </table>
           </div>
@@ -609,6 +609,7 @@
           if(name||phone)customers.push({name,phone,email,address});
         }
         if(!customers.length){alert('No customers found in CSV');return}
+        document.getElementById('cust-body').innerHTML='';
         customers.forEach(c=>addCustomerToTable(c.name,c.phone,c.email,c.address));
         document.getElementById('csv-drop').innerHTML='<div class="icon">&#9989;</div><p>'+customers.length+' customers loaded</p><p style="font-size:11px;color:#888;margin-top:4px">Detected: '+mapLabels.join(' · ')+'</p><p style="font-size:12px;color:#aaa;margin-top:4px">Review below, then click Next. Click here to upload a different file.</p>';
       };
@@ -640,6 +641,7 @@
       tr.innerHTML='<td><input class="cust-name" value="'+escAttr(name)+'" placeholder="Name" style="font-size:13px;padding:6px;min-height:36px"></td>'+
         '<td><input class="cust-phone" value="'+escAttr(phone)+'" placeholder="Phone" style="font-size:13px;padding:6px;min-height:36px"></td>'+
         '<td><input class="cust-email" value="'+escAttr(email)+'" placeholder="Email" style="font-size:13px;padding:6px;min-height:36px"></td>'+
+        '<td><input class="cust-address" value="'+escAttr(address)+'" placeholder="Address" style="font-size:13px;padding:6px;min-height:36px"></td>'+
         '<td><button class="rm-btn" onclick="this.closest(\'tr\').remove();updateCustCount()">&times;</button></td>';
       tbody.appendChild(tr);
       updateCustCount();
@@ -653,7 +655,7 @@
         name:r.querySelector('.cust-name').value.trim(),
         phone:toE164(r.querySelector('.cust-phone').value),
         email:r.querySelector('.cust-email').value.trim(),
-        address:''
+        address:(r.querySelector('.cust-address')?.value||'').trim()
       })).filter(c=>c.name||c.phone);
     }
 
