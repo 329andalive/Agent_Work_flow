@@ -420,6 +420,18 @@ def complete_onboarding(token):
 
             print(f"[{timestamp()}] INFO onboarding: customers_json has {len(customers_data)} entries for client_id={client_id}")
 
+            # Fetch existing phones to avoid duplicates
+            existing_phones = set()
+            try:
+                existing = supabase.table("customers").select("customer_phone") \
+                    .eq("client_id", client_id).execute()
+                existing_phones = {
+                    r.get("customer_phone") for r in (existing.data or [])
+                    if r.get("customer_phone")
+                }
+            except Exception:
+                pass
+
             cust_count = 0
             skipped = 0
             for cust in customers_data:
@@ -449,6 +461,10 @@ def complete_onboarding(token):
                     skipped += 1
                     continue
 
+                if phone in existing_phones:
+                    skipped += 1
+                    continue
+
                 try:
                     supabase.table("customers").insert({
                         "client_id": client_id,
@@ -458,6 +474,7 @@ def complete_onboarding(token):
                         "customer_address": address or None,
                         "sms_consent": False,
                     }).execute()
+                    existing_phones.add(phone)
                     cust_count += 1
                 except Exception as e:
                     print(f"[{timestamp()}] WARN onboarding: Customer insert failed for '{name}' ({phone}) — {e}")
