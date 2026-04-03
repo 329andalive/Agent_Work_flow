@@ -2996,3 +2996,191 @@ def accounting():
 def booking_form():
     dashboard_dir = os.path.join(_project_root, "dashboard")
     return send_from_directory(dashboard_dir, "book.html")
+
+
+# ---------------------------------------------------------------------------
+# GET /dashboard/reports — KPI dashboard page
+# ---------------------------------------------------------------------------
+
+@dashboard_bp.route("/dashboard/reports", strict_slashes=False)
+def reports_page():
+    client_id = _resolve_client_id()
+    if not client_id:
+        return redirect("/login")
+    return send_from_directory(os.path.join(_project_root, "dashboard"), "reports.html")
+
+
+# ---------------------------------------------------------------------------
+# GET /api/kpi/summary — Key metrics for the KPI dashboard
+# ---------------------------------------------------------------------------
+
+@dashboard_bp.route("/api/kpi/summary", methods=["GET"])
+def api_kpi_summary():
+    """
+    Returns aggregated KPI data for the authenticated client.
+    Accepts optional query params: days (default 90), from, to.
+    """
+    client_id = _resolve_client_id()
+    if not client_id:
+        return jsonify({"success": False, "error": "Not authenticated"}), 401
+
+    days = int(request.args.get("days", 90))
+    cutoff = (date.today() - timedelta(days=days)).isoformat()
+
+    sb = _get_supabase()
+    try:
+        # ── Revenue by job type ──
+        inv_result = sb.table("invoices").select(
+            "id, job_id, amount_due, status, paid_at, created_at"
+        ).eq("client_id", client_id).gte("created_at", cutoff).execute()
+        invoices = inv_result.data or []
+
+        job_ids = list(set(i.get("job_id") for i in invoices if i.get("job_id")))
+        job_map = {}
+        if job_ids:
+            jobs_result = sb.table("jobs").select(
+                "id, job_type, job_duration_min, assigned_worker_id, customer_id"
+            ).in_("id", job_ids).execute()
+            job_map = {j["id"]: j for j in (jobs_result.data or [])}
+
+        # Aggregate revenue by job type
+        revenue_by_type = {}
+        total_revenue = 0
+        total_paid = 0
+        total_invoices = len(invoices)
+        for inv in invoices:
+            amt = float(inv.get("amount_due") or 0)
+            total_revenue += amt
+            if inv.get("status") == "paid":
+                total_paid += amt
+            job = job_map.get(inv.get("job_id"), {})
+            jtype = job.get("job_type", "other") or "other"
+            if jtype not in revenue_by_type:
+                revenue_by_type[jtype] = {"count": 0, "revenue": 0}
+            revenue_by_type[jtype]["count"] += 1
+            revenue_by_type[jtype]["revenue"] += amt
+
+        # ── Average ticket ──
+        avg_ticket = round(total_revenue / total_invoices, 2) if total_invoices else 0
+
+        # ── Job duration stats ──
+        durations_by_type = {}
+        durations_by_worker = {}
+        worker_ids = set()
+        for jid, job in job_map.items():
+            dur = job.get("job_duration_min")
+            if not dur:
+                continue
+            jtype = job.get("job_type", "other") or "other"
+            wid = job.get("assigned_worker_id")
+            if jtype not in durations_by_type:
+                durations_by_type[jtype] = []
+            durations_by_type[jtype].append(dur)
+            if wid:
+                worker_ids.add(wid)
+                key = f"{wid}|{jtype}"
+                if key not in durations_by_worker:
+                    durations_by_worker[key] = []
+                durations_by_worker[key].append(dur)
+
+        avg_duration_by_type = {
+            k: round(sum(v) / len(v)) for k, v in durations_by_type.items()
+        }
+
+        # Resolve worker names
+        worker_names = {}
+        if worker_ids:
+            try:
+                workers = sb.table("employees").select("id, name").in_(
+                    "id", list(worker_ids)
+                ).execute()
+                worker_names = {w["id"]: w["name"] for w in (workers.data or [])}
+            except Exception:
+                pass
+
+        tech_efficiency = []
+        for key, durs in durations_by_worker.items():
+            wid, jtype = key.split("|", 1)
+            tech_efficiency.append({
+                "worker": worker_names.get(wid, wid[:8]),
+                "job_type": jtype,
+                "avg_minutes": round(sum(durs) / len(durs)),
+                "job_count": len(durs),
+            })
+        tech_efficiency.sort(key=lambda x: x["avg_minutes"])
+
+        # ── Proposals / close rate ──
+        prop_result = sb.table("proposals").select(
+            "id, status, response_type, amount_estimate, created_at"
+        ).eq("client_id", client_id).gte("created_at", cutoff).execute()
+        proposals = prop_result.data or []
+
+        proposals_sent = len(proposals)
+        proposals_accepted = len([p for p in proposals if p.get("response_type") == "accepted"])
+        proposals_declined = len([p for p in proposals if p.get("response_type") == "declined"])
+        proposals_cold = len([p for p in proposals if p.get("response_type") == "cold"])
+        close_rate = round(100 * proposals_accepted / proposals_sent, 1) if proposals_sent else 0
+        revenue_won = sum(float(p.get("amount_estimate") or 0) for p in proposals if p.get("response_type") == "accepted")
+
+        # ── Monthly job trends ──
+        all_jobs = sb.table("jobs").select(
+            "id, job_type, status, created_at, scheduled_date"
+        ).eq("client_id", client_id).gte("created_at", cutoff).execute()
+        monthly = {}
+        for j in (all_jobs.data or []):
+            month = (j.get("created_at") or "")[:7]
+            if not month:
+                continue
+            if month not in monthly:
+                monthly[month] = 0
+            monthly[month] += 1
+        monthly_trend = [{"month": k, "jobs": v} for k, v in sorted(monthly.items())]
+
+        # ── Customer count ──
+        cust_result = sb.table("customers").select("id", count="exact").eq(
+            "client_id", client_id
+        ).execute()
+        customer_count = cust_result.count or 0
+
+        # ── Team count ──
+        team_result = sb.table("employees").select("id", count="exact").eq(
+            "client_id", client_id
+        ).eq("active", True).execute()
+        team_count = team_result.count or 0
+
+        return jsonify({
+            "success": True,
+            "period_days": days,
+            "summary": {
+                "total_revenue": round(total_revenue, 2),
+                "total_paid": round(total_paid, 2),
+                "total_outstanding": round(total_revenue - total_paid, 2),
+                "total_invoices": total_invoices,
+                "avg_ticket": avg_ticket,
+                "customer_count": customer_count,
+                "team_count": team_count,
+                "close_rate": close_rate,
+            },
+            "revenue_by_type": [
+                {"job_type": k, "count": v["count"], "revenue": round(v["revenue"], 2)}
+                for k, v in sorted(revenue_by_type.items(), key=lambda x: -x[1]["revenue"])
+            ],
+            "avg_duration_by_type": [
+                {"job_type": k, "avg_minutes": v}
+                for k, v in sorted(avg_duration_by_type.items())
+            ],
+            "tech_efficiency": tech_efficiency,
+            "proposals": {
+                "sent": proposals_sent,
+                "accepted": proposals_accepted,
+                "declined": proposals_declined,
+                "cold": proposals_cold,
+                "close_rate": close_rate,
+                "revenue_won": round(revenue_won, 2),
+            },
+            "monthly_trend": monthly_trend,
+        })
+
+    except Exception as e:
+        print(f"[{_ts()}] ERROR api_kpi_summary: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500

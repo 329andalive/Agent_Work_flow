@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Reports — Bolts11</title>
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#f3f4f6;color:#1a1a1a;min-height:100vh;font-size:15px;line-height:1.5}
+    .wrap{max-width:960px;margin:0 auto;padding:16px 20px}
+    .top-nav{background:#132038;padding:10px 20px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+    .top-nav .logo{font-size:18px;font-weight:800;color:#fff;margin-right:16px}.top-nav .logo span{color:#f59e0b}
+    .nav-btn{font-size:13px;color:rgba(255,255,255,.55);text-decoration:none;padding:6px 12px;border-radius:5px;transition:color .15s,background .15s}
+    .nav-btn:hover{color:#fff;background:rgba(255,255,255,.08)}
+    .nav-btn.active{color:#f59e0b;background:rgba(245,158,11,.12)}
+    h1{font-size:22px;font-weight:700;margin:16px 0 4px;color:#132038}
+    .period{font-size:13px;color:#888;margin-bottom:16px}
+    .period select{font-size:13px;padding:3px 8px;border:1px solid #d0d5dd;border-radius:5px;margin-left:6px}
+    /* Metric tiles */
+    .metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:20px}
+    .tile{background:#fff;border-radius:10px;padding:16px;box-shadow:0 1px 4px rgba(0,0,0,.05)}
+    .tile-label{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:#888;font-weight:600}
+    .tile-value{font-size:24px;font-weight:800;color:#132038;margin-top:4px}
+    .tile-sub{font-size:12px;color:#888;margin-top:2px}
+    .tile-value.green{color:#16a34a}.tile-value.amber{color:#d97706}.tile-value.red{color:#dc2626}
+    /* Cards */
+    .card{background:#fff;border-radius:10px;box-shadow:0 1px 6px rgba(0,0,0,.06);margin-bottom:16px;overflow:hidden}
+    .card-header{padding:14px 18px;border-bottom:1px solid #eee;font-size:14px;font-weight:700;color:#132038;display:flex;align-items:center;justify-content:space-between}
+    .card-body{padding:18px}
+    /* Tables */
+    .data-table{width:100%;border-collapse:collapse;font-size:13px}
+    .data-table th{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:#888;padding:8px 10px;text-align:left;border-bottom:1px solid #eee}
+    .data-table td{padding:8px 10px;border-bottom:1px solid #f5f5f5}
+    .data-table tr:hover{background:#fafafa}
+    .data-table td.num{text-align:right;font-family:monospace;font-size:13px}
+    /* Bar chart */
+    .bar-row{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+    .bar-label{width:120px;font-size:13px;font-weight:500;text-overflow:ellipsis;overflow:hidden;white-space:nowrap}
+    .bar-track{flex:1;height:22px;background:#f3f4f6;border-radius:4px;overflow:hidden}
+    .bar-fill{height:100%;background:#132038;border-radius:4px;min-width:2px;transition:width .4s}
+    .bar-val{width:70px;text-align:right;font-size:12px;font-weight:600;font-family:monospace;color:#132038}
+    /* Grid */
+    .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+    @media(max-width:700px){.grid-2{grid-template-columns:1fr}}
+    .empty{text-align:center;padding:32px;color:#888;font-size:14px}
+    .loading{text-align:center;padding:40px;color:#888}
+  </style>
+</head>
+<body>
+  <nav class="top-nav">
+    <div class="logo"><span>&#9889;</span> Bolts11</div>
+    <a href="/dashboard/" class="nav-btn">Dashboard</a>
+    <a href="/dashboard/office.html" class="nav-btn">Office</a>
+    <a href="/dashboard/manage" class="nav-btn">Admin</a>
+    <a href="/dashboard/reports" class="nav-btn active">Reports</a>
+  </nav>
+
+  <div class="wrap">
+    <h1>Business Reports</h1>
+    <div class="period">
+      Showing last
+      <select id="period" onchange="loadKPI()">
+        <option value="30">30 days</option>
+        <option value="90" selected>90 days</option>
+        <option value="180">6 months</option>
+        <option value="365">12 months</option>
+      </select>
+    </div>
+
+    <!-- Summary tiles -->
+    <div class="metrics" id="tiles">
+      <div class="loading">Loading...</div>
+    </div>
+
+    <div class="grid-2">
+      <!-- Revenue by job type -->
+      <div class="card">
+        <div class="card-header">Revenue by Job Type</div>
+        <div class="card-body" id="revenue-chart"><div class="empty">No data</div></div>
+      </div>
+
+      <!-- Avg duration by job type -->
+      <div class="card">
+        <div class="card-header">Avg Job Duration (minutes)</div>
+        <div class="card-body" id="duration-chart"><div class="empty">No data</div></div>
+      </div>
+    </div>
+
+    <!-- Proposals / close rate -->
+    <div class="card">
+      <div class="card-header">Proposal Pipeline</div>
+      <div class="card-body" id="proposals-section"><div class="empty">No data</div></div>
+    </div>
+
+    <!-- Tech efficiency -->
+    <div class="card">
+      <div class="card-header">Tech Efficiency</div>
+      <div style="overflow-x:auto">
+        <table class="data-table" id="tech-table">
+          <thead><tr><th>Tech</th><th>Job Type</th><th style="text-align:right">Avg Minutes</th><th style="text-align:right">Jobs</th></tr></thead>
+          <tbody id="tech-body"><tr><td colspan="4" class="empty">No data</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Monthly trend -->
+    <div class="card">
+      <div class="card-header">Monthly Job Volume</div>
+      <div class="card-body" id="trend-chart"><div class="empty">No data</div></div>
+    </div>
+  </div>
+
+<script>
+const API=window.location.origin;
+
+function fmt$(n){return'$'+Number(n||0).toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:0})}
+function fmtPct(n){return(n||0).toFixed(1)+'%'}
+function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;')}
+function fmtType(s){return(s||'other').replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase())}
+
+async function loadKPI(){
+  const days=document.getElementById('period').value;
+  try{
+    const r=await fetch(API+'/api/kpi/summary?days='+days);
+    const d=await r.json();
+    if(!d.success){document.getElementById('tiles').innerHTML='<div class="empty">Failed to load</div>';return}
+    renderTiles(d.summary);
+    renderRevenueChart(d.revenue_by_type);
+    renderDurationChart(d.avg_duration_by_type);
+    renderProposals(d.proposals);
+    renderTechTable(d.tech_efficiency);
+    renderTrend(d.monthly_trend);
+  }catch(e){
+    document.getElementById('tiles').innerHTML='<div class="empty">Connection error</div>';
+    console.error(e);
+  }
+}
+
+function renderTiles(s){
+  const tiles=[
+    {label:'Total Revenue',value:fmt$(s.total_revenue),sub:s.total_invoices+' invoices'},
+    {label:'Collected',value:fmt$(s.total_paid),cls:'green'},
+    {label:'Outstanding',value:fmt$(s.total_outstanding),cls:s.total_outstanding>0?'amber':''},
+    {label:'Avg Ticket',value:fmt$(s.avg_ticket)},
+    {label:'Close Rate',value:fmtPct(s.close_rate),cls:s.close_rate>=50?'green':s.close_rate>=25?'amber':'red'},
+    {label:'Customers',value:s.customer_count},
+    {label:'Team',value:s.team_count},
+  ];
+  document.getElementById('tiles').innerHTML=tiles.map(t=>
+    '<div class="tile"><div class="tile-label">'+t.label+'</div><div class="tile-value'+(t.cls?' '+t.cls:'')+'">'+t.value+'</div>'+(t.sub?'<div class="tile-sub">'+t.sub+'</div>':'')+'</div>'
+  ).join('');
+}
+
+function renderRevenueChart(data){
+  const el=document.getElementById('revenue-chart');
+  if(!data||!data.length){el.innerHTML='<div class="empty">No invoice data yet</div>';return}
+  const max=Math.max(...data.map(d=>d.revenue));
+  el.innerHTML=data.map(d=>{
+    const pct=max?Math.round(d.revenue/max*100):0;
+    return '<div class="bar-row"><div class="bar-label">'+esc(fmtType(d.job_type))+'</div><div class="bar-track"><div class="bar-fill" style="width:'+pct+'%"></div></div><div class="bar-val">'+fmt$(d.revenue)+'</div></div>';
+  }).join('')+'<div style="font-size:11px;color:#888;margin-top:8px;text-align:right">'+data.reduce((s,d)=>s+d.count,0)+' invoices total</div>';
+}
+
+function renderDurationChart(data){
+  const el=document.getElementById('duration-chart');
+  if(!data||!data.length){el.innerHTML='<div class="empty">No duration data yet — complete jobs with DONE to see timing</div>';return}
+  const max=Math.max(...data.map(d=>d.avg_minutes));
+  el.innerHTML=data.map(d=>{
+    const pct=max?Math.round(d.avg_minutes/max*100):0;
+    return '<div class="bar-row"><div class="bar-label">'+esc(fmtType(d.job_type))+'</div><div class="bar-track"><div class="bar-fill" style="width:'+pct+'%;background:#16a34a"></div></div><div class="bar-val">'+d.avg_minutes+' min</div></div>';
+  }).join('');
+}
+
+function renderProposals(p){
+  const el=document.getElementById('proposals-section');
+  if(!p||!p.sent){el.innerHTML='<div class="empty">No proposals sent yet</div>';return}
+  const total=p.sent;
+  const segments=[
+    {label:'Accepted',count:p.accepted,color:'#16a34a'},
+    {label:'Declined',count:p.declined,color:'#dc2626'},
+    {label:'No Response',count:p.cold,color:'#d0d5dd'},
+    {label:'Pending',count:total-p.accepted-p.declined-p.cold,color:'#f59e0b'},
+  ].filter(s=>s.count>0);
+  let html='<div style="display:flex;gap:20px;flex-wrap:wrap;margin-bottom:16px">';
+  html+='<div><span style="font-size:28px;font-weight:800">'+total+'</span><span style="font-size:13px;color:#888;margin-left:6px">sent</span></div>';
+  html+='<div><span style="font-size:28px;font-weight:800;color:#16a34a">'+fmtPct(p.close_rate)+'</span><span style="font-size:13px;color:#888;margin-left:6px">close rate</span></div>';
+  html+='<div><span style="font-size:28px;font-weight:800">'+fmt$(p.revenue_won)+'</span><span style="font-size:13px;color:#888;margin-left:6px">won</span></div>';
+  html+='</div>';
+  // Stacked bar
+  html+='<div style="display:flex;height:28px;border-radius:6px;overflow:hidden;margin-bottom:8px">';
+  segments.forEach(s=>{
+    const pct=Math.round(s.count/total*100);
+    if(pct>0)html+='<div style="width:'+pct+'%;background:'+s.color+'" title="'+s.label+': '+s.count+'"></div>';
+  });
+  html+='</div>';
+  html+='<div style="display:flex;gap:16px;font-size:12px;color:#666">';
+  segments.forEach(s=>{html+='<span><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:'+s.color+';margin-right:4px"></span>'+s.label+' ('+s.count+')</span>'});
+  html+='</div>';
+  el.innerHTML=html;
+}
+
+function renderTechTable(data){
+  const tbody=document.getElementById('tech-body');
+  if(!data||!data.length){tbody.innerHTML='<tr><td colspan="4" class="empty">No job duration data yet — techs need to use CLOCK IN + DONE</td></tr>';return}
+  tbody.innerHTML=data.map(d=>
+    '<tr><td style="font-weight:500">'+esc(d.worker)+'</td><td>'+esc(fmtType(d.job_type))+'</td><td class="num">'+d.avg_minutes+' min</td><td class="num">'+d.job_count+'</td></tr>'
+  ).join('');
+}
+
+function renderTrend(data){
+  const el=document.getElementById('trend-chart');
+  if(!data||!data.length){el.innerHTML='<div class="empty">No monthly data yet</div>';return}
+  const max=Math.max(...data.map(d=>d.jobs));
+  el.innerHTML=data.map(d=>{
+    const pct=max?Math.round(d.jobs/max*100):0;
+    const label=d.month;// YYYY-MM
+    return '<div class="bar-row"><div class="bar-label">'+label+'</div><div class="bar-track"><div class="bar-fill" style="width:'+pct+'%;background:#f59e0b"></div></div><div class="bar-val">'+d.jobs+' jobs</div></div>';
+  }).join('');
+}
+
+loadKPI();
+</script>
+</body>
+</html>
