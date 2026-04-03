@@ -11,7 +11,7 @@ before any classification happens.
 
 Usage:
     from execution.context_loader import load_context
-    ctx = load_context(from_phone="+12076538819", client_phone="+12074190986")
+    ctx = load_context(from_phone="+15555550100", client_phone="+15555550200")
 """
 
 import os
@@ -248,9 +248,10 @@ if __name__ == "__main__":
     from dotenv import load_dotenv
     load_dotenv()
 
+    # Replace with your test phone numbers from .env or Supabase
     ctx = load_context(
-        from_phone="+12076538819",
-        client_phone="+12074190986",
+        from_phone=os.environ.get("TEST_OWNER_MOBILE", "+15555550100"),
+        client_phone=os.environ.get("TELNYX_PHONE_NUMBER", "+15555550200"),
     )
     import json
     print(json.dumps(ctx, indent=2, default=str))

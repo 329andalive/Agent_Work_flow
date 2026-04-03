@@ -6,3 +6,6 @@ __pycache__/
 *.pyc
 System.md
 SESSION.md
+sql/local/
+scripts/test_customers.csv
+Agent_Work_flow

@@ -20,7 +20,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # ---------------------------------------------------------------------------
 SEND_REAL_SMS = False   # ← Set to True to send a real SMS via Telnyx
 
-test_client_phone   = "+12074190986"   # Jeremy's Telnyx number (the client)
+test_client_phone   = "+15555550200"   # Test Owner's Telnyx number (the client)
 test_customer_phone = "+12075550100"   # Fake customer number
 test_message        = (
     "hey need my tank pumped been about 3 years "
@@ -76,7 +76,7 @@ def main():
     client = get_client_by_phone(test_client_phone)
     if not client:
         print(f"\n  ✗ Client not found for {test_client_phone}")
-        print("  Run: python execution/db_test.py  (seeds the Jeremy Holt record)")
+        print("  Run: python execution/db_test.py  (seeds the Test Owner record)")
         sys.exit(1)
 
     print(f"  ✓ Client: {client['business_name']} | owner: {client['owner_name']}")
@@ -133,7 +133,7 @@ def main():
         print(proposal_text)
         print()
         print("Supabase checks — open your Supabase dashboard and verify:")
-        print("  1. clients table      → Jeremy Holt record exists")
+        print("  1. clients table      → Test Owner record exists")
         print("  2. customers table    → new row for +12075550100")
         print("  3. jobs table         → new row, status='estimated'")
         print("  4. proposals table    → new row with proposal_text")

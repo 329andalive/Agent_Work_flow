@@ -20,10 +20,10 @@ from execution.sms_router import route_message
 
 MOCK_CLIENT = {
     "id": "client-test-uuid",
-    "business_name": "B&B Septic",
+    "business_name": "Test Trades Co",
     "owner_name": "Jeremy",
-    "phone": "+12074190986",
-    "owner_mobile": "+12076538819",
+    "phone": "+15555550200",
+    "owner_mobile": "+15555550100",
     "personality": "Hourly rate: $125/hr",
     "active": True,
 }
@@ -31,12 +31,12 @@ MOCK_CLIENT = {
 MOCK_EMPLOYEE_OWNER = {
     "name": "Jeremy",
     "role": "owner",
-    "phone": "+12076538819",
+    "phone": "+15555550100",
 }
 
 BASE_SMS = {
-    "from_number": "+12076538819",
-    "to_number": "+12074190986",
+    "from_number": "+15555550100",
+    "to_number": "+15555550200",
     "message_id": "test-msg-001",
 }
 

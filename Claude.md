@@ -169,7 +169,7 @@ Each agent has a directive in `directives/agents/{agent_name}.md`
 │   └── scheduling_migration.sql
 ├── directives/                        # SOPs and context docs
 │   ├── agents/proposal_agent.md      # Proposal architecture + line item rules
-│   └── clients/personality.md        # B&B Septic voice + pricing
+│   └── clients/personality.md        # Example personality template
 └── tests/                             # Test scripts
 ```
 
@@ -179,7 +179,7 @@ Each agent has a directive in `directives/agents/{agent_name}.md`
 ```
 ANTHROPIC_API_KEY=
 TELNYX_API_KEY=
-TELNYX_PHONE_NUMBER=+12074190986
+TELNYX_PHONE_NUMBER=
 SUPABASE_URL=https://wczzlvhpryufohjwmxwd.supabase.co
 SUPABASE_SERVICE_KEY=
 BOLTS11_BASE_URL=https://bolts11.com

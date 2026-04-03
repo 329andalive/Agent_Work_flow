@@ -5,7 +5,7 @@ Checks:
   1. Connection to Supabase succeeds
   2. All 8 tables exist
   3. Seeds the client table if empty
-  4. Fetches the Jeremy Holt client record
+  4. Fetches the Test Owner client record
   5. Prints a clean summary
 
 Run:
@@ -110,13 +110,13 @@ def main():
         sys.exit(1)
 
     # ------------------------------------------------------------------
-    # Step 4: Fetch the Jeremy Holt record
+    # Step 4: Fetch the Test Owner record
     # ------------------------------------------------------------------
     print(f"\n[{timestamp()}] Step 4: Fetching test client...")
-    client = get_client_by_phone("+12074190986")
+    client = get_client_by_phone("+15555550200")
 
     if not client:
-        print(f"[{timestamp()}] ✗ Could not find client for +12074190986")
+        print(f"[{timestamp()}] ✗ Could not find client for +15555550200")
         sys.exit(1)
 
     # ------------------------------------------------------------------

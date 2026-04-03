@@ -23,7 +23,7 @@ NOTE: The combined SMS goes to the OWNER, not the customer.
 
 Usage:
     from execution.invoice_agent import run
-    run(client_phone="+12074190986",
+    run(client_phone="+15555550200",
         customer_phone="+12075550100",
         raw_input="done at the Anderson place, replaced baffle, 3.5 hours, $95 parts")
 """
@@ -54,7 +54,7 @@ def timestamp():
 
 FALLBACK_MESSAGE = (
     "Something went wrong on the invoice. "
-    "Call me at 207-419-0986"
+    "Please contact us directly."
 )
 
 # Minimum hours before we flag for clarification
@@ -632,7 +632,7 @@ def run(client_phone: str, raw_input: str, customer_phone: str | None = None) ->
         print(f"[{timestamp()}] ERROR invoice_agent: Claude returned no text")
         msg = (
             f"Something went wrong generating the invoice for {customer_name}. "
-            f"Try again or call Jeremy at 207-419-0986."
+            f"Try again or contact support."
         )
         send_sms(to_number=owner_mobile, message_body=msg, from_number=client_phone)
         return None
@@ -774,7 +774,7 @@ def run(client_phone: str, raw_input: str, customer_phone: str | None = None) ->
         if item.get("unit_price") is not None:
             item["unit_price"] = round(float(item["unit_price"]), 2)
 
-    # Tax is NOT set by the agent — Jeremy sets it on the edit page.
+    # Tax is NOT set by the agent — the owner sets it on the edit page.
     # Agent creates invoice at subtotal only. Square link uses subtotal.
     tax_rate = 0.0
     tax_amount = 0.0

@@ -8,11 +8,11 @@ Usage:
     from execution.email_send import send_invoice_email, send_proposal_email
     result = send_invoice_email(
         to_email="customer@example.com",
-        to_name="Beverly Whitaker",
-        from_name="B&B Septic",
+        to_name="Test Customer",
+        from_name="Your Business",
         invoice_id="abc123",
-        customer_name="Beverly Whitaker",
-        business_name="B&B Septic",
+        customer_name="Test Customer",
+        business_name="Your Business",
         line_items=[{"description": "Pump-out", "amount": 325.00}],
         subtotal=325.00,
         tax_amount=0.0,

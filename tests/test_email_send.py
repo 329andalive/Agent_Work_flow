@@ -13,9 +13,9 @@ from execution.email_send import (
 
 _COMMON_KWARGS = dict(
     to_name="Test",
-    from_name="B&B Septic",
+    from_name="Test Trades Co",
     customer_name="Test Customer",
-    business_name="B&B Septic",
+    business_name="Test Trades Co",
     line_items=[{"description": "Pump-out", "amount": 325.00}],
     subtotal=325.00,
     tax_amount=0.0,
@@ -52,7 +52,7 @@ def test_send_proposal_email_no_api_key(monkeypatch):
 def test_invoice_html_contains_pay_button():
     html = _build_invoice_html(
         customer_name="Test",
-        business_name="B&B Septic",
+        business_name="Test Trades Co",
         invoice_id="abc12345",
         line_items=[{"description": "Pump-out", "amount": 325.00}],
         subtotal=325.00,
@@ -67,7 +67,7 @@ def test_invoice_html_contains_pay_button():
 def test_invoice_html_no_pay_button_when_no_link():
     html = _build_invoice_html(
         customer_name="Test",
-        business_name="B&B Septic",
+        business_name="Test Trades Co",
         invoice_id="abc12345",
         line_items=[{"description": "Pump-out", "amount": 325.00}],
         subtotal=325.00,

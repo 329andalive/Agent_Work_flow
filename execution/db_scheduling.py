@@ -404,8 +404,8 @@ if __name__ == "__main__":
     from dotenv import load_dotenv
     load_dotenv()
 
-    # Test with B&B Septic client_id
-    test_client_id = "8aafcd73-b41c-4f1a-bd01-3e7955798367"
+    # Replace with your test client_id from Supabase
+    test_client_id = os.environ.get("TEST_CLIENT_ID", "your-client-id-here")
 
     print("--- get_workers ---")
     workers = get_workers(test_client_id)

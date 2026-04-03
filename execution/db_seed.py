@@ -1,7 +1,7 @@
 """
 db_seed.py — Insert the test client record
 
-Inserts Jeremy Holt / B&B Septic as the first client.
+Inserts a test client.
 Safe to run multiple times — skips insert if the phone number already exists.
 
 Run:
@@ -22,29 +22,24 @@ def timestamp():
 
 
 # ---------------------------------------------------------------------------
-# Test client data — Jeremy Holt, B&B Septic
+# Test client data — loaded from env vars or defaults to generic placeholders.
+# Real client data lives in Supabase only — never hardcode here.
 # ---------------------------------------------------------------------------
 TEST_CLIENT = {
-    "business_name":  "B&B Septic",
-    "owner_name":     "Jeremy Holt",
-    "phone":          "+12074190986",   # Telnyx number customers text in to
-    "owner_mobile":   "+12076538819",   # Jeremy's real cell — proposals sent here
-    "service_area":   "Rural Maine",
+    "business_name":  os.environ.get("TEST_BUSINESS_NAME", "Test Trades Co"),
+    "owner_name":     os.environ.get("TEST_OWNER_NAME", "Test Owner"),
+    "phone":          os.environ.get("TELNYX_PHONE_NUMBER", "+15555550200"),
+    "owner_mobile":   os.environ.get("TEST_OWNER_MOBILE", "+15555550100"),
+    "service_area":   "Service Area",
     "trade_vertical": "sewer_drain",
     "active":         True,
     "personality": (
-        "I am Jeremy Holt, owner of B&B Septic serving rural Maine. "
-        "I have been in the trades my whole life. I talk straight, I price fair, "
-        "and I show up when I say I will. My customers are mostly farmers, camp owners, "
-        "and rural homeowners who have been burned by contractors before. I earn their "
-        "trust by being straight with them. My estimates are detailed and honest. "
-        "I do not use fancy words. I say what the job is, what it costs, and when I can do it.\n\n"
+        "I am a trades business owner. I talk straight, I price fair, "
+        "and I show up when I say I will.\n\n"
         "Hourly rate: $125/hr\n"
         "Overtime (after 8hrs or weekends): $175/hr\n"
         "Minimum charge: $150\n"
-        "I do not charge travel in my local area.\n"
         "Standard payment terms: due on receipt for residential, net 15 for commercial accounts.\n"
-        "Payment methods accepted: check, cash, or Venmo @HoltSewer."
     ),
 }
 

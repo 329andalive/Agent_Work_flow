@@ -30,7 +30,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # ---------------------------------------------------------------------------
 SEND_REAL_SMS = False  # ← Set to True to send a real SMS via Telnyx
 
-test_client_phone   = "+12074190986"   # Jeremy's Telnyx number
+test_client_phone   = "+15555550200"   # Test Owner's Telnyx number
 test_customer_phone = "+12075550100"   # Fake customer (Anderson)
 test_message = (
     "done at the Anderson place, replaced baffle, "
@@ -71,7 +71,7 @@ def main():
     print("  Invoice Agent + Job Cost Agent — End-to-End Test")
     print("=" * 60)
     print(f"\nScenario:")
-    print(f"  Client:    {test_client_phone} (Jeremy Holt)")
+    print(f"  Client:    {test_client_phone} (Test Owner)")
     print(f"  Customer:  {test_customer_phone} (Anderson)")
     print(f"  Message:   {test_message}")
     print()
@@ -158,13 +158,13 @@ def main():
             client_id=client_id,
             customer_id=customer_id,
             proposal_text=(
-                "Mike, Jeremy here from B&B Septic.\n\n"
+                "Mike, Jeremy here from Test Trades Co.\n\n"
                 "For the baffle replacement at your place on Route 9:\n"
                 "Labor: 2 hrs x $125 = $250.00\n"
                 "Baffle and fittings: ~$85.00\n"
                 "Estimate: $335.00\n\n"
                 "I can get there Tuesday. Just confirm and I'll be there.\n\n"
-                "Jeremy Holt\nB&B Septic\n207-419-0986"
+                "Test Owner\nTest Trades Co\n207-419-0986"
             ),
             amount=335.00,
         )

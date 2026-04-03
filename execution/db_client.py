@@ -1,8 +1,8 @@
 """
 db_client.py — Client table queries
 
-A "client" is the business owner using the system (e.g. Jeremy Holt,
-owner of B&B Septic). Every inbound SMS gets matched to a
+A "client" is the business owner using the system (e.g. the business owner,
+who uses the platform). Every inbound SMS gets matched to a
 client by phone number — this is step 1 of every agent flow.
 
 Usage:
@@ -41,7 +41,7 @@ def get_client_by_phone(phone: str) -> dict | None:
     Called by sms_router.py on every inbound SMS to identify the business owner.
 
     Args:
-        phone: E.164 phone number (e.g. "+12074190986")
+        phone: E.164 phone number (e.g. "+15555550200")
 
     Returns:
         Full client record as a dict, or None if not found / on error.

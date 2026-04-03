@@ -16,7 +16,7 @@ from unittest.mock import patch, MagicMock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-FAKE_CLIENT_ID = "8aafcd73-b41c-4f1a-bd01-3e7955798367"
+FAKE_CLIENT_ID = "00000000-0000-0000-0000-000000000001"
 
 
 def _mock_pricebook_items():

@@ -28,9 +28,9 @@ def _mock_haiku(response_dict):
 # ---------------------------------------------------------------------------
 
 def test_parse_natural_name_and_price():
-    """'est. Jeremy holt replace inlet pipe at tank 5 feet $500' → name + price."""
+    """'est. john smith replace inlet pipe at tank 5 feet $500' → name + price."""
     haiku_response = {
-        "name": "Jeremy Holt",
+        "name": "John Smith",
         "address": "",
         "job_type": "repair",
         "price": 500,
@@ -38,9 +38,9 @@ def test_parse_natural_name_and_price():
     }
     with patch("execution.proposal_agent.call_claude", side_effect=_mock_haiku(haiku_response)):
         from execution.proposal_agent import parse_job_fields
-        result = parse_job_fields("est. Jeremy holt replace inlet pipe at tank 5 feet $500")
+        result = parse_job_fields("est. john smith replace inlet pipe at tank 5 feet $500")
 
-    assert result["name"].lower() == "jeremy holt"
+    assert result["name"].lower() == "john smith"
     assert result["price"] == 500
     assert result["job_type"] == "repair"
 

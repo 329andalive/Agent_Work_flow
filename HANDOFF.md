@@ -212,7 +212,7 @@ Each vertical contains:
 - DRY RUN: python scripts/seed_week.py --dry-run
 - SEED: python scripts/seed_week.py
 - 40 jobs seeded across 5 days (March 30 - April 3, 2026)
-- Uses 23 real customer IDs from B&B Septic's customer list
+- Uses 23 real customer IDs from [CLIENT_NAME]'s customer list
 - All 40 jobs confirmed inserted: status=scheduled, unassigned
 
 ### bolts11-site — Recovered
@@ -255,9 +255,9 @@ MOD   requirements.txt                      — resend==2.4.0
 - **Prompt #5** — Run square_payment_writeback.sql in Supabase (manual)
 - **10DLC approval** — outbound SMS still blocked
 - **Square production credentials** — still on sandbox
-- **Supabase rebrand UPDATE** — title still shows "Holt Sewer & Drain"
-  Run: UPDATE clients SET business_name = 'B&B Septic'
-       WHERE id = '8aafcd73-b41c-4f1a-bd01-3e7955798367';
+- **Supabase rebrand UPDATE** — title still shows "[OLD_CLIENT_NAME]"
+  Run: UPDATE clients SET business_name = '[CLIENT_NAME]'
+       WHERE id = '[CLIENT_ID]';
 - **RESEND_API_KEY** — add to Railway env vars (resend.com free tier)
 - **Netlify deploy** — drag bolts11-site/ folder to Netlify to restore live site
 
@@ -274,7 +274,7 @@ MOD   requirements.txt                      — resend==2.4.0
    color-code dispatch board cards automatically
 2. Customer CSV import — self-serve bulk import for onboarding
 3. Client config inheritance — client overrides vertical defaults
-   (B&B Septic starts from sewer_drain template, overrides what's different)
+   ([CLIENT_NAME] starts from sewer_drain template, overrides what's different)
 4. Self-serve onboarding wizard — after 5 manual client setups
 
 ---
@@ -282,8 +282,8 @@ MOD   requirements.txt                      — resend==2.4.0
 ## Session — March 28, 2026
 
 ### Rebrand
-- Holt Sewer & Drain → B&B Septic across entire codebase (24 occurrences, 13 files)
-- NOTE: Also run in Supabase: `UPDATE clients SET business_name = 'B&B Septic' WHERE id = '8aafcd73-...'`
+- [OLD_CLIENT_NAME] → [CLIENT_NAME] across entire codebase (24 occurrences, 13 files)
+- NOTE: Also run in Supabase: `UPDATE clients SET business_name = '[CLIENT_NAME]' WHERE id = '[CLIENT_ID]'`
 
 ### Square Payment Links — Fully Wired
 - Rewrote square_agent.py for v44 SDK: `Square()` not `Client()`, `token` not `access_token`
@@ -340,7 +340,7 @@ ALTER TABLE invoices ADD COLUMN IF NOT EXISTS square_order_id TEXT;
 ALTER TABLE invoices ADD COLUMN IF NOT EXISTS tax_rate numeric(5,4) DEFAULT 0.0;
 ALTER TABLE invoices ADD COLUMN IF NOT EXISTS tax_amount numeric(10,2) DEFAULT 0.0;
 ALTER TABLE jobs ADD COLUMN IF NOT EXISTS scope_hold boolean DEFAULT false;
-UPDATE clients SET business_name = 'B&B Septic' WHERE id = '8aafcd73-b41c-4f1a-bd01-3e7955798367';
+UPDATE clients SET business_name = '[CLIENT_NAME]' WHERE id = '[CLIENT_ID]';
 ```
 
 ### End-of-Day Status — Full Invoice Pipeline Working
@@ -418,7 +418,7 @@ Build status:  ✅ GREEN as of March 29, 2026 — 36 tests passing
 - [x] Add Customer form `/dashboard/customers/new` — POSTs to `/api/customers/create`
 - [x] Export CSV `/api/invoices/export-csv` — QuickBooks-compatible download
 - [x] Job detail route `/dashboard/job/<id>` — customer, proposals, invoices, activity
-- [x] 25 test customers imported for B&B Septic
+- [x] 25 test customers imported for [CLIENT_NAME]
 - [x] `squareup==44.0.1.20260122` installed and pinned — Square SDK available on Railway
 - [x] All 66 dependencies fully pinned in requirements.txt — no floating versions
 
@@ -713,10 +713,10 @@ Auth:        Phone + 4-digit PIN → Flask session (30-day lifetime)
 Railway URL:    https://web-production-043dc.up.railway.app
 API domain:     https://api.bolts11.com (DNS may not be pointed yet)
 GitHub repo:    329andalive/Agent_Work_flow
-Client ID:      8aafcd73-b41c-4f1a-bd01-3e7955798367
-Business:       B&B Septic
-Owner phone:    +12074190986 (Telnyx number)
-Owner mobile:   +12076538819 (Jeremy's cell)
+Client ID:      [CLIENT_ID]
+Business:       [CLIENT_NAME]
+Owner phone:    [PHONE] (Telnyx number)
+Owner mobile:   [OWNER_MOBILE]
 Supabase URL:   https://wczzlvhpryufohjwmxwd.supabase.co
 FLASK_ENV:      development (Railway — allows ?client_id= dev bypass)
 ```

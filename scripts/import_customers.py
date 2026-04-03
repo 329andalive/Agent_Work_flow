@@ -21,7 +21,8 @@ load_dotenv()
 
 from execution.db_connection import get_client as get_supabase
 
-CLIENT_ID = "8aafcd73-b41c-4f1a-bd01-3e7955798367"
+# Set via env var or pass as CLI arg — never hardcode client IDs
+CLIENT_ID = os.environ.get("CLIENT_ID", "")
 
 
 def normalize_phone(raw: str) -> str:

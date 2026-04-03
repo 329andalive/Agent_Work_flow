@@ -46,15 +46,14 @@ The combined SMS sent to the owner has two sections:
 
 ## What good looks like
 
-GOOD invoice tone for Jeremy Holt:
-Anderson job — replaced the outlet baffle,
-she was pretty rotted through.
+GOOD invoice tone (example):
+Service call — replaced the outlet baffle.
 
 INV-20260316-A3F2
 March 16, 2026
 
-Mike Anderson
-Route 9, Bangor
+[Customer Name]
+[Address]
 
 Labor: 3.5 hrs x $125/hr = $437.50
 Baffle kit and fittings: $95.00
@@ -62,13 +61,10 @@ Baffle kit and fittings: $95.00
 Total due: $532.50
 
 Due on receipt.
-Check, cash, or Venmo @HoltSewer.
 
-Appreciate the work Mike.
-
-Jeremy Holt
-B&B Septic
-207-419-0986
+[Owner Name]
+[Business Name]
+[Phone]
 
 ---
 JOB COST (owner only)

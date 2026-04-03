@@ -6,7 +6,7 @@ Tokens expire after 72 hours. Handles collisions by regenerating if a token alre
 
 Usage:
     from execution.token_generator import generate_token
-    token = generate_token(job_id="abc-123", client_phone="+12074190986", link_type="proposal")
+    token = generate_token(job_id="abc-123", client_phone="+15555550200", link_type="proposal")
     # → "a3Kf9mZx"
 """
 
@@ -278,7 +278,7 @@ if __name__ == "__main__":
     print("Testing token generation...")
     test_token = generate_token(
         job_id="test-job-001",
-        client_phone="+12074190986",
+        client_phone="+15555550200",
         link_type="proposal",
     )
     if test_token:

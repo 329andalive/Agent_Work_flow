@@ -1,5 +1,5 @@
 """
-seed_week.py — Insert 40 test jobs (8/day, Mon-Fri) for B&B Septic.
+seed_week.py — Insert 40 test jobs (8/day, Mon-Fri) for the test client.
 
 One-time seed script for testing dispatch, scheduling, and invoice flows
 against a realistic week of sewer & drain work.
@@ -23,10 +23,10 @@ from dotenv import load_dotenv
 load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
 
 # ---------------------------------------------------------------------------
-# Constants — B&B Septic
+# Constants — set via env vars, never hardcode client data
 # ---------------------------------------------------------------------------
-CLIENT_ID = "8aafcd73-b41c-4f1a-bd01-3e7955798367"
-CLIENT_PHONE = "+12074190986"
+CLIENT_ID = os.environ.get("CLIENT_ID", "")
+CLIENT_PHONE = os.environ.get("TELNYX_PHONE_NUMBER", "")
 
 CUSTOMERS = [
     {"id": "2bcbe487-3447-488b-87cc-b75ae9b9dd21", "name": "Arthur Crockett",   "address": "310 Northport Avenue, Belfast, ME"},

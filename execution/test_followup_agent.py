@@ -53,7 +53,7 @@ from execution.reporting_agent import get_closing_rate_summary
 # Test fixtures
 # ---------------------------------------------------------------------------
 
-JEREMY_PHONE   = "+12074190986"   # Jeremy's Telnyx number (must match db_seed.py)
+JEREMY_PHONE   = "+15555550200"   # Test Owner's Telnyx number (must match db_seed.py)
 CUSTOMER_PHONE = "+12075559999"   # Fake customer number
 CUSTOMER_NAME  = "Test Customer"
 CUSTOMER_ADDR  = "123 Test Lane, Bangor, ME"

@@ -10,12 +10,12 @@ from unittest.mock import MagicMock
 
 
 # ---------------------------------------------------------------------------
-# B&B Septic test constants
+# Test constants — generic placeholders, no real client data
 # ---------------------------------------------------------------------------
-TEST_CLIENT_ID = "8aafcd73-b41c-4f1a-bd01-3e7955798367"
-TEST_CLIENT_PHONE = "+12074190986"
-TEST_OWNER_MOBILE = "+12076538819"
-TEST_BUSINESS_NAME = "B&B Septic"
+TEST_CLIENT_ID = "00000000-0000-0000-0000-000000000001"
+TEST_CLIENT_PHONE = "+15555550200"
+TEST_OWNER_MOBILE = "+15555550100"
+TEST_BUSINESS_NAME = "Test Trades Co"
 
 
 # ---------------------------------------------------------------------------
@@ -106,21 +106,20 @@ def mock_supabase():
 
 
 # ---------------------------------------------------------------------------
-# Mock client record — B&B Septic
+# Mock client record — Test Trades Co
 # ---------------------------------------------------------------------------
 
 @pytest.fixture
 def mock_client():
-    """B&B Septic client record matching the test Supabase data."""
+    """Generic test client record — no real client data."""
     return {
         "id": TEST_CLIENT_ID,
         "business_name": TEST_BUSINESS_NAME,
-        "owner_name": "Jeremy",
+        "owner_name": "Test Owner",
         "phone": TEST_CLIENT_PHONE,
         "owner_mobile": TEST_OWNER_MOBILE,
         "personality": (
-            "I am Jeremy, owner of B&B Septic serving Waldo County "
-            "and the surrounding rural Maine area.\n"
+            "I am the owner of a trades business.\n"
             "Hourly rate: $125/hr\n"
             "Overtime (after 8hrs or weekends): $175/hr\n"
             "Minimum charge: $150\n"
@@ -159,7 +158,7 @@ def mock_customer():
 
 @pytest.fixture
 def mock_job():
-    """A test job for B&B Septic."""
+    """A test job for Test Trades Co."""
     return {
         "id": "job-0001-test-uuid",
         "client_id": TEST_CLIENT_ID,

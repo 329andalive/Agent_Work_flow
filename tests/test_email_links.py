@@ -68,7 +68,7 @@ def test_invoice_email_uses_token_url_not_dashboard():
 
     html = _build_invoice_html(
         customer_name="Dave Smith",
-        business_name="B&B Septic",
+        business_name="Test Trades Co",
         invoice_id="1407bf1c-85e7-4a4c-b246-f4a799d4467f",
         line_items=[{"description": "Excavation and grading", "amount": 10500.00}],
         subtotal=10500.00,

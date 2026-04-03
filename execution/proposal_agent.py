@@ -16,7 +16,7 @@ Flow:
 
 Usage:
     from execution.proposal_agent import run
-    result = run(client_phone="+12074190986",
+    result = run(client_phone="+15555550200",
                  customer_phone="+12075550100",
                  raw_input="need tank pumped 3 bedroom route 9")
 """
@@ -116,7 +116,7 @@ Return ONLY a JSON object with these exact keys:
 }}
 
 Rules:
-- name: extract any person's name mentioned. Lowercase is fine — capitalize it. "jeremy holt" → "Jeremy Holt". If no name found, return empty string.
+- name: extract any person's name mentioned. Lowercase is fine — capitalize it. "john smith" → "John Smith". If no name found, return empty string.
 - address: extract any location — street address, road name, route number, town name. "12 school st" → "12 School St". Empty string if none found.
 - job_type: pick the closest match from the list above.
 - price: number only, no $ sign. null if not mentioned.
@@ -248,7 +248,7 @@ def build_structured_prompt(client: dict, customer_name: str, customer_address: 
 
 FALLBACK_MESSAGE = (
     "Something went wrong generating your proposal. "
-    "Call Jeremy at 207-653-8819"
+    "Please contact us directly."
 )
 
 
@@ -257,8 +257,8 @@ def run(client_phone: str, customer_phone: str, raw_input: str) -> str | None:
     Main entry point for the proposal agent.
 
     Args:
-        client_phone:   The business owner's Telnyx number (e.g. "+12074190986")
-        customer_phone: The end customer's phone number (e.g. "+12076538819")
+        client_phone:   The business owner's Telnyx number (e.g. "+15555550200")
+        customer_phone: The end customer's phone number (e.g. "+15555550100")
         raw_input:      The raw SMS text describing the job
 
     Returns:
