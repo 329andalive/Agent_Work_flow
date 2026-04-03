@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Admin — Bolts11</title>
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#f3f4f6;color:#1a1a1a;min-height:100vh;font-size:15px;line-height:1.5}
+    .wrap{max-width:900px;margin:0 auto;padding:16px 20px}
+    /* Nav */
+    .top-nav{background:#132038;padding:10px 20px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+    .top-nav .logo{font-size:18px;font-weight:800;color:#fff;margin-right:16px}.top-nav .logo span{color:#f59e0b}
+    .nav-btn{font-size:13px;color:rgba(255,255,255,.55);text-decoration:none;padding:6px 12px;border-radius:5px;transition:color .15s,background .15s}
+    .nav-btn:hover{color:#fff;background:rgba(255,255,255,.08)}
+    .nav-btn.active{color:#f59e0b;background:rgba(245,158,11,.12)}
+    /* Tabs */
+    .tab-bar{display:flex;gap:4px;margin:16px 0 12px;border-bottom:2px solid #e5e7eb;padding-bottom:0}
+    .tab-btn{padding:10px 18px;font-size:14px;font-weight:600;color:#888;border:none;background:none;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;transition:color .15s,border-color .15s}
+    .tab-btn:hover{color:#1a1a1a}
+    .tab-btn.active{color:#132038;border-bottom-color:#f59e0b}
+    .tab-panel{display:none}.tab-panel.active{display:block}
+    /* Card */
+    .card{background:#fff;border-radius:10px;box-shadow:0 1px 6px rgba(0,0,0,.06);overflow:hidden}
+    .card-header{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid #eee;flex-wrap:wrap;gap:8px}
+    .card-title{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#888}
+    .card-count{font-size:12px;font-weight:600;color:#132038;background:#f3f4f6;padding:2px 10px;border-radius:10px}
+    /* Table */
+    .data-table{width:100%;border-collapse:collapse;font-size:13px}
+    .data-table th{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:#888;padding:8px 10px;text-align:left;border-bottom:1px solid #eee}
+    .data-table td{padding:8px 10px;border-bottom:1px solid #f5f5f5;vertical-align:middle}
+    .data-table tr:hover{background:#fafafa}
+    .data-table input,.data-table select{font-size:13px;padding:5px 8px;border:1px solid #d0d5dd;border-radius:5px;background:#fff;min-height:32px;width:100%}
+    .data-table input:focus,.data-table select:focus{border-color:#132038;outline:none;box-shadow:0 0 0 2px rgba(19,32,56,.1)}
+    /* Buttons */
+    .btn{font-size:12px;font-weight:600;padding:7px 14px;border-radius:6px;border:none;cursor:pointer;transition:opacity .15s}
+    .btn:hover{opacity:.85}
+    .btn-navy{background:#132038;color:#fff}
+    .btn-amber{background:#f59e0b;color:#132038}
+    .btn-outline{background:none;border:1px solid #d0d5dd;color:#555}
+    .btn-red{background:none;border:none;color:#dc2626;font-size:12px;cursor:pointer;padding:4px 8px}
+    .btn-red:hover{background:#fee2e2;border-radius:4px}
+    .btn-green{background:#16a34a;color:#fff}
+    .btn-sm{font-size:11px;padding:4px 10px}
+    .add-btn{background:none;border:none;color:#132038;font-size:13px;font-weight:600;cursor:pointer;padding:8px 0}
+    /* Status dot */
+    .status-dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:5px}
+    .status-dot.green{background:#16a34a}.status-dot.grey{background:#ccc}
+    .row-inactive{opacity:.5}
+    /* Search */
+    .search-input{width:100%;font-size:14px;padding:10px 14px;border:1px solid #d0d5dd;border-radius:8px;margin-bottom:12px;outline:none}
+    .search-input:focus{border-color:#132038;box-shadow:0 0 0 2px rgba(19,32,56,.1)}
+    /* Banner */
+    .banner{padding:10px 16px;border-radius:6px;font-size:13px;margin-bottom:12px;display:none}
+    .banner-green{background:#dcfce7;color:#166534;display:block}
+    .banner-amber{background:#fef3c7;color:#92400e;display:block}
+    /* Modal */
+    .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.4);display:none;align-items:center;justify-content:center;z-index:100}
+    .modal-overlay.open{display:flex}
+    .modal{background:#fff;border-radius:12px;max-width:520px;width:90%;max-height:80vh;overflow-y:auto;padding:24px}
+    .modal h3{font-size:17px;font-weight:700;margin-bottom:12px}
+    .modal .actions{display:flex;gap:8px;justify-content:flex-end;margin-top:16px}
+    .empty-state{text-align:center;padding:32px;color:#888;font-size:14px}
+  </style>
+</head>
+<body>
+  <nav class="top-nav">
+    <div class="logo"><span>&#9889;</span> Bolts11</div>
+    <a href="/dashboard/" class="nav-btn">Dashboard</a>
+    <a href="/dashboard/office.html" class="nav-btn">Office</a>
+    <a href="/dashboard/command.html" class="nav-btn">Command</a>
+    <a href="/dashboard/onboarding.html" class="nav-btn">Onboarding</a>
+    <a href="/dashboard/manage" class="nav-btn active">Admin</a>
+  </nav>
+
+  <div class="wrap">
+    <!-- Tab bar -->
+    <div class="tab-bar">
+      <button class="tab-btn active" onclick="switchTab('customers')">Customers</button>
+      <button class="tab-btn" onclick="switchTab('pricing')">Pricing</button>
+      <button class="tab-btn" onclick="switchTab('team')">Team Members</button>
+    </div>
+
+    <!-- ═══════ TAB 1: CUSTOMERS ═══════ -->
+    <div class="tab-panel active" id="tab-customers">
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">All Customers</span>
+          <span class="card-count" id="cust-count-badge">0</span>
+          <div style="display:flex;gap:6px">
+            <button class="btn btn-outline btn-sm" onclick="document.getElementById('reimport-csv').click()">Re-import CSV</button>
+            <input type="file" id="reimport-csv" accept=".csv,.txt" style="display:none" onchange="reimportCSV(this)">
+            <button class="btn btn-outline btn-sm" onclick="mergeDuplicates()">Merge Duplicates</button>
+          </div>
+        </div>
+        <div style="padding:12px 18px 0">
+          <input class="search-input" id="cust-search" placeholder="Search by name, phone, or address..." oninput="filterCustomers()">
+        </div>
+        <div id="cust-banner" class="banner" style="margin:12px 18px 0"></div>
+        <div style="overflow-x:auto">
+          <table class="data-table" id="cust-table">
+            <thead><tr><th>Name</th><th>Phone</th><th>Email</th><th>Address</th><th style="width:50px">Jobs</th><th style="width:50px"></th></tr></thead>
+            <tbody id="cust-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══════ TAB 2: PRICING ═══════ -->
+    <div class="tab-panel" id="tab-pricing">
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Price Book</span>
+          <div style="display:flex;gap:6px">
+            <button class="btn btn-navy btn-sm" onclick="savePricing()">Save Changes</button>
+          </div>
+        </div>
+        <div id="price-banner" class="banner" style="margin:12px 18px 0"></div>
+        <div style="overflow-x:auto">
+          <table class="data-table" id="price-table">
+            <thead><tr><th>Service</th><th style="width:80px">Low $</th><th style="width:80px">Typical $</th><th style="width:80px">High $</th><th style="width:40px"></th></tr></thead>
+            <tbody id="price-body"></tbody>
+          </table>
+        </div>
+        <div style="padding:8px 18px 14px">
+          <button class="add-btn" onclick="addPriceRow()">+ Add service</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══════ TAB 3: TEAM ═══════ -->
+    <div class="tab-panel" id="tab-team">
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Team Members</span>
+          <button class="btn btn-navy btn-sm" onclick="addTeamRow()">+ Add Team Member</button>
+        </div>
+        <div style="overflow-x:auto">
+          <table class="data-table" id="team-table">
+            <thead><tr><th>Name</th><th>Phone</th><th>Email</th><th>Role</th><th style="width:80px">Status</th><th style="width:120px">Actions</th></tr></thead>
+            <tbody id="team-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Merge modal -->
+  <div class="modal-overlay" id="merge-modal">
+    <div class="modal">
+      <h3>Merge Duplicate Customers</h3>
+      <div id="merge-body"></div>
+      <div class="actions">
+        <button class="btn btn-outline" onclick="closeMerge()">Cancel</button>
+        <button class="btn btn-red" id="merge-confirm-btn" onclick="confirmMerge()">Delete Duplicates</button>
+      </div>
+    </div>
+  </div>
+
+<script>
+const API=window.location.origin;
+let allCustomers=[];
+let pricingLoaded=false;
+let teamLoaded=false;
+
+/* ── Tabs ─────────────────────────────────────────── */
+function switchTab(name){
+  document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
+  document.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('active'));
+  document.querySelector('.tab-btn[onclick*="'+name+'"]').classList.add('active');
+  document.getElementById('tab-'+name).classList.add('active');
+  if(name==='pricing'&&!pricingLoaded){loadPricing();pricingLoaded=true}
+  if(name==='team'&&!teamLoaded){loadTeam();teamLoaded=true}
+}
+
+/* ── Helpers ──────────────────────────────────────── */
+function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
+function fmtPhone(p){if(!p)return'';const d=p.replace(/\D/g,'').replace(/^1/,'');if(d.length===10)return'('+d.slice(0,3)+') '+d.slice(3,6)+'-'+d.slice(6);return p}
+function toE164(p){if(!p)return'';const d=p.replace(/\D/g,'');if(d.length===10)return'+1'+d;if(d.length===11&&d[0]==='1')return'+'+d;return p}
+function showBanner(id,msg,cls,ms){const el=document.getElementById(id);el.textContent=msg;el.className='banner '+cls;if(ms)setTimeout(()=>{el.className='banner';el.style.display='none'},ms)}
+
+/* ── CSV parser (copied from onboard_wizard.html) ── */
+function parseCSVLine(line){
+  const vals=[];let cur='';let inQ=false;
+  for(let i=0;i<line.length;i++){
+    const ch=line[i];
+    if(ch==='"'){inQ=!inQ;continue}
+    if((ch===','||ch==='\t')&&!inQ){vals.push(cur.trim());cur='';continue}
+    cur+=ch;
+  }
+  vals.push(cur.trim());
+  return vals.map(v=>v.replace(/^["']|["']$/g,''));
+}
+
+function detectCSVColumns(lines){
+  const cols=parseCSVLine(lines[0]);
+  const numCols=cols.length;
+  const idx={name:-1,first:-1,last:-1,phone:-1,email:-1,address:-1};
+  cols.forEach((c,i)=>{
+    const cl=c.toLowerCase().trim();
+    if(cl.includes('first')&&cl.includes('name'))idx.first=i;
+    else if(cl.includes('last')&&cl.includes('name'))idx.last=i;
+    else if(/^(name|customer.?name|full.?name|client.?name|contact)$/.test(cl)&&idx.name<0)idx.name=i;
+    if(/phone|mobile|cell|tel/.test(cl)&&idx.phone<0)idx.phone=i;
+    if(/e-?mail/.test(cl)&&idx.email<0)idx.email=i;
+    if(/address|street|location/.test(cl)&&idx.address<0)idx.address=i;
+  });
+  const headerHits=(idx.name>=0||idx.first>=0?1:0)+(idx.phone>=0?1:0)+(idx.email>=0?1:0)+(idx.address>=0?1:0);
+  if(headerHits<2&&numCols>=2){
+    const samples=lines.slice(1,6).map(l=>parseCSVLine(l));
+    for(let ci=0;ci<numCols;ci++){
+      const vals=samples.map(r=>(r[ci]||'').trim()).filter(Boolean);
+      if(!vals.length)continue;
+      const hasAt=vals.filter(v=>v.includes('@')).length;
+      const hasDigits=vals.filter(v=>/^\+?\(?\d[\d\s().\-]{6,}$/.test(v)).length;
+      const hasNumWord=vals.filter(v=>/^\d+\s+\w/.test(v)).length;
+      if(hasAt>=vals.length*0.5&&idx.email<0){idx.email=ci;continue}
+      if(hasDigits>=vals.length*0.5&&idx.phone<0){idx.phone=ci;continue}
+      if(hasNumWord>=vals.length*0.3&&idx.address<0){idx.address=ci;continue}
+    }
+    for(let ci=0;ci<numCols;ci++){
+      if(ci===idx.email||ci===idx.phone||ci===idx.address)continue;
+      const vals=samples.map(r=>(r[ci]||'').trim()).filter(Boolean);
+      const allAlpha=vals.filter(v=>/^[A-Za-z\s.\-']+$/.test(v)).length;
+      if(allAlpha>=vals.length*0.5&&idx.name<0){idx.name=ci;break}
+    }
+  }
+  return idx;
+}
+
+function parseCSVRows(lines,idx){
+  const rows=[];
+  for(let r=1;r<lines.length;r++){
+    const vals=parseCSVLine(lines[r]);
+    let name='';
+    if(idx.name>=0)name=vals[idx.name]||'';
+    else if(idx.first>=0)name=((vals[idx.first]||'')+' '+(vals[idx.last]||'')).trim();
+    const phone=idx.phone>=0?vals[idx.phone]||'':'';
+    const email=idx.email>=0?vals[idx.email]||'':'';
+    const address=idx.address>=0?vals[idx.address]||'':'';
+    if(name||phone)rows.push({name,phone:toE164(phone),email,address});
+  }
+  return rows;
+}
+
+/* ═══════════════════════════════════════════════════
+   TAB 1: CUSTOMERS
+   ═══════════════════════════════════════════════════ */
+
+async function loadCustomers(){
+  try{
+    const r=await fetch(API+'/api/customers');
+    const d=await r.json();
+    allCustomers=d.customers||[];
+    renderCustomers(allCustomers);
+  }catch(e){console.error(e)}
+}
+
+function renderCustomers(list){
+  document.getElementById('cust-count-badge').textContent=list.length;
+  const tbody=document.getElementById('cust-body');
+  if(!list.length){tbody.innerHTML='<tr><td colspan="6" class="empty-state">No customers yet</td></tr>';return}
+  tbody.innerHTML=list.map(c=>'<tr data-id="'+c.id+'">'+
+    '<td style="font-weight:500">'+esc(c.customer_name)+'</td>'+
+    '<td style="font-family:monospace;font-size:12px">'+esc(fmtPhone(c.customer_phone))+'</td>'+
+    '<td style="font-size:12px;color:#666">'+esc(c.customer_email||'')+'</td>'+
+    '<td style="font-size:12px;color:#666">'+esc(c.customer_address||'')+'</td>'+
+    '<td style="text-align:center">'+(c.job_count||0)+'</td>'+
+    '<td><button class="btn-red" onclick="deleteCustomer(\''+c.id+'\',this)">Delete</button></td>'+
+  '</tr>').join('');
+}
+
+function filterCustomers(){
+  const q=document.getElementById('cust-search').value.toLowerCase().trim();
+  if(!q){renderCustomers(allCustomers);return}
+  renderCustomers(allCustomers.filter(c=>
+    (c.customer_name||'').toLowerCase().includes(q)||
+    (c.customer_phone||'').includes(q)||
+    (c.customer_address||'').toLowerCase().includes(q)
+  ));
+}
+
+async function deleteCustomer(id,btn){
+  if(!confirm('Delete this customer?'))return;
+  btn.disabled=true;btn.textContent='...';
+  try{
+    const r=await fetch(API+'/api/customers/'+id,{method:'DELETE'});
+    const d=await r.json();
+    if(d.success){
+      allCustomers=allCustomers.filter(c=>c.id!==id);
+      renderCustomers(allCustomers);
+    }else{alert(d.error||'Delete failed')}
+  }catch(e){alert('Connection error')}
+}
+
+/* ── CSV Re-import ── */
+function reimportCSV(input){
+  if(!input.files||!input.files[0])return;
+  const reader=new FileReader();
+  reader.onload=async function(e){
+    const lines=e.target.result.split(/\r?\n/).filter(l=>l.trim());
+    if(lines.length<2){alert('CSV appears empty');return}
+    const idx=detectCSVColumns(lines);
+    const rows=parseCSVRows(lines,idx);
+    if(!rows.length){alert('No customers found in CSV');return}
+    try{
+      const r=await fetch(API+'/api/customers/bulk-import',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({customers:rows})});
+      const d=await r.json();
+      if(d.success){
+        showBanner('cust-banner','Imported '+d.imported+' · Skipped '+d.skipped+' duplicates','banner-green',4000);
+        loadCustomers();
+      }else{alert(d.error||'Import failed')}
+    }catch(err){alert('Connection error')}
+  };
+  reader.readAsText(input.files[0]);
+  input.value='';
+}
+
+/* ── Merge Duplicates ── */
+let mergeGroups=[];
+function mergeDuplicates(){
+  const groups={};
+  allCustomers.forEach(c=>{
+    const n=(c.customer_name||'').toLowerCase().trim();
+    const p=(c.customer_phone||'').replace(/\D/g,'').slice(-10);
+    const key=n+'|'+p;
+    if(!groups[key])groups[key]=[];
+    groups[key].push(c);
+  });
+  mergeGroups=[];
+  for(const key in groups){
+    if(groups[key].length<=1)continue;
+    const sorted=groups[key].sort((a,b)=>{
+      const scoreA=[a.customer_name,a.customer_phone,a.customer_email,a.customer_address].filter(Boolean).length;
+      const scoreB=[b.customer_name,b.customer_phone,b.customer_email,b.customer_address].filter(Boolean).length;
+      if(scoreB!==scoreA)return scoreB-scoreA;
+      const lenA=[a.customer_name,a.customer_phone,a.customer_email,a.customer_address].join('').length;
+      const lenB=[b.customer_name,b.customer_phone,b.customer_email,b.customer_address].join('').length;
+      return lenB-lenA;
+    });
+    mergeGroups.push({keep:sorted[0],delete:sorted.slice(1)});
+  }
+  if(!mergeGroups.length){
+    showBanner('cust-banner','No duplicates found','banner-amber',2000);
+    return;
+  }
+  const totalDel=mergeGroups.reduce((s,g)=>s+g.delete.length,0);
+  let html='<p style="margin-bottom:12px">'+mergeGroups.length+' duplicate group'+(mergeGroups.length>1?'s':'')+' · '+totalDel+' record'+(totalDel>1?'s':'')+' to remove</p>';
+  mergeGroups.forEach(g=>{
+    html+='<div style="border:1px solid #eee;border-radius:6px;padding:10px;margin-bottom:8px;font-size:13px">';
+    html+='<div style="color:#16a34a;font-weight:600">Keep: '+esc(g.keep.customer_name)+' '+esc(fmtPhone(g.keep.customer_phone))+'</div>';
+    g.delete.forEach(d=>{html+='<div style="color:#dc2626">Delete: '+esc(d.customer_name)+' '+esc(fmtPhone(d.customer_phone))+'</div>'});
+    html+='</div>';
+  });
+  document.getElementById('merge-body').innerHTML=html;
+  document.getElementById('merge-modal').classList.add('open');
+}
+function closeMerge(){document.getElementById('merge-modal').classList.remove('open')}
+async function confirmMerge(){
+  const btn=document.getElementById('merge-confirm-btn');
+  btn.disabled=true;btn.textContent='Deleting...';
+  for(const g of mergeGroups){
+    for(const d of g.delete){
+      try{await fetch(API+'/api/customers/'+d.id,{method:'DELETE'})}catch(e){}
+    }
+  }
+  closeMerge();
+  btn.disabled=false;btn.textContent='Delete Duplicates';
+  await loadCustomers();
+  showBanner('cust-banner','Duplicates merged successfully','banner-green',3000);
+}
+
+/* ═══════════════════════════════════════════════════
+   TAB 2: PRICING
+   ═══════════════════════════════════════════════════ */
+
+async function loadPricing(){
+  try{
+    const r=await fetch(API+'/api/pricing');
+    const d=await r.json();
+    const items=d.pricing||[];
+    const tbody=document.getElementById('price-body');
+    if(!items.length){tbody.innerHTML='<tr><td colspan="5" class="empty-state">No pricing data yet</td></tr>';return}
+    tbody.innerHTML=items.map(p=>'<tr>'+
+      '<td><input type="text" class="p-svc" value="'+esc(p.service||p.service_name||'')+'"></td>'+
+      '<td><input type="number" class="p-low" value="'+(p.low||p.price_low||0)+'"></td>'+
+      '<td><input type="number" class="p-typ" value="'+(p.typical||p.price_typical||0)+'"></td>'+
+      '<td><input type="number" class="p-high" value="'+(p.high||p.price_high||0)+'"></td>'+
+      '<td><button class="btn-red" onclick="this.closest(\'tr\').remove()">&#215;</button></td>'+
+    '</tr>').join('');
+  }catch(e){console.error(e)}
+}
+
+function addPriceRow(){
+  const tr=document.createElement('tr');
+  tr.innerHTML='<td><input type="text" class="p-svc" placeholder="Service name"></td><td><input type="number" class="p-low" placeholder="0"></td><td><input type="number" class="p-typ" placeholder="0"></td><td><input type="number" class="p-high" placeholder="0"></td><td><button class="btn-red" onclick="this.closest(\'tr\').remove()">&#215;</button></td>';
+  document.getElementById('price-body').appendChild(tr);
+}
+
+async function savePricing(){
+  const rows=[...document.querySelectorAll('#price-body tr')].map(r=>({
+    service:(r.querySelector('.p-svc')?.value||'').trim(),
+    low:parseFloat(r.querySelector('.p-low')?.value)||0,
+    typical:parseFloat(r.querySelector('.p-typ')?.value)||0,
+    high:parseFloat(r.querySelector('.p-high')?.value)||0
+  })).filter(p=>p.service);
+  try{
+    const r=await fetch(API+'/api/pricing/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pricing:rows})});
+    const d=await r.json();
+    if(d.success)showBanner('price-banner','Pricing saved','banner-green',3000);
+    else alert(d.error||'Save failed');
+  }catch(e){alert('Connection error')}
+}
+
+/* ═══════════════════════════════════════════════════
+   TAB 3: TEAM
+   ═══════════════════════════════════════════════════ */
+
+let allWorkers=[];
+async function loadTeam(){
+  try{
+    const r=await fetch(API+'/api/workers');
+    const d=await r.json();
+    allWorkers=d.workers||[];
+    renderTeam();
+  }catch(e){console.error(e)}
+}
+
+function renderTeam(){
+  const tbody=document.getElementById('team-body');
+  if(!allWorkers.length){tbody.innerHTML='<tr><td colspan="6" class="empty-state">No team members yet</td></tr>';return}
+  tbody.innerHTML=allWorkers.map(w=>{
+    const active=w.active!==false;
+    return '<tr data-id="'+w.id+'" class="'+(active?'':'row-inactive')+'">'+
+      '<td style="font-weight:500">'+esc(w.name)+'</td>'+
+      '<td style="font-family:monospace;font-size:12px">'+esc(fmtPhone(w.phone))+'</td>'+
+      '<td style="font-size:12px;color:#666">'+esc(w.email||'')+'</td>'+
+      '<td>'+esc(w.role||'')+'</td>'+
+      '<td><span class="status-dot '+(active?'green':'grey')+'"></span>'+(active?'Active':'Inactive')+'</td>'+
+      '<td style="display:flex;gap:4px">'+
+        '<button class="btn btn-outline btn-sm" onclick="editWorker(\''+w.id+'\')">Edit</button>'+
+        '<button class="btn btn-outline btn-sm" onclick="toggleWorker(\''+w.id+'\','+!active+')">'+(active?'Deactivate':'Reactivate')+'</button>'+
+      '</td></tr>';
+  }).join('');
+}
+
+function addTeamRow(){
+  const tbody=document.getElementById('team-body');
+  const tr=document.createElement('tr');
+  tr.id='new-worker-row';
+  tr.innerHTML='<td><input type="text" id="nw-name" placeholder="Name"></td>'+
+    '<td><input type="tel" id="nw-phone" placeholder="(555) 555-0100"></td>'+
+    '<td><input type="email" id="nw-email" placeholder="email@example.com"></td>'+
+    '<td><select id="nw-role"><option>Owner</option><option>Foreman</option><option selected>Field Tech</option><option>Office</option></select></td>'+
+    '<td></td>'+
+    '<td><button class="btn btn-green btn-sm" onclick="saveNewWorker()">Save</button></td>';
+  tbody.insertBefore(tr,tbody.firstChild);
+}
+
+async function saveNewWorker(){
+  const name=document.getElementById('nw-name').value.trim();
+  const phone=toE164(document.getElementById('nw-phone').value);
+  const email=document.getElementById('nw-email').value.trim();
+  const role=document.getElementById('nw-role').value;
+  if(!name){alert('Name is required');return}
+  try{
+    const r=await fetch(API+'/api/workers/create',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,phone,email,role})});
+    const d=await r.json();
+    if(d.success){await loadTeam()}
+    else{alert(d.error||'Create failed')}
+  }catch(e){alert('Connection error')}
+}
+
+function editWorker(id){
+  const w=allWorkers.find(w=>w.id===id);if(!w)return;
+  const tr=document.querySelector('tr[data-id="'+id+'"]');
+  tr.innerHTML='<td><input type="text" class="ew-name" value="'+esc(w.name)+'"></td>'+
+    '<td><input type="tel" class="ew-phone" value="'+esc(fmtPhone(w.phone))+'"></td>'+
+    '<td><input type="email" class="ew-email" value="'+esc(w.email||'')+'"></td>'+
+    '<td><select class="ew-role"><option'+(w.role==='Owner'?' selected':'')+'>Owner</option><option'+(w.role==='Foreman'?' selected':'')+'>Foreman</option><option'+(w.role==='Field Tech'?' selected':'')+'>Field Tech</option><option'+(w.role==='Office'?' selected':'')+'>Office</option></select></td>'+
+    '<td></td>'+
+    '<td><button class="btn btn-green btn-sm" onclick="saveEditWorker(\''+id+'\')">Save</button></td>';
+}
+
+async function saveEditWorker(id){
+  const tr=document.querySelector('tr[data-id="'+id+'"]');
+  const data={id,name:tr.querySelector('.ew-name').value.trim(),phone:toE164(tr.querySelector('.ew-phone').value),email:tr.querySelector('.ew-email').value.trim(),role:tr.querySelector('.ew-role').value};
+  try{
+    const r=await fetch(API+'/api/workers/update',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
+    const d=await r.json();
+    if(d.success){await loadTeam()}else{alert(d.error||'Update failed')}
+  }catch(e){alert('Connection error')}
+}
+
+async function toggleWorker(id,active){
+  try{
+    const r=await fetch(API+'/api/workers/update',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,active})});
+    const d=await r.json();
+    if(d.success){
+      const w=allWorkers.find(w=>w.id===id);if(w)w.active=active;
+      renderTeam();
+    }
+  }catch(e){alert('Connection error')}
+}
+
+/* ── Phone auto-format ── */
+document.addEventListener('input',function(e){
+  if(e.target.tagName==='INPUT'&&e.target.type==='tel'){
+    const d=e.target.value.replace(/\D/g,'').replace(/^1/,'');
+    if(d.length<=3)e.target.value=d.length?'('+d:d;
+    else if(d.length<=6)e.target.value='('+d.slice(0,3)+') '+d.slice(3);
+    else e.target.value='('+d.slice(0,3)+') '+d.slice(3,6)+'-'+d.slice(6,10);
+  }
+});
+
+/* ── Init ── */
+loadCustomers();
+</script>
+</body>
+</html>

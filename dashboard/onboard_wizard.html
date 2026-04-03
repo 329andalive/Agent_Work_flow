@@ -179,7 +179,7 @@
     <div class="step" id="step-4">
       <div class="card">
         <h2>Who's on your team?</h2>
-        <div class="sub">Add the people who will use the system. You can add more later.</div>
+        <div class="sub">Add the people who need access on day one. You can manage your full team from the Admin tab later.</div>
         <div id="emp-list"></div>
         <button class="add-btn" onclick="addEmployee()">+ Add Another Team Member</button>
         <button class="btn-next" onclick="nextStep(4)">Next: Your Pricing &rarr;</button>
@@ -191,13 +191,13 @@
     <div class="step" id="step-5">
       <div class="card">
         <h2>Got existing customers?</h2>
-        <div class="sub">Import your customer list so your AI knows who's who from day one. You can always add more later.</div>
+        <div class="sub">Import a few customers to get started — you can manage your full list from the Admin tab anytime.</div>
 
         <!-- CSV Upload -->
         <div class="upload-area" onclick="document.getElementById('csv-file').click()" id="csv-drop">
           <div class="icon">&#128196;</div>
           <p>Upload a CSV or QuickBooks export</p>
-          <p style="font-size:12px;color:#aaa;margin-top:4px">Columns: Name, Phone, Email, Address</p>
+          <p style="font-size:12px;color:#aaa;margin-top:4px">Tip: even a partial list is fine — add more later</p>
         </div>
         <input type="file" id="csv-file" accept=".csv,.txt" style="display:none" onchange="handleCSV(this)">
 
@@ -222,7 +222,7 @@
           </div>
         </div>
 
-        <a class="skip-link" onclick="goToStep(6)" style="margin-top:12px">Skip — I'll add customers later</a>
+        <a class="skip-link" onclick="goToStep(6)" style="margin-top:12px">Skip for now</a>
         <button class="btn-next" onclick="nextStep(5)">Next: Your Pricing &rarr;</button>
         <a class="btn-back" onclick="goToStep(4)">&larr; Back</a>
       </div>
@@ -232,7 +232,7 @@
     <div class="step" id="step-6">
       <div class="card">
         <h2>What do you typically charge?</h2>
-        <div class="sub">This helps your AI give accurate estimates. All prices are private — customers never see your cost sheet.</div>
+        <div class="sub">Add your most common services to get started. Build out your full price book from the Admin tab later.</div>
         <!-- CSV upload for services -->
         <div class="upload-area" onclick="document.getElementById('svc-csv-file').click()" id="svc-csv-drop" style="padding:20px 16px;margin-bottom:16px">
           <div class="icon" style="font-size:24px">&#128196;</div>
@@ -244,6 +244,8 @@
         <table class="price-table"><thead><tr><th>Service</th><th style="width:60px">Low $</th><th style="width:60px">Typical $</th><th style="width:60px">High $</th><th style="width:28px"></th></tr></thead><tbody id="price-body"></tbody></table>
         <button class="add-btn" onclick="addPriceRow()">+ Add custom service</button>
         <div class="hint" style="margin-top:8px">Your AI will use these ranges when generating estimates.</div>
+        <div class="hint">Your full price book lives in the Admin tab on your dashboard.</div>
+        <a class="skip-link" onclick="goToStep(7)" style="margin-top:8px">Skip for now</a>
         <button class="btn-next" onclick="nextStep(6)">Next: Your Logo &rarr;</button>
         <a class="btn-back" onclick="goToStep(5)">&larr; Back</a>
       </div>

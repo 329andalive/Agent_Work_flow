@@ -1295,6 +1295,196 @@ def new_customer():
 
 
 # ---------------------------------------------------------------------------
+# GET /api/customers — List all customers with job counts
+# ---------------------------------------------------------------------------
+
+@dashboard_bp.route("/api/customers", methods=["GET"])
+def api_list_customers():
+    client_id = _resolve_client_id()
+    if not client_id:
+        return jsonify({"success": False, "error": "Not authenticated"}), 401
+    sb = _get_supabase()
+    try:
+        result = sb.table("customers").select(
+            "id, customer_name, customer_phone, customer_email, customer_address"
+        ).eq("client_id", client_id).order("customer_name").execute()
+        customers = result.data or []
+
+        # Batch job counts
+        cust_ids = [c["id"] for c in customers]
+        job_counts = {}
+        if cust_ids:
+            try:
+                jobs = sb.table("jobs").select("customer_id").eq("client_id", client_id).in_("customer_id", cust_ids).execute()
+                for j in (jobs.data or []):
+                    cid = j.get("customer_id")
+                    job_counts[cid] = job_counts.get(cid, 0) + 1
+            except Exception:
+                pass
+        for c in customers:
+            c["job_count"] = job_counts.get(c["id"], 0)
+
+        return jsonify({"success": True, "customers": customers})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+# ---------------------------------------------------------------------------
+# DELETE /api/customers/<customer_id> — Delete a customer
+# ---------------------------------------------------------------------------
+
+@dashboard_bp.route("/api/customers/<customer_id>", methods=["DELETE"])
+def api_delete_customer(customer_id):
+    client_id = _resolve_client_id()
+    if not client_id:
+        return jsonify({"success": False, "error": "Not authenticated"}), 401
+    sb = _get_supabase()
+    try:
+        check = sb.table("customers").select("id").eq("id", customer_id).eq("client_id", client_id).execute()
+        if not check.data:
+            return jsonify({"success": False, "error": "Customer not found"}), 404
+        sb.table("customers").delete().eq("id", customer_id).execute()
+        return jsonify({"success": True})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+# ---------------------------------------------------------------------------
+# POST /api/customers/bulk-import — Bulk import customers from CSV
+# ---------------------------------------------------------------------------
+
+@dashboard_bp.route("/api/customers/bulk-import", methods=["POST"])
+def api_bulk_import_customers():
+    client_id = _resolve_client_id()
+    if not client_id:
+        return jsonify({"success": False, "error": "Not authenticated"}), 401
+    sb = _get_supabase()
+    data = request.get_json(silent=True) or {}
+    rows = data.get("customers", [])
+    if not rows:
+        return jsonify({"success": True, "imported": 0, "skipped": 0})
+
+    # Fetch existing phones for dedup
+    existing_phones = set()
+    try:
+        existing = sb.table("customers").select("customer_phone").eq("client_id", client_id).execute()
+        existing_phones = {r.get("customer_phone") for r in (existing.data or []) if r.get("customer_phone")}
+    except Exception:
+        pass
+
+    imported = 0
+    skipped = 0
+    for row in rows:
+        name = (row.get("name") or "").strip()
+        phone_raw = (row.get("phone") or "").strip()
+        email = (row.get("email") or "").strip()
+        address = (row.get("address") or "").strip()
+
+        digits = re.sub(r"\D", "", phone_raw)
+        if len(digits) == 10:
+            phone = f"+1{digits}"
+        elif len(digits) == 11 and digits.startswith("1"):
+            phone = f"+{digits}"
+        elif digits:
+            phone = f"+{digits}"
+        else:
+            phone = ""
+
+        if not phone:
+            skipped += 1
+            continue
+        if phone in existing_phones:
+            skipped += 1
+            continue
+
+        try:
+            sb.table("customers").insert({
+                "client_id": client_id,
+                "customer_name": name or "Customer",
+                "customer_phone": phone,
+                "customer_email": email or None,
+                "customer_address": address or None,
+                "sms_consent": False,
+            }).execute()
+            existing_phones.add(phone)
+            imported += 1
+        except Exception:
+            skipped += 1
+
+    return jsonify({"success": True, "imported": imported, "skipped": skipped})
+
+
+# ---------------------------------------------------------------------------
+# GET /api/workers — List all workers for the authenticated client
+# ---------------------------------------------------------------------------
+
+@dashboard_bp.route("/api/workers", methods=["GET"])
+def api_list_workers():
+    client_id = _resolve_client_id()
+    if not client_id:
+        return jsonify({"success": False, "error": "Not authenticated"}), 401
+    sb = _get_supabase()
+    try:
+        result = sb.table("employees").select(
+            "id, name, phone, email, role, active"
+        ).eq("client_id", client_id).order("active", desc=True).order("name").execute()
+        return jsonify({"success": True, "workers": result.data or []})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+# ---------------------------------------------------------------------------
+# GET /api/pricing — Fetch pricing from most recent onboarding session
+# ---------------------------------------------------------------------------
+
+@dashboard_bp.route("/api/pricing", methods=["GET"])
+def api_get_pricing():
+    client_id = _resolve_client_id()
+    if not client_id:
+        return jsonify({"success": False, "error": "Not authenticated"}), 401
+    sb = _get_supabase()
+    try:
+        result = sb.table("onboarding_sessions").select("pricing_json").eq(
+            "client_id", client_id
+        ).order("created_at", desc=True).limit(1).execute()
+        pricing = []
+        if result.data:
+            raw = result.data[0].get("pricing_json")
+            if isinstance(raw, str):
+                pricing = json.loads(raw)
+            elif isinstance(raw, list):
+                pricing = raw
+        return jsonify({"success": True, "pricing": pricing})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+# ---------------------------------------------------------------------------
+# POST /api/pricing/save — Save pricing to most recent onboarding session
+# ---------------------------------------------------------------------------
+
+@dashboard_bp.route("/api/pricing/save", methods=["POST"])
+def api_save_pricing():
+    client_id = _resolve_client_id()
+    if not client_id:
+        return jsonify({"success": False, "error": "Not authenticated"}), 401
+    sb = _get_supabase()
+    data = request.get_json(silent=True) or {}
+    pricing = data.get("pricing", [])
+    try:
+        result = sb.table("onboarding_sessions").select("id").eq(
+            "client_id", client_id
+        ).order("created_at", desc=True).limit(1).execute()
+        if not result.data:
+            return jsonify({"success": False, "error": "No session found"}), 404
+        session_id = result.data[0]["id"]
+        sb.table("onboarding_sessions").update({"pricing_json": pricing}).eq("id", session_id).execute()
+        return jsonify({"success": True})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+# ---------------------------------------------------------------------------
 # POST /api/customers/create — Create customer from dashboard
 # ---------------------------------------------------------------------------
 
@@ -2533,6 +2723,18 @@ def approve_scope(job_id):
         print(f"[{_ts()}] WARN dashboard_routes: approve-scope SMS failed — {e}")
 
     return jsonify({"success": True, "invoice_id": invoice_id})
+
+
+# ---------------------------------------------------------------------------
+# GET /dashboard/manage — Client self-service admin (customers, pricing, team)
+# ---------------------------------------------------------------------------
+
+@dashboard_bp.route("/dashboard/manage", strict_slashes=False)
+def manage_page():
+    client_id = _resolve_client_id()
+    if not client_id:
+        return redirect("/login")
+    return send_from_directory(os.path.join(_project_root, "dashboard"), "admin.html")
 
 
 # ---------------------------------------------------------------------------
