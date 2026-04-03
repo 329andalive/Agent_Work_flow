@@ -2658,6 +2658,34 @@ def workers_update():
 
 
 # ---------------------------------------------------------------------------
+# POST /api/workers/delete — Delete a worker
+# ---------------------------------------------------------------------------
+
+@dashboard_bp.route("/api/workers/delete", methods=["POST"])
+def workers_delete():
+    client_id = _resolve_client_id()
+    if not client_id:
+        return jsonify({"success": False, "error": "Not authenticated"}), 401
+
+    data = request.get_json(silent=True) or {}
+    worker_id = data.get("id")
+    if not worker_id:
+        return jsonify({"success": False, "error": "Worker id required"})
+
+    try:
+        sb = _get_supabase()
+        check = sb.table("employees").select("id").eq("id", worker_id).eq("client_id", client_id).execute()
+        if not check.data:
+            return jsonify({"success": False, "error": "Worker not found"}), 404
+        sb.table("employees").delete().eq("id", worker_id).execute()
+        print(f"[{_ts()}] INFO dashboard_routes: Deleted worker id={worker_id[:8]}")
+        return jsonify({"success": True})
+    except Exception as e:
+        print(f"[{_ts()}] ERROR dashboard_routes: workers_delete failed — {e}")
+        return jsonify({"success": False, "error": str(e)})
+
+
+# ---------------------------------------------------------------------------
 # POST /api/jobs/<id>/approve-scope — Owner approves scope change
 # ---------------------------------------------------------------------------
 

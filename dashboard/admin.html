@@ -489,6 +489,7 @@ function renderTeam(){
       '<td style="display:flex;gap:4px">'+
         '<button class="btn btn-outline btn-sm" onclick="editWorker(\''+w.id+'\')">Edit</button>'+
         '<button class="btn btn-outline btn-sm" onclick="toggleWorker(\''+w.id+'\','+!active+')">'+(active?'Deactivate':'Reactivate')+'</button>'+
+        '<button class="btn-red" onclick="deleteWorker(\''+w.id+'\')">Delete</button>'+
       '</td></tr>';
   }).join('');
 }
@@ -549,6 +550,16 @@ async function toggleWorker(id,active){
       const w=allWorkers.find(w=>w.id===id);if(w)w.active=active;
       renderTeam();
     }
+  }catch(e){alert('Connection error')}
+}
+
+async function deleteWorker(id){
+  if(!confirm('Delete this team member?'))return;
+  try{
+    const r=await fetch(API+'/api/workers/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})});
+    const d=await r.json();
+    if(d.success){allWorkers=allWorkers.filter(w=>w.id!==id);renderTeam()}
+    else{alert(d.error||'Delete failed')}
   }catch(e){alert('Connection error')}
 }
 
