@@ -821,7 +821,7 @@ def run(client_phone: str, raw_input: str, customer_phone: str | None = None) ->
             inv_row = sb.table("invoices").select("edit_token").eq("id", invoice_id).execute()
             if inv_row.data and inv_row.data[0].get("edit_token"):
                 edit_token = inv_row.data[0]["edit_token"]
-                edit_url = f"{base_url}/doc/edit/{edit_token}?type=invoice"
+                edit_url = f"{base_url}/doc/review/{edit_token}?type=invoice"
                 print(f"[{timestamp()}] INFO invoice_agent: Edit URL → {edit_url}")
         except Exception as e:
             print(f"[{timestamp()}] WARN invoice_agent: Could not fetch edit_token — {e}")
@@ -913,7 +913,7 @@ def run(client_phone: str, raw_input: str, customer_phone: str | None = None) ->
     if edit_url:
         combined_sms = (
             f"Invoice ready for {customer_name} — ${square_total:.2f}\n"
-            f"Edit & send: {edit_url}\n\n"
+            f"Review & approve: {edit_url}\n\n"
             f"---\n"
             f"JOB COST (owner only)\n"
             f"{cost_summary}"

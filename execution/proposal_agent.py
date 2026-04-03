@@ -572,13 +572,13 @@ def run(client_phone: str, customer_phone: str, raw_input: str) -> str | None:
             prop_row = supabase.table("proposals").select("edit_token").eq("id", proposal_id).execute()
             if prop_row.data and prop_row.data[0].get("edit_token"):
                 edit_token = prop_row.data[0]["edit_token"]
-                edit_url = f"{base_url}/doc/edit/{edit_token}?type=proposal"
-                print(f"[{timestamp()}] INFO proposal_agent: Edit URL → {edit_url}")
+                edit_url = f"{base_url}/doc/review/{edit_token}?type=proposal"
+                print(f"[{timestamp()}] INFO proposal_agent: Review URL → {edit_url}")
         except Exception as e:
             print(f"[{timestamp()}] WARN proposal_agent: Could not fetch edit_token — {e}")
 
     if edit_url:
-        sms_body = f"{customer_name} estimate ready — ${amount:.0f}\nEdit & send: {edit_url}"
+        sms_body = f"{customer_name} estimate ready — ${amount:.0f}\nReview & approve: {edit_url}"
     else:
         print(f"[{timestamp()}] WARN proposal_agent: No edit URL — sending raw text fallback")
         sms_body = f"New proposal for {customer_name}:\n\n{proposal_text}"

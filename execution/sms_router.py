@@ -624,6 +624,21 @@ def _handle_worker_status_reply(
                         invoice_id = inv_result.data[0]["id"]
                         print(f"[{timestamp()}] INFO sms_router: Auto-invoice created id={invoice_id[:8]} amount=${estimated_amount:.2f}")
                         job_name = f"{job_name} — invoice ${estimated_amount:.2f} created"
+
+                        # Send review link to owner
+                        try:
+                            inv_row = sb.table("invoices").select("edit_token").eq("id", invoice_id).execute()
+                            if inv_row.data and inv_row.data[0].get("edit_token"):
+                                base_url = os.environ.get("BOLTS11_BASE_URL", "https://bolts11.com")
+                                review_url = f"{base_url}/doc/review/{inv_row.data[0]['edit_token']}?type=invoice"
+                                owner_phone = client.get("owner_mobile") or client_phone
+                                send_sms(
+                                    to_number=owner_phone,
+                                    message_body=f"Invoice ready for {job_name} — ${estimated_amount:.0f}\nReview & approve: {review_url}",
+                                    from_number=client_phone,
+                                )
+                        except Exception as rev_err:
+                            print(f"[{timestamp()}] WARN sms_router: Review link SMS to owner failed — {rev_err}")
                     else:
                         print(f"[{timestamp()}] WARN sms_router: Auto-invoice insert returned no data")
                 else:

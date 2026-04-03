@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from flask import Blueprint, request, jsonify, make_response
+from flask import Blueprint, request, jsonify, make_response, send_from_directory
 
 document_bp = Blueprint("document_bp", __name__, url_prefix="/doc")
 
@@ -278,6 +278,308 @@ def save_document():
     except Exception as e:
         print(f"[{timestamp()}] ERROR document_routes: save_document failed — {e}")
         return jsonify({"success": False, "error": str(e)}), 500
+
+
+# ---------------------------------------------------------------------------
+# GET /doc/review/<edit_token> — Mobile review screen (no login required)
+# ---------------------------------------------------------------------------
+
+@document_bp.route("/review/<edit_token>")
+def review_document(edit_token):
+    """Serve the mobile-first review page for approving/rejecting a draft."""
+    doc_type = request.args.get("type", "proposal")
+    return send_from_directory(
+        os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "dashboard"),
+        "review.html"
+    )
+
+
+# ---------------------------------------------------------------------------
+# GET /doc/review/<edit_token>/data — Load document data for review page
+# ---------------------------------------------------------------------------
+
+@document_bp.route("/review/<edit_token>/data", methods=["GET"])
+def review_document_data(edit_token):
+    """Return document data for the mobile review screen."""
+    try:
+        from execution.db_document import (
+            get_document_by_token, get_client_by_id, get_customer_by_id,
+        )
+        doc_type = request.args.get("type", "proposal")
+        document = get_document_by_token(edit_token, doc_type)
+        if not document:
+            return jsonify({"success": False, "error": "Document not found"}), 404
+
+        client = get_client_by_id(document.get("client_id")) if document.get("client_id") else None
+        customer = get_customer_by_id(document.get("customer_id")) if document.get("customer_id") else None
+
+        # Parse line items
+        line_items = document.get("line_items") or []
+        if isinstance(line_items, str):
+            line_items = json.loads(line_items)
+
+        return jsonify({
+            "success": True,
+            "doc_type": doc_type,
+            "edit_token": edit_token,
+            "document": {
+                "id": document["id"],
+                "status": document.get("status", "draft"),
+                "reviewed_at": document.get("reviewed_at"),
+                "line_items": line_items,
+                "notes": document.get("proposal_text" if doc_type == "proposal" else "invoice_text", ""),
+                "amount": float(document.get("amount_estimate" if doc_type == "proposal" else "amount_due") or 0),
+                "tax_rate": float(document.get("tax_rate") or 0),
+                "created_at": document.get("created_at"),
+            },
+            "customer": {
+                "name": (customer or {}).get("customer_name", ""),
+                "phone": (customer or {}).get("customer_phone", ""),
+                "address": (customer or {}).get("customer_address", ""),
+                "email": (customer or {}).get("customer_email", ""),
+            },
+            "business": {
+                "name": (client or {}).get("business_name", ""),
+            },
+        })
+    except Exception as e:
+        print(f"[{timestamp()}] ERROR document_routes: review_document_data — {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+# ---------------------------------------------------------------------------
+# POST /doc/approve — Approve a draft (with corrections logged)
+# ---------------------------------------------------------------------------
+
+@document_bp.route("/approve", methods=["POST"])
+def approve_document():
+    """
+    Approve a reviewed document. Logs corrections as training signals.
+
+    Expected JSON: {
+        edit_token, doc_type,
+        line_items: [...],      // corrected line items
+        customer_name: "...",   // corrected if needed
+        customer_address: "...",
+        notes: "..."
+    }
+    """
+    try:
+        from execution.db_document import (
+            get_document_by_token, get_client_by_id,
+            update_proposal_fields, update_invoice_fields,
+        )
+        from execution.db_connection import get_client as get_supabase
+
+        data = request.get_json(force=True, silent=True) or {}
+        edit_token = data.get("edit_token", "")
+        doc_type = data.get("doc_type", "proposal")
+        corrected_items = data.get("line_items")
+        corrected_notes = data.get("notes")
+
+        if not edit_token:
+            return jsonify({"success": False, "error": "Missing edit_token"}), 400
+
+        document = get_document_by_token(edit_token, doc_type)
+        if not document:
+            return jsonify({"success": False, "error": "Document not found"}), 404
+
+        doc_id = document["id"]
+        client_id = document.get("client_id", "")
+        job_id = document.get("job_id")
+        sb = get_supabase()
+        now = datetime.now(timezone.utc).isoformat()
+
+        # Get job context for training signals
+        job_type = ""
+        if job_id:
+            try:
+                jr = sb.table("jobs").select("job_type").eq("id", job_id).execute()
+                if jr.data:
+                    job_type = jr.data[0].get("job_type", "")
+            except Exception:
+                pass
+
+        # Log corrections as training signals
+        original_items = document.get("line_items") or []
+        if isinstance(original_items, str):
+            original_items = json.loads(original_items)
+
+        if corrected_items is not None:
+            _log_draft_corrections(
+                sb, client_id, doc_type, doc_id, job_id, job_type,
+                original_items, corrected_items, corrected_notes,
+                document.get("proposal_text" if doc_type == "proposal" else "invoice_text", ""),
+            )
+
+            # Apply corrections to the document
+            subtotal = sum(float(li.get("total") or li.get("amount") or 0) for li in corrected_items)
+            tax_rate = float(document.get("tax_rate") or 0)
+            tax_amount = round(subtotal * tax_rate, 2)
+            total = round(subtotal + tax_amount, 2)
+            notes = corrected_notes if corrected_notes is not None else ""
+
+            if doc_type == "proposal":
+                update_proposal_fields(doc_id, corrected_items, subtotal, tax_rate, tax_amount, total, notes)
+            else:
+                update_invoice_fields(doc_id, corrected_items, subtotal, tax_rate, tax_amount, total, notes)
+
+        # Mark as reviewed
+        table = "proposals" if doc_type == "proposal" else "invoices"
+        sb.table(table).update({
+            "reviewed_at": now,
+            "reviewed_by": client_id,
+        }).eq("id", doc_id).execute()
+
+        print(f"[{timestamp()}] INFO document_routes: {doc_type} {doc_id[:8]} approved")
+        return jsonify({"success": True})
+
+    except Exception as e:
+        print(f"[{timestamp()}] ERROR document_routes: approve_document — {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+# ---------------------------------------------------------------------------
+# POST /doc/reject — Reject a draft with a reason
+# ---------------------------------------------------------------------------
+
+@document_bp.route("/reject", methods=["POST"])
+def reject_document():
+    """Reject a draft — logs the reason as a negative training signal."""
+    try:
+        from execution.db_document import get_document_by_token
+        from execution.db_connection import get_client as get_supabase
+
+        data = request.get_json(force=True, silent=True) or {}
+        edit_token = data.get("edit_token", "")
+        doc_type = data.get("doc_type", "proposal")
+        reason = data.get("reason", "").strip()
+
+        document = get_document_by_token(edit_token, doc_type)
+        if not document:
+            return jsonify({"success": False, "error": "Document not found"}), 404
+
+        doc_id = document["id"]
+        client_id = document.get("client_id", "")
+        sb = get_supabase()
+        now = datetime.now(timezone.utc).isoformat()
+
+        table = "proposals" if doc_type == "proposal" else "invoices"
+        sb.table(table).update({
+            "rejected_at": now,
+            "rejection_reason": reason or "No reason given",
+            "status": "rejected",
+        }).eq("id", doc_id).execute()
+
+        # Log rejection as a training signal
+        try:
+            sb.table("draft_corrections").insert({
+                "client_id": client_id,
+                "document_type": doc_type,
+                "document_id": doc_id,
+                "job_id": document.get("job_id"),
+                "field_name": "document",
+                "ai_value": "full draft",
+                "owner_value": reason or "rejected",
+                "action": "reject",
+            }).execute()
+        except Exception:
+            pass
+
+        print(f"[{timestamp()}] INFO document_routes: {doc_type} {doc_id[:8]} rejected — {reason}")
+        return jsonify({"success": True})
+
+    except Exception as e:
+        print(f"[{timestamp()}] ERROR document_routes: reject_document — {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+def _log_draft_corrections(sb, client_id, doc_type, doc_id, job_id, job_type,
+                           original_items, corrected_items, corrected_notes, original_notes):
+    """Compare AI draft against owner's corrections and log each change."""
+    try:
+        # Build lookup of original items by index
+        for i, corrected in enumerate(corrected_items):
+            original = original_items[i] if i < len(original_items) else None
+
+            if original is None:
+                # New item added by owner
+                sb.table("draft_corrections").insert({
+                    "client_id": client_id,
+                    "document_type": doc_type,
+                    "document_id": doc_id,
+                    "job_id": job_id,
+                    "job_type": job_type,
+                    "field_name": "line_item",
+                    "ai_value": None,
+                    "owner_value": json.dumps(corrected),
+                    "action": "add",
+                }).execute()
+                continue
+
+            # Check description change
+            orig_desc = (original.get("description") or "").strip()
+            corr_desc = (corrected.get("description") or "").strip()
+            if orig_desc != corr_desc and corr_desc:
+                sb.table("draft_corrections").insert({
+                    "client_id": client_id,
+                    "document_type": doc_type,
+                    "document_id": doc_id,
+                    "job_id": job_id,
+                    "job_type": job_type,
+                    "field_name": "description",
+                    "ai_value": orig_desc,
+                    "owner_value": corr_desc,
+                    "action": "edit",
+                }).execute()
+
+            # Check price change
+            orig_price = float(original.get("total") or original.get("amount") or 0)
+            corr_price = float(corrected.get("total") or corrected.get("amount") or 0)
+            if abs(orig_price - corr_price) > 0.01:
+                sb.table("draft_corrections").insert({
+                    "client_id": client_id,
+                    "document_type": doc_type,
+                    "document_id": doc_id,
+                    "job_id": job_id,
+                    "job_type": job_type,
+                    "field_name": "price",
+                    "ai_value": str(orig_price),
+                    "owner_value": str(corr_price),
+                    "action": "edit",
+                }).execute()
+
+        # Check for removed items
+        if len(original_items) > len(corrected_items):
+            for i in range(len(corrected_items), len(original_items)):
+                sb.table("draft_corrections").insert({
+                    "client_id": client_id,
+                    "document_type": doc_type,
+                    "document_id": doc_id,
+                    "job_id": job_id,
+                    "job_type": job_type,
+                    "field_name": "line_item",
+                    "ai_value": json.dumps(original_items[i]),
+                    "owner_value": None,
+                    "action": "remove",
+                }).execute()
+
+        # Check notes change
+        if corrected_notes is not None and (original_notes or "").strip() != corrected_notes.strip():
+            sb.table("draft_corrections").insert({
+                "client_id": client_id,
+                "document_type": doc_type,
+                "document_id": doc_id,
+                "job_id": job_id,
+                "job_type": job_type,
+                "field_name": "notes",
+                "ai_value": (original_notes or "").strip()[:500],
+                "owner_value": corrected_notes.strip()[:500],
+                "action": "edit",
+            }).execute()
+
+    except Exception as e:
+        print(f"[{timestamp()}] WARN document_routes: _log_draft_corrections failed — {e}")
 
 
 # ---------------------------------------------------------------------------

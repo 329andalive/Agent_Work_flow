@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+  <title>Review Draft — Bolts11</title>
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#f8f9fa;color:#1a1a1a;min-height:100vh;font-size:16px}
+    .wrap{max-width:480px;margin:0 auto;padding:12px 16px 100px}
+    .hdr{text-align:center;padding:16px 0 8px}
+    .hdr-logo{font-size:18px;font-weight:800;color:#132038}.hdr-logo span{color:#f59e0b}
+    .hdr-type{font-size:12px;color:#888;text-transform:uppercase;letter-spacing:.06em;margin-top:4px}
+    /* Customer card */
+    .cust-card{background:#fff;border-radius:10px;padding:16px;margin:12px 0;box-shadow:0 1px 4px rgba(0,0,0,.06)}
+    .cust-card .label{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:#888;font-weight:600;margin-bottom:6px}
+    .cust-card input{width:100%;font-size:15px;padding:8px 0;border:none;border-bottom:1.5px solid #eee;outline:none;background:none;font-family:inherit}
+    .cust-card input:focus{border-bottom-color:#132038}
+    /* Line item cards */
+    .item-card{background:#fff;border-radius:10px;padding:14px 16px;margin:8px 0;box-shadow:0 1px 4px rgba(0,0,0,.06);position:relative}
+    .item-card .item-num{font-size:11px;font-weight:700;color:#888;margin-bottom:4px}
+    .item-card input,.item-card textarea{width:100%;font-size:15px;padding:6px 0;border:none;border-bottom:1.5px solid #eee;outline:none;background:none;font-family:inherit;resize:none}
+    .item-card input:focus,.item-card textarea:focus{border-bottom-color:#132038}
+    .item-card .price-row{display:flex;align-items:center;gap:8px;margin-top:6px}
+    .item-card .price-row span{font-size:20px;font-weight:700;color:#132038}
+    .item-card .price-input{font-size:20px;font-weight:700;color:#132038;width:120px;text-align:right}
+    .item-card .remove-btn{position:absolute;top:10px;right:12px;background:none;border:none;color:#dc2626;font-size:18px;cursor:pointer;padding:4px 8px}
+    /* Add item */
+    .add-btn{display:block;width:100%;padding:14px;text-align:center;font-size:14px;font-weight:600;color:#132038;background:#fff;border:2px dashed #d0d5dd;border-radius:10px;cursor:pointer;margin:8px 0}
+    .add-btn:hover{border-color:#132038}
+    /* Totals */
+    .totals{background:#fff;border-radius:10px;padding:14px 16px;margin:12px 0;box-shadow:0 1px 4px rgba(0,0,0,.06)}
+    .total-row{display:flex;justify-content:space-between;padding:4px 0;font-size:14px;color:#666}
+    .total-row.grand{padding-top:8px;margin-top:4px;border-top:2px solid #132038;font-size:18px;font-weight:800;color:#132038}
+    /* Notes */
+    .notes-card{background:#fff;border-radius:10px;padding:14px 16px;margin:8px 0;box-shadow:0 1px 4px rgba(0,0,0,.06)}
+    .notes-card textarea{width:100%;min-height:60px;font-size:14px;padding:8px 0;border:none;border-bottom:1.5px solid #eee;outline:none;background:none;font-family:inherit;resize:vertical}
+    /* Action bar */
+    .action-bar{position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:1px solid #eee;padding:12px 16px;display:flex;gap:10px;z-index:10}
+    .action-bar .btn{flex:1;padding:14px;border:none;border-radius:8px;font-size:15px;font-weight:700;cursor:pointer;min-height:48px}
+    .btn-approve{background:#132038;color:#fff}
+    .btn-approve:hover{opacity:.9}
+    .btn-reject{background:#fee2e2;color:#dc2626}
+    /* Status */
+    .status-banner{text-align:center;padding:12px;border-radius:8px;font-size:14px;font-weight:600;margin:12px 0}
+    .status-approved{background:#dcfce7;color:#166534}
+    .status-rejected{background:#fee2e2;color:#991b1b}
+    /* Reject modal */
+    .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.4);display:none;align-items:center;justify-content:center;z-index:100}
+    .modal-bg.open{display:flex}
+    .modal{background:#fff;border-radius:12px;width:90%;max-width:400px;padding:24px}
+    .modal h3{font-size:17px;font-weight:700;margin-bottom:12px}
+    .modal textarea{width:100%;min-height:80px;font-size:15px;padding:12px;border:1.5px solid #d0d5dd;border-radius:8px;font-family:inherit;resize:vertical}
+    .modal .btns{display:flex;gap:8px;margin-top:16px}
+    .modal .btns button{flex:1;padding:12px;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer}
+    .loading{text-align:center;padding:60px 20px;color:#888}
+  </style>
+</head>
+<body>
+  <div class="wrap" id="app">
+    <div class="loading" id="loading">Loading draft...</div>
+  </div>
+
+  <!-- Reject modal -->
+  <div class="modal-bg" id="reject-modal">
+    <div class="modal">
+      <h3>Reject this draft?</h3>
+      <p style="font-size:13px;color:#666;margin-bottom:12px">Tell us why so the AI can learn. This won't be sent to the customer.</p>
+      <textarea id="reject-reason" placeholder="Wrong customer, pricing is way off, not a real job..."></textarea>
+      <div class="btns">
+        <button style="background:#eee;color:#333" onclick="closeReject()">Cancel</button>
+        <button style="background:#dc2626;color:#fff" onclick="confirmReject()">Reject Draft</button>
+      </div>
+    </div>
+  </div>
+
+<script>
+const API=window.location.origin;
+const pathParts=window.location.pathname.split('/');
+const TOKEN=pathParts[pathParts.length-1];
+const DOC_TYPE=new URLSearchParams(window.location.search).get('type')||'proposal';
+let DOC_DATA=null;
+
+async function loadDraft(){
+  try{
+    const r=await fetch(API+'/doc/review/'+TOKEN+'/data?type='+DOC_TYPE);
+    const d=await r.json();
+    if(!d.success){document.getElementById('loading').textContent='Document not found';return}
+    DOC_DATA=d;
+    render(d);
+  }catch(e){
+    document.getElementById('loading').textContent='Connection error — try again';
+  }
+}
+
+function render(d){
+  const doc=d.document;const cust=d.customer;const biz=d.business;
+  const type=DOC_TYPE==='invoice'?'Invoice':'Estimate';
+
+  // Check if already reviewed
+  if(doc.reviewed_at){
+    document.getElementById('app').innerHTML='<div class="hdr"><div class="hdr-logo"><span>&#9889;</span> Bolts11</div></div><div class="status-banner status-approved">This '+type.toLowerCase()+' has already been reviewed and approved.</div>';
+    return;
+  }
+  if(doc.status==='rejected'){
+    document.getElementById('app').innerHTML='<div class="hdr"><div class="hdr-logo"><span>&#9889;</span> Bolts11</div></div><div class="status-banner status-rejected">This '+type.toLowerCase()+' was rejected.</div>';
+    return;
+  }
+
+  let html='<div class="hdr"><div class="hdr-logo"><span>&#9889;</span> Bolts11</div><div class="hdr-type">Review '+type+' Draft</div></div>';
+
+  // Customer card
+  html+='<div class="cust-card"><div class="label">Customer</div>';
+  html+='<input id="rv-name" value="'+esc(cust.name)+'" placeholder="Customer name">';
+  html+='<input id="rv-addr" value="'+esc(cust.address)+'" placeholder="Address" style="font-size:13px;color:#666">';
+  html+='</div>';
+
+  // Line items
+  html+='<div id="rv-items">';
+  (doc.line_items||[]).forEach((li,i)=>{
+    html+=buildItemCard(li,i);
+  });
+  html+='</div>';
+  html+='<div class="add-btn" onclick="addItem()">+ Add Line Item</div>';
+
+  // Totals
+  html+='<div class="totals" id="rv-totals"></div>';
+
+  // Notes
+  html+='<div class="notes-card"><div style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:#888;font-weight:600;margin-bottom:4px">Notes</div>';
+  html+='<textarea id="rv-notes" placeholder="Scope notes, assumptions...">'+esc(doc.notes||'')+'</textarea></div>';
+
+  // Action bar
+  html+='<div class="action-bar"><button class="btn btn-reject" onclick="showReject()">Reject</button><button class="btn btn-approve" id="approve-btn" onclick="approve()">Approve & Send</button></div>';
+
+  document.getElementById('app').innerHTML=html;
+  recalcTotals();
+}
+
+function buildItemCard(li,i){
+  const desc=li.description||li.name||'';
+  const amt=parseFloat(li.total||li.amount||0);
+  return '<div class="item-card" data-idx="'+i+'">'+
+    '<div class="item-num">Item '+(i+1)+'</div>'+
+    '<button class="remove-btn" onclick="removeItem(this)">&times;</button>'+
+    '<textarea class="rv-desc" rows="1" placeholder="Service description">'+esc(desc)+'</textarea>'+
+    '<div class="price-row"><span>$</span><input type="number" class="price-input rv-price" value="'+amt.toFixed(2)+'" step="0.01" onchange="recalcTotals()"></div>'+
+  '</div>';
+}
+
+function addItem(){
+  const container=document.getElementById('rv-items');
+  const idx=container.children.length;
+  const div=document.createElement('div');
+  div.innerHTML=buildItemCard({description:'',amount:0},idx);
+  container.appendChild(div.firstElementChild);
+  recalcTotals();
+}
+
+function removeItem(btn){
+  btn.closest('.item-card').remove();
+  recalcTotals();
+}
+
+function recalcTotals(){
+  let subtotal=0;
+  document.querySelectorAll('.rv-price').forEach(p=>{subtotal+=parseFloat(p.value)||0});
+  const taxRate=DOC_DATA?DOC_DATA.document.tax_rate:0;
+  const tax=Math.round(subtotal*taxRate*100)/100;
+  const total=Math.round((subtotal+tax)*100)/100;
+  let html='<div class="total-row"><span>Subtotal</span><span>$'+subtotal.toFixed(2)+'</span></div>';
+  if(tax>0)html+='<div class="total-row"><span>Tax</span><span>$'+tax.toFixed(2)+'</span></div>';
+  html+='<div class="total-row grand"><span>Total</span><span>$'+total.toFixed(2)+'</span></div>';
+  document.getElementById('rv-totals').innerHTML=html;
+}
+
+function collectItems(){
+  return[...document.querySelectorAll('.item-card')].map(card=>({
+    description:(card.querySelector('.rv-desc')?.value||'').trim(),
+    amount:parseFloat(card.querySelector('.rv-price')?.value)||0,
+    total:parseFloat(card.querySelector('.rv-price')?.value)||0,
+  })).filter(li=>li.description);
+}
+
+async function approve(){
+  const btn=document.getElementById('approve-btn');
+  btn.disabled=true;btn.textContent='Saving...';
+  const items=collectItems();
+  const notes=(document.getElementById('rv-notes')?.value||'').trim();
+  try{
+    // Save corrections + mark approved
+    const r=await fetch(API+'/doc/approve',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+      edit_token:TOKEN,doc_type:DOC_TYPE,
+      line_items:items,notes:notes,
+      customer_name:(document.getElementById('rv-name')?.value||'').trim(),
+      customer_address:(document.getElementById('rv-addr')?.value||'').trim(),
+    })});
+    const d=await r.json();
+    if(d.success){
+      // Now send to customer
+      const sr=await fetch(API+'/doc/send',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({edit_token:TOKEN,doc_type:DOC_TYPE})});
+      const sd=await sr.json();
+      if(sd.success){
+        document.getElementById('app').innerHTML='<div class="hdr"><div class="hdr-logo"><span>&#9889;</span> Bolts11</div></div><div class="status-banner status-approved">Approved and sent to customer!</div><p style="text-align:center;margin-top:12px;font-size:14px;color:#666">You can close this page.</p>';
+      }else{
+        document.getElementById('app').innerHTML='<div class="hdr"><div class="hdr-logo"><span>&#9889;</span> Bolts11</div></div><div class="status-banner status-approved">Approved! But sending failed: '+(sd.error||'unknown')+'</div><p style="text-align:center;margin-top:12px;font-size:14px;color:#666">Open the document in your dashboard to send manually.</p>';
+      }
+    }else{
+      alert('Save failed: '+(d.error||'unknown'));
+      btn.disabled=false;btn.textContent='Approve & Send';
+    }
+  }catch(e){
+    alert('Connection error — try again');
+    btn.disabled=false;btn.textContent='Approve & Send';
+  }
+}
+
+function showReject(){document.getElementById('reject-modal').classList.add('open')}
+function closeReject(){document.getElementById('reject-modal').classList.remove('open')}
+
+async function confirmReject(){
+  const reason=(document.getElementById('reject-reason')?.value||'').trim();
+  try{
+    const r=await fetch(API+'/doc/reject',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({edit_token:TOKEN,doc_type:DOC_TYPE,reason:reason})});
+    const d=await r.json();
+    closeReject();
+    if(d.success){
+      document.getElementById('app').innerHTML='<div class="hdr"><div class="hdr-logo"><span>&#9889;</span> Bolts11</div></div><div class="status-banner status-rejected">Draft rejected.</div><p style="text-align:center;margin-top:12px;font-size:14px;color:#666">The AI will learn from this. You can close this page.</p>';
+    }
+  }catch(e){alert('Connection error')}
+}
+
+function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
+
+loadDraft();
+</script>
+</body>
+</html>
