@@ -420,6 +420,9 @@ async function savePricing(){
 }
 
 /* ── Pricing CSV Import ── */
+function parseMoney(s){
+  return parseFloat((s||'').toString().replace(/[$,\s]/g,''))||0;
+}
 function importPriceCSV(input){
   if(!input.files||!input.files[0])return;
   const reader=new FileReader();
@@ -429,12 +432,12 @@ function importPriceCSV(input){
     const cols=parseCSVLine(lines[0]);
     const idx={svc:-1,low:-1,typ:-1,high:-1};
     cols.forEach((c,i)=>{
-      const cl=c.toLowerCase().trim();
-      if(/service|job|name|description/.test(cl))idx.svc=i;
-      if(/low|min/.test(cl))idx.low=i;
-      if(/typical|avg|average|mid/.test(cl))idx.typ=i;
-      if(/high|max/.test(cl))idx.high=i;
-      if(/price|rate|amount/.test(cl)&&idx.typ<0)idx.typ=i;
+      const cl=c.toLowerCase().trim().replace(/[^a-z\s]/g,'');
+      if(idx.svc<0  && /service|job|job name|name|item|description|task/.test(cl))  idx.svc=i;
+      if(idx.low<0  && /low|min|minimum|price low|from/.test(cl))                   idx.low=i;
+      if(idx.typ<0  && /typical|avg|average|mid|middle|price mid|standard|base/.test(cl)) idx.typ=i;
+      if(idx.high<0 && /high|max|maximum|price high|up to/.test(cl))                idx.high=i;
+      if(idx.typ<0  && /price|rate|amount/.test(cl))                                idx.typ=i;
     });
     if(idx.svc<0)idx.svc=0;
     let count=0;
@@ -442,9 +445,9 @@ function importPriceCSV(input){
       const vals=parseCSVLine(lines[r]);
       const svc=(vals[idx.svc]||'').trim();
       if(!svc)continue;
-      const low=idx.low>=0?parseFloat(vals[idx.low])||0:0;
-      let typ=idx.typ>=0?parseFloat(vals[idx.typ])||0:0;
-      const high=idx.high>=0?parseFloat(vals[idx.high])||0:0;
+      const low=idx.low>=0?parseMoney(vals[idx.low]):0;
+      let typ=idx.typ>=0?parseMoney(vals[idx.typ]):0;
+      const high=idx.high>=0?parseMoney(vals[idx.high]):0;
       if(!typ&&low&&high)typ=Math.round((low+high)/2);
       const tr=document.createElement('tr');
       tr.innerHTML='<td><input type="text" class="p-svc" value="'+esc(svc)+'"></td><td><input type="number" class="p-low" value="'+low+'"></td><td><input type="number" class="p-typ" value="'+typ+'"></td><td><input type="number" class="p-high" value="'+high+'"></td><td><button class="btn-red" onclick="this.closest(\'tr\').remove()">&#215;</button></td>';
