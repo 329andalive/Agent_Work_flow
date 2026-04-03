@@ -715,9 +715,15 @@
     function v(id){return document.getElementById(id)?.value?.trim()||''}
     function formatPhone(p){if(!p)return'';const d=p.replace(/\D/g,'').replace(/^1/,'');if(d.length===10)return'('+d.slice(0,3)+') '+d.slice(3,6)+'-'+d.slice(6);return p}
     function toE164(p){if(!p)return'';const d=p.replace(/\D/g,'');if(d.length===10)return'+1'+d;if(d.length===11&&d[0]==='1')return'+'+d;return p}
-    // Auto-format phone inputs
-    document.querySelectorAll('input[type=tel]').forEach(el=>{
-      el.addEventListener('input',function(){const d=this.value.replace(/\D/g,'').replace(/^1/,'');if(d.length<=3)this.value=d.length?'('+d:d;else if(d.length<=6)this.value='('+d.slice(0,3)+') '+d.slice(3);else this.value='('+d.slice(0,3)+') '+d.slice(3,6)+'-'+d.slice(6,10)});
+    // Auto-format ALL phone inputs — including dynamically added ones
+    // Uses event delegation so employee/customer rows added later get formatting too
+    document.addEventListener('input',function(e){
+      if(e.target.tagName==='INPUT'&&(e.target.type==='tel'||e.target.classList.contains('emp-phone')||e.target.classList.contains('cust-phone'))){
+        const d=e.target.value.replace(/\D/g,'').replace(/^1/,'');
+        if(d.length<=3)e.target.value=d.length?'('+d:d;
+        else if(d.length<=6)e.target.value='('+d.slice(0,3)+') '+d.slice(3);
+        else e.target.value='('+d.slice(0,3)+') '+d.slice(3,6)+'-'+d.slice(6,10);
+      }
     });
   </script>
 </body>
