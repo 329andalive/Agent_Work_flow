@@ -637,6 +637,24 @@
 
     function addCustomerToTable(name,phone,email,address){
       const tbody=document.getElementById('cust-body');
+      const inName=(name||'').toLowerCase().trim();
+      const inPhone=(phone||'').replace(/\D/g,'');
+
+      // Deduplicate: if name+phone match an existing row, update it instead
+      const existing=[...tbody.querySelectorAll('tr')];
+      for(let i=0;i<existing.length;i++){
+        const r=existing[i];
+        const rName=(r.querySelector('.cust-name').value||'').toLowerCase().trim();
+        const rPhone=(r.querySelector('.cust-phone').value||'').replace(/\D/g,'');
+        if(rName===inName&&(inPhone?rPhone===inPhone:!rPhone)){
+          if(email)r.querySelector('.cust-email').value=email;
+          if(address)r.querySelector('.cust-address').value=address;
+          updateCustCount();
+          document.getElementById('cust-list-wrap').style.display='block';
+          return;
+        }
+      }
+
       const tr=document.createElement('tr');
       tr.innerHTML='<td><input class="cust-name" value="'+escAttr(name)+'" placeholder="Name" style="font-size:13px;padding:6px;min-height:36px"></td>'+
         '<td><input class="cust-phone" value="'+escAttr(phone)+'" placeholder="Phone" style="font-size:13px;padding:6px;min-height:36px"></td>'+
