@@ -532,36 +532,85 @@
       if(!input.files||!input.files[0])return;
       const reader=new FileReader();
       reader.onload=function(e){
+        // Handle quoted fields with commas inside them
+        function parseCSVLine(line){
+          const vals=[];let cur='';let inQ=false;
+          for(let i=0;i<line.length;i++){
+            const ch=line[i];
+            if(ch==='"'){inQ=!inQ;continue}
+            if((ch===','||ch==='\t')&&!inQ){vals.push(cur.trim());cur='';continue}
+            cur+=ch;
+          }
+          vals.push(cur.trim());
+          return vals.map(v=>v.replace(/^["']|["']$/g,''));
+        }
+
         const lines=e.target.result.split(/\r?\n/).filter(l=>l.trim());
         if(lines.length<2){alert('CSV appears empty');return}
-        // Parse header to find columns
-        const hdr=lines[0].toLowerCase();
-        const cols=hdr.split(/[,\t]/);
+
+        const cols=parseCSVLine(lines[0]);
+        const numCols=cols.length;
+
+        // ── Step 1: Try header-based detection ──
         const idx={name:-1,first:-1,last:-1,phone:-1,email:-1,address:-1};
         cols.forEach((c,i)=>{
-          const cl=c.trim().replace(/['"]/g,'');
+          const cl=c.toLowerCase().trim();
           if(cl.includes('first')&&cl.includes('name'))idx.first=i;
           else if(cl.includes('last')&&cl.includes('name'))idx.last=i;
-          else if((cl==='name'||cl==='customer name'||cl==='customer_name'||cl==='full name')&&idx.name<0)idx.name=i;
-          if(cl.includes('phone')||cl.includes('mobile')||cl.includes('cell'))idx.phone=i;
-          if(cl.includes('email')||cl.includes('e-mail'))idx.email=i;
-          if(cl.includes('address')||cl.includes('street'))idx.address=i;
+          else if(/^(name|customer.?name|full.?name|client.?name|contact)$/.test(cl)&&idx.name<0)idx.name=i;
+          if(/phone|mobile|cell|tel/.test(cl)&&idx.phone<0)idx.phone=i;
+          if(/e-?mail/.test(cl)&&idx.email<0)idx.email=i;
+          if(/address|street|location/.test(cl)&&idx.address<0)idx.address=i;
         });
-        // Parse rows
+
+        // ── Step 2: If headers didn't fully match, detect by content ──
+        const headerHits=(idx.name>=0||idx.first>=0?1:0)+(idx.phone>=0?1:0)+(idx.email>=0?1:0)+(idx.address>=0?1:0);
+        if(headerHits<2&&numCols>=2){
+          // Sample first 5 data rows to detect column types
+          const samples=lines.slice(1,6).map(l=>parseCSVLine(l));
+          for(let ci=0;ci<numCols;ci++){
+            const vals=samples.map(r=>(r[ci]||'').trim()).filter(Boolean);
+            if(!vals.length)continue;
+            const hasAt=vals.filter(v=>v.includes('@')).length;
+            const hasDigits=vals.filter(v=>/^\+?\(?\d[\d\s().\-]{6,}$/.test(v)).length;
+            const hasNumWord=vals.filter(v=>/^\d+\s+\w/.test(v)).length;
+
+            if(hasAt>=vals.length*0.5&&idx.email<0){idx.email=ci;continue}
+            if(hasDigits>=vals.length*0.5&&idx.phone<0){idx.phone=ci;continue}
+            if(hasNumWord>=vals.length*0.3&&idx.address<0){idx.address=ci;continue}
+          }
+          // Whatever column is left with mostly alpha text → name
+          for(let ci=0;ci<numCols;ci++){
+            if(ci===idx.email||ci===idx.phone||ci===idx.address)continue;
+            const vals=samples.map(r=>(r[ci]||'').trim()).filter(Boolean);
+            const allAlpha=vals.filter(v=>/^[A-Za-z\s.\-']+$/.test(v)).length;
+            if(allAlpha>=vals.length*0.5&&idx.name<0){idx.name=ci;break}
+          }
+        }
+
+        // Build mapping label for feedback
+        const mapLabels=[];
+        if(idx.name>=0)mapLabels.push('Name=Col'+(idx.name+1));
+        else if(idx.first>=0)mapLabels.push('Name=Col'+(idx.first+1)+'+'+(idx.last+1));
+        if(idx.phone>=0)mapLabels.push('Phone=Col'+(idx.phone+1));
+        if(idx.email>=0)mapLabels.push('Email=Col'+(idx.email+1));
+        if(idx.address>=0)mapLabels.push('Address=Col'+(idx.address+1));
+
+        // ── Step 3: Parse all rows ──
         const customers=[];
         for(let r=1;r<lines.length;r++){
-          const vals=lines[r].split(/[,\t]/).map(v=>v.trim().replace(/^["']|["']$/g,''));
+          const vals=parseCSVLine(lines[r]);
           let name='';
           if(idx.name>=0)name=vals[idx.name]||'';
           else if(idx.first>=0)name=((vals[idx.first]||'')+' '+(vals[idx.last]||'')).trim();
-          const phone=vals[idx.phone]||'';
+          const phone=idx.phone>=0?vals[idx.phone]||'':'';
           const email=idx.email>=0?vals[idx.email]||'':'';
           const address=idx.address>=0?vals[idx.address]||'':'';
           if(name||phone)customers.push({name,phone,email,address});
         }
         if(!customers.length){alert('No customers found in CSV');return}
         customers.forEach(c=>addCustomerToTable(c.name,c.phone,c.email,c.address));
-        document.getElementById('csv-drop').innerHTML='<div class="icon">&#9989;</div><p>'+customers.length+' customers loaded from CSV</p><p style="font-size:12px;color:#aaa">Click to upload a different file</p>';
+        document.getElementById('csv-drop').innerHTML='<div class="icon">&#9989;</div><p>'+customers.length+' customers loaded</p><p style="font-size:11px;color:#888;margin-top:4px">Detected: '+mapLabels.join(' · ')+'</p><p style="font-size:12px;color:#aaa;margin-top:4px">Review below, then click Next. Click here to upload a different file.</p>';
       };
       reader.readAsText(input.files[0]);
     }
