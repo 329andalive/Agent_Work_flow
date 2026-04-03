@@ -688,6 +688,24 @@ def run(client_phone: str, raw_input: str, customer_phone: str | None = None) ->
               f"line item extraction failed, using fallback — {e}")
 
     # ------------------------------------------------------------------
+    # Step 6b: Track pricebook usage for each line item
+    # ------------------------------------------------------------------
+    if line_items_data and client_id:
+        try:
+            from execution.db_pricebook import get_pricebook, increment_usage
+            pricebook = get_pricebook(client_id)
+            if pricebook:
+                pb_lookup = {item["job_name"].lower(): item for item in pricebook}
+                for li in line_items_data:
+                    desc = (li.get("description") or "").lower()
+                    for pb_name, pb_item in pb_lookup.items():
+                        if pb_name in desc or desc in pb_name:
+                            increment_usage(pb_item["id"])
+                            break
+        except Exception as e:
+            print(f"[{timestamp()}] WARN invoice_agent: pricebook usage tracking failed — {e}")
+
+    # ------------------------------------------------------------------
     # Step 7: Save invoice to Supabase
     # Use actual_amount (calculated from raw SMS dollar amounts) as the
     # source of truth — NOT parse_invoice_total which reads Claude's text

@@ -511,6 +511,26 @@ def run(client_phone: str, customer_phone: str, raw_input: str) -> str | None:
             amount = float(price_match.group(1))
 
     # ------------------------------------------------------------------
+    # Step 6b: Track pricebook usage for each line item
+    # ------------------------------------------------------------------
+    if line_items and client_id:
+        try:
+            from execution.db_pricebook import get_pricebook, increment_usage
+            pricebook = get_pricebook(client_id)
+            if pricebook:
+                # Build a lookup by lowercase job_name for fuzzy matching
+                pb_lookup = {item["job_name"].lower(): item for item in pricebook}
+                for li in line_items:
+                    desc = (li.get("description") or "").lower()
+                    # Try exact substring match against pricebook names
+                    for pb_name, pb_item in pb_lookup.items():
+                        if pb_name in desc or desc in pb_name:
+                            increment_usage(pb_item["id"])
+                            break
+        except Exception as e:
+            print(f"[{timestamp()}] WARN proposal_agent: pricebook usage tracking failed — {e}")
+
+    # ------------------------------------------------------------------
     # Step 7: Save proposal to Supabase with structured line items
     # ------------------------------------------------------------------
     try:
