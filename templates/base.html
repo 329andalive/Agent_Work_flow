@@ -683,21 +683,6 @@
     </a>
 
     <div class="nav-section">
-      <div class="nav-section-header {{ 'open' if active_page == 'purchases' else '' }}" onclick="toggleNav(this)">
-        <span class="nav-section-label"><span class="nav-section-icon">🛒</span> Purchases</span>
-        <span class="nav-chevron">▼</span>
-      </div>
-      <div class="nav-children {{ 'open' if active_page == 'purchases' else '' }}">
-        <a href="/dashboard/purchases/#bills"   class="nav-child-link">Bills</a>
-        <a href="/dashboard/purchases/#vendors" class="nav-child-link">Vendors</a>
-      </div>
-    </div>
-
-    <a href="/dashboard/receipts/" class="nav-single-link {{ 'active' if active_page == 'receipts' else '' }}">
-      <span class="nav-single-inner"><span class="nav-section-icon">🧾</span> Receipts</span>
-    </a>
-
-    <div class="nav-section">
       <div class="nav-section-header {{ 'open' if active_page == 'accounting' else '' }}" onclick="toggleNav(this)">
         <span class="nav-section-label"><span class="nav-section-icon">⚖</span> Accounting</span>
         <span class="nav-chevron">▼</span>
@@ -749,20 +734,6 @@
       <span style="display:flex;align-items:center;gap:10px;">
         <span class="nav-section-icon">👷</span> Workers
       </span>
-    </a>
-
-    <!-- Banking (coming soon) -->
-    <a href="#" class="nav-single-link disabled">
-      <span class="nav-single-inner"><span class="nav-section-icon">🏦</span> Banking</span>
-      <span class="nav-coming-soon">soon</span>
-    </a>
-    <a href="#" class="nav-single-link disabled">
-      <span class="nav-single-inner"><span class="nav-section-icon">👥</span> Payroll</span>
-      <span class="nav-coming-soon">soon</span>
-    </a>
-    <a href="#" class="nav-single-link disabled">
-      <span class="nav-single-inner"><span class="nav-section-icon">📅</span> Schedule</span>
-      <span class="nav-coming-soon">soon</span>
     </a>
 
     <div class="sidebar-section-label" style="margin-top:4px">System</div>
