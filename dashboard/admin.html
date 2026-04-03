@@ -500,7 +500,7 @@ function addTeamRow(){
   tr.innerHTML='<td><input type="text" id="nw-name" placeholder="Name"></td>'+
     '<td><input type="tel" id="nw-phone" placeholder="(555) 555-0100"></td>'+
     '<td><input type="email" id="nw-email" placeholder="email@example.com"></td>'+
-    '<td><select id="nw-role"><option>Owner</option><option>Foreman</option><option selected>Field Tech</option><option>Office</option></select></td>'+
+    '<td><input type="text" id="nw-role" list="role-suggestions" placeholder="Role" value="Field Tech"></td>'+
     '<td></td>'+
     '<td><button class="btn btn-green btn-sm" onclick="saveNewWorker()">Save</button></td>';
   tbody.insertBefore(tr,tbody.firstChild);
@@ -526,7 +526,7 @@ function editWorker(id){
   tr.innerHTML='<td><input type="text" class="ew-name" value="'+esc(w.name)+'"></td>'+
     '<td><input type="tel" class="ew-phone" value="'+esc(fmtPhone(w.phone))+'"></td>'+
     '<td><input type="email" class="ew-email" value="'+esc(w.email||'')+'"></td>'+
-    '<td><select class="ew-role"><option'+(w.role==='Owner'?' selected':'')+'>Owner</option><option'+(w.role==='Foreman'?' selected':'')+'>Foreman</option><option'+(w.role==='Field Tech'?' selected':'')+'>Field Tech</option><option'+(w.role==='Office'?' selected':'')+'>Office</option></select></td>'+
+    '<td><input type="text" class="ew-role" list="role-suggestions" value="'+esc(w.role||'')+'"></td>'+
     '<td></td>'+
     '<td><button class="btn btn-green btn-sm" onclick="saveEditWorker(\''+id+'\')">Save</button></td>';
 }
@@ -576,13 +576,8 @@ function importTeamCSV(input){
       if(!name)continue;
       const phone=idx.phone>=0?toE164((vals[idx.phone]||'').trim()):'';
       const email=idx.email>=0?(vals[idx.email]||'').trim():'';
-      let role='Field Tech';
-      if(idx.role>=0){
-        const raw=(vals[idx.role]||'').trim().toLowerCase();
-        if(raw.includes('owner'))role='Owner';
-        else if(raw.includes('foreman')||raw.includes('lead'))role='Foreman';
-        else if(raw.includes('office')||raw.includes('admin'))role='Office';
-      }
+      let role=idx.role>=0?(vals[idx.role]||'').trim():'Field Tech';
+      if(!role)role='Field Tech';
       try{
         const res=await fetch(API+'/api/workers/create',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,phone,email,role})});
         const d=await res.json();
@@ -610,5 +605,20 @@ document.addEventListener('input',function(e){
 /* ── Init ── */
 loadCustomers();
 </script>
+<datalist id="role-suggestions">
+  <option value="Owner">
+  <option value="Foreman">
+  <option value="Field Tech">
+  <option value="Office">
+  <option value="Project Manager">
+  <option value="Lead Developer">
+  <option value="UX Designer">
+  <option value="Data Analyst">
+  <option value="QA Engineer">
+  <option value="Estimator">
+  <option value="Dispatcher">
+  <option value="Apprentice">
+  <option value="Subcontractor">
+</datalist>
 </body>
 </html>
