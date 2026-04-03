@@ -140,6 +140,35 @@ def save_document():
                      json.dumps(original_line_items) if original_line_items else "[]",
                      json.dumps(line_items))
 
+            # Log individual price adjustments for pricebook learning
+            try:
+                from execution.db_pricing import log_price_adjustment
+                # Build lookup of original prices by description
+                orig_prices = {}
+                for li in (original_line_items or []):
+                    desc = (li.get("description") or "").strip().lower()
+                    price = float(li.get("total") or li.get("amount") or 0)
+                    if desc and price:
+                        orig_prices[desc] = price
+
+                # Compare each new line item against originals
+                client_record = get_client_by_id(client_id) if client_id else None
+                vertical = (client_record or {}).get("trade_vertical", "")
+                for li in line_items:
+                    desc = (li.get("description") or "").strip().lower()
+                    new_price = float(li.get("total") or li.get("amount") or 0)
+                    if desc in orig_prices and abs(orig_prices[desc] - new_price) > 0.01:
+                        log_price_adjustment(
+                            client_id=client_id,
+                            vertical_key=vertical,
+                            service_name=li.get("description", "").strip(),
+                            original_price=orig_prices[desc],
+                            adjusted_price=new_price,
+                            context=f"{doc_type}_edit",
+                        )
+            except Exception as pa_err:
+                print(f"[doc_save] WARN: price adjustment logging failed — {pa_err}")
+
         if original_notes.strip() != notes.strip():
             log_edit(doc_type, doc_id, client_id, "notes", original_notes, notes)
 
