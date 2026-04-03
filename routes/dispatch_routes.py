@@ -174,6 +174,18 @@ def dispatch_send():
     expires_at = (datetime.now(timezone.utc) + timedelta(hours=72)).isoformat()
 
     sb = _get_supabase()
+
+    # Guard: skip if this session_id was already dispatched (prevents duplicate sends)
+    try:
+        existing = sb.table("dispatch_decisions").select("id").eq(
+            "session_id", session_id
+        ).eq("client_id", client_id).limit(1).execute()
+        if existing.data:
+            print(f"[{timestamp()}] WARN dispatch: session {session_id[:8]} already saved — skipping duplicate write")
+            return jsonify({"success": True, "duplicate": True})
+    except Exception:
+        pass  # Table may not exist yet — proceed normally
+
     workers_notified = 0
     sms_sent = 0
     sms_failed = []

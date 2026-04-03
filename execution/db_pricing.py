@@ -24,6 +24,32 @@ def timestamp():
 
 
 # ---------------------------------------------------------------------------
+# Hardcoded fallback when pricing_benchmarks table doesn't exist
+# ---------------------------------------------------------------------------
+
+FALLBACK_BENCHMARKS = {
+    "septic": [
+        {"service_name": "Septic Tank Pump-Out (up to 1000 gal)", "price_low": 275, "price_typical": 375, "price_high": 500, "price_unit": "per job", "notes": ""},
+        {"service_name": "Septic Tank Pump-Out (1000-1500 gal)", "price_low": 350, "price_typical": 450, "price_high": 600, "price_unit": "per job", "notes": ""},
+        {"service_name": "Septic Tank Pump-Out (1500+ gal)", "price_low": 450, "price_typical": 600, "price_high": 850, "price_unit": "per job", "notes": ""},
+        {"service_name": "Septic Inspection", "price_low": 150, "price_typical": 250, "price_high": 400, "price_unit": "per job", "notes": ""},
+        {"service_name": "Drain Field Assessment", "price_low": 300, "price_typical": 500, "price_high": 800, "price_unit": "per job", "notes": ""},
+        {"service_name": "Effluent Filter Cleaning/Replacement", "price_low": 75, "price_typical": 150, "price_high": 250, "price_unit": "per job", "notes": ""},
+    ],
+    "plumbing": [
+        {"service_name": "Service Call / Diagnostic", "price_low": 95, "price_typical": 150, "price_high": 225, "price_unit": "per job", "notes": ""},
+        {"service_name": "Drain Cleaning", "price_low": 150, "price_typical": 250, "price_high": 400, "price_unit": "per job", "notes": ""},
+        {"service_name": "Water Heater Replacement", "price_low": 800, "price_typical": 1200, "price_high": 2000, "price_unit": "per job", "notes": ""},
+    ],
+    "hvac": [
+        {"service_name": "AC Tune-Up", "price_low": 89, "price_typical": 129, "price_high": 199, "price_unit": "per job", "notes": ""},
+        {"service_name": "Furnace Tune-Up", "price_low": 89, "price_typical": 129, "price_high": 199, "price_unit": "per job", "notes": ""},
+        {"service_name": "Refrigerant Recharge", "price_low": 200, "price_typical": 350, "price_high": 600, "price_unit": "per job", "notes": ""},
+    ],
+}
+
+
+# ---------------------------------------------------------------------------
 # Pricing benchmarks
 # ---------------------------------------------------------------------------
 
@@ -55,7 +81,10 @@ def get_benchmarks(vertical_key: str, region: str = "northeast_us") -> list:
         return services
     except Exception as e:
         print(f"[{timestamp()}] ERROR db_pricing: get_benchmarks failed — {e}")
-        return []
+        fallback = FALLBACK_BENCHMARKS.get(vertical_key, [])
+        if fallback:
+            print(f"[{timestamp()}] INFO db_pricing: using hardcoded fallback for {vertical_key} ({len(fallback)} services)")
+        return fallback
 
 
 def get_verticals() -> list:

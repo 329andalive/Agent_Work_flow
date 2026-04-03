@@ -17,14 +17,19 @@ from dotenv import load_dotenv
 
 
 def _normalize_phone(phone):
-    """Normalize any phone format to E.164 (+12075558806)."""
+    """Normalize any phone format to E.164 (+12075558806). Returns None if invalid."""
     if not phone:
-        return phone
-    digits = re.sub(r'\D', '', str(phone))
+        return None
+    # Strip ALL whitespace first, not just leading/trailing
+    phone = re.sub(r'\s', '', str(phone))
+    digits = re.sub(r'\D', '', phone)
     if len(digits) == 10:
         return f'+1{digits}'
     if len(digits) == 11 and digits.startswith('1'):
         return f'+{digits}'
+    # If we can't make a valid E.164 number, return None
+    if len(digits) < 10 or len(digits) > 15:
+        return None
     return f'+{digits}'
 
 # Load credentials from .env
@@ -126,11 +131,16 @@ def send_sms(to_number: str, message_body: str, from_number: str = None,
     """
     # Normalize phone numbers to E.164 — fixes Telnyx 40310 errors
     to_number = _normalize_phone(to_number)
-    if from_number:
-        from_number = _normalize_phone(from_number)
+    from_number = _normalize_phone(from_number) if from_number else None
 
     # Fall back to the .env default if no from_number provided
     sender = from_number or TELNYX_PHONE_NUMBER
+
+    # Validate sender is E.164 before sending
+    if not sender or not re.match(r'^\+1\d{10}$', sender):
+        fallback = TELNYX_PHONE_NUMBER
+        print(f"[{timestamp()}] WARN sms_send: sender '{sender}' is not valid E.164 — falling back to {fallback}")
+        sender = fallback
 
     # Guard against missing credentials
     if not TELNYX_API_KEY:
@@ -138,7 +148,7 @@ def send_sms(to_number: str, message_body: str, from_number: str = None,
         return {"success": False, "message_id": None, "error": "Missing TELNYX_API_KEY"}
 
     if not sender:
-        print(f"[{timestamp()}] ERROR sms_send: No from_number provided and TELNYX_PHONE_NUMBER not set in .env")
+        print(f"[{timestamp()}] ERROR sms_send: No valid from_number and TELNYX_PHONE_NUMBER not set")
         return {"success": False, "message_id": None, "error": "Missing from_number"}
 
     # Split long messages into chunks and send each one
