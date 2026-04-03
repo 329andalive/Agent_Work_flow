@@ -393,6 +393,22 @@ def handle_clock(
         send_sms(to_number=from_number,   message_body=employee_msg, from_number=client_phone)
         print(f"[{timestamp()}] INFO clock_agent: Confirmed clock-in to {from_number}")
 
+        # Send today's dispatch route and start first job
+        try:
+            from execution.dispatch_chain import get_todays_route, build_route_sms, start_first_job
+            route = get_todays_route(client_id, employee_id)
+            if route:
+                route_msg = build_route_sms(route, emp_name, client.get("business_name", ""))
+                send_sms(to_number=from_number, message_body=route_msg, from_number=client_phone)
+                print(f"[{timestamp()}] INFO clock_agent: Sent dispatch route ({len(route)} jobs) to {emp_first}")
+
+                # Auto-start the first job
+                started = start_first_job(client_id, employee_id, entry_id)
+                if started:
+                    print(f"[{timestamp()}] INFO clock_agent: Auto-started first job {started.get('id', '')[:8]}")
+        except Exception as e:
+            print(f"[{timestamp()}] WARN clock_agent: Dispatch route send failed — {e}")
+
         # Notify owner (failure is non-fatal)
         if owner_phone and owner_phone != client_phone:
             owner_result = send_sms(to_number=owner_phone, message_body=owner_msg, from_number=client_phone)

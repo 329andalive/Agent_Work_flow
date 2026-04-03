@@ -631,6 +631,50 @@ def _handle_worker_status_reply(
             except Exception as e:
                 print(f"[{timestamp()}] WARN sms_router: Auto-invoice failed — {e}")
 
+            # ── Auto-advance to next job in dispatch route ─────────────
+            try:
+                from execution.dispatch_chain import advance_to_next_job
+
+                # Find worker's open time_entry for current_job tracking
+                te_id = None
+                try:
+                    te = sb.table("time_entries").select("id").eq(
+                        "employee_id", worker_id
+                    ).eq("client_id", client_id).eq("status", "open").order(
+                        "clock_in", desc=True
+                    ).limit(1).execute()
+                    if te.data:
+                        te_id = te.data[0]["id"]
+                except Exception:
+                    pass
+
+                next_job = advance_to_next_job(client_id, worker_id, job_id, te_id)
+                if next_job:
+                    next_name = next_job.get("job_description") or next_job.get("job_type", "Next job")
+                    # Look up customer name for the next job
+                    next_cust = ""
+                    try:
+                        if next_job.get("customer_id"):
+                            cr = sb.table("customers").select("customer_name").eq("id", next_job["customer_id"]).execute()
+                            if cr.data:
+                                next_cust = cr.data[0].get("customer_name", "")
+                    except Exception:
+                        pass
+                    next_msg = f"Next up: {next_name}"
+                    if next_cust:
+                        next_msg += f" — {next_cust}"
+                    send_sms(to_number=from_number, message_body=next_msg, from_number=client_phone)
+                    print(f"[{timestamp()}] INFO sms_router: Auto-advanced to next job {next_job.get('id', '')[:8]}")
+                else:
+                    send_sms(
+                        to_number=from_number,
+                        message_body="That's your last job for today. Nice work!",
+                        from_number=client_phone,
+                    )
+                    print(f"[{timestamp()}] INFO sms_router: No more jobs — route complete for {worker_name}")
+            except Exception as e:
+                print(f"[{timestamp()}] WARN sms_router: Dispatch chain advance failed — {e}")
+
         # ── SCOPE hold — flag job, notify owner, block auto-invoice ─────
         elif command == "SCOPE":
             try:
