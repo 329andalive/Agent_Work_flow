@@ -112,6 +112,8 @@
         <div class="card-header">
           <span class="card-title">Price Book</span>
           <div style="display:flex;gap:6px">
+            <button class="btn btn-outline btn-sm" onclick="document.getElementById('price-csv').click()">Import CSV</button>
+            <input type="file" id="price-csv" accept=".csv,.txt" style="display:none" onchange="importPriceCSV(this)">
             <button class="btn btn-navy btn-sm" onclick="savePricing()">Save Changes</button>
           </div>
         </div>
@@ -133,8 +135,13 @@
       <div class="card">
         <div class="card-header">
           <span class="card-title">Team Members</span>
-          <button class="btn btn-navy btn-sm" onclick="addTeamRow()">+ Add Team Member</button>
+          <div style="display:flex;gap:6px">
+            <button class="btn btn-outline btn-sm" onclick="document.getElementById('team-csv').click()">Import CSV</button>
+            <input type="file" id="team-csv" accept=".csv,.txt" style="display:none" onchange="importTeamCSV(this)">
+            <button class="btn btn-navy btn-sm" onclick="addTeamRow()">+ Add Team Member</button>
+          </div>
         </div>
+        <div id="team-banner" class="banner" style="margin:12px 18px 0"></div>
         <div style="overflow-x:auto">
           <table class="data-table" id="team-table">
             <thead><tr><th>Name</th><th>Phone</th><th>Email</th><th>Role</th><th style="width:80px">Status</th><th style="width:120px">Actions</th></tr></thead>
@@ -412,6 +419,45 @@ async function savePricing(){
   }catch(e){alert('Connection error')}
 }
 
+/* ── Pricing CSV Import ── */
+function importPriceCSV(input){
+  if(!input.files||!input.files[0])return;
+  const reader=new FileReader();
+  reader.onload=function(e){
+    const lines=e.target.result.split(/\r?\n/).filter(l=>l.trim());
+    if(lines.length<2){alert('CSV appears empty');return}
+    const cols=parseCSVLine(lines[0]);
+    const idx={svc:-1,low:-1,typ:-1,high:-1};
+    cols.forEach((c,i)=>{
+      const cl=c.toLowerCase().trim();
+      if(/service|job|name|description/.test(cl))idx.svc=i;
+      if(/low|min/.test(cl))idx.low=i;
+      if(/typical|avg|average|mid/.test(cl))idx.typ=i;
+      if(/high|max/.test(cl))idx.high=i;
+      if(/price|rate|amount/.test(cl)&&idx.typ<0)idx.typ=i;
+    });
+    if(idx.svc<0)idx.svc=0;
+    let count=0;
+    for(let r=1;r<lines.length;r++){
+      const vals=parseCSVLine(lines[r]);
+      const svc=(vals[idx.svc]||'').trim();
+      if(!svc)continue;
+      const low=idx.low>=0?parseFloat(vals[idx.low])||0:0;
+      let typ=idx.typ>=0?parseFloat(vals[idx.typ])||0:0;
+      const high=idx.high>=0?parseFloat(vals[idx.high])||0:0;
+      if(!typ&&low&&high)typ=Math.round((low+high)/2);
+      const tr=document.createElement('tr');
+      tr.innerHTML='<td><input type="text" class="p-svc" value="'+esc(svc)+'"></td><td><input type="number" class="p-low" value="'+low+'"></td><td><input type="number" class="p-typ" value="'+typ+'"></td><td><input type="number" class="p-high" value="'+high+'"></td><td><button class="btn-red" onclick="this.closest(\'tr\').remove()">&#215;</button></td>';
+      document.getElementById('price-body').appendChild(tr);
+      count++;
+    }
+    if(count)showBanner('price-banner',count+' services imported from CSV — click Save Changes to keep them','banner-green',5000);
+    else alert('No services found in CSV');
+  };
+  reader.readAsText(input.files[0]);
+  input.value='';
+}
+
 /* ═══════════════════════════════════════════════════
    TAB 3: TEAM
    ═══════════════════════════════════════════════════ */
@@ -501,6 +547,51 @@ async function toggleWorker(id,active){
       renderTeam();
     }
   }catch(e){alert('Connection error')}
+}
+
+/* ── Team CSV Import ── */
+function importTeamCSV(input){
+  if(!input.files||!input.files[0])return;
+  const reader=new FileReader();
+  reader.onload=async function(e){
+    const lines=e.target.result.split(/\r?\n/).filter(l=>l.trim());
+    if(lines.length<2){alert('CSV appears empty');return}
+    const cols=parseCSVLine(lines[0]);
+    const idx={name:-1,phone:-1,email:-1,role:-1};
+    cols.forEach((c,i)=>{
+      const cl=c.toLowerCase().trim();
+      if(/^(name|employee|worker|member|full.?name)$/.test(cl)&&idx.name<0)idx.name=i;
+      if(/phone|mobile|cell|tel/.test(cl)&&idx.phone<0)idx.phone=i;
+      if(/e-?mail/.test(cl)&&idx.email<0)idx.email=i;
+      if(/role|position|title|type/.test(cl)&&idx.role<0)idx.role=i;
+    });
+    if(idx.name<0)idx.name=0;
+    let created=0;let failed=0;
+    for(let r=1;r<lines.length;r++){
+      const vals=parseCSVLine(lines[r]);
+      const name=(vals[idx.name]||'').trim();
+      if(!name)continue;
+      const phone=idx.phone>=0?toE164((vals[idx.phone]||'').trim()):'';
+      const email=idx.email>=0?(vals[idx.email]||'').trim():'';
+      let role='Field Tech';
+      if(idx.role>=0){
+        const raw=(vals[idx.role]||'').trim().toLowerCase();
+        if(raw.includes('owner'))role='Owner';
+        else if(raw.includes('foreman')||raw.includes('lead'))role='Foreman';
+        else if(raw.includes('office')||raw.includes('admin'))role='Office';
+      }
+      try{
+        const res=await fetch(API+'/api/workers/create',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,phone,email,role})});
+        const d=await res.json();
+        if(d.success)created++;else failed++;
+      }catch(err){failed++}
+    }
+    await loadTeam();
+    if(created)showBanner('team-banner',created+' team members imported'+(failed?' ('+failed+' skipped)':''),'banner-green',4000);
+    else alert('No team members found in CSV');
+  };
+  reader.readAsText(input.files[0]);
+  input.value='';
 }
 
 /* ── Phone auto-format ── */
