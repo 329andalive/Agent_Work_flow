@@ -117,6 +117,7 @@ def login_submit():
         session.permanent = True
 
         print(f"[{_ts()}] INFO auth: Login success — {client.get('business_name')} ({phone}){' [SUPER ADMIN]' if client.get('is_super_admin') else ''}")
+        print(f"[{_ts()}] INFO auth: Session set — client_id={client['id'][:8]}... business={client.get('business_name')}")
         return redirect("/dashboard/")
 
     except Exception as e:

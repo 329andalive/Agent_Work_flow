@@ -51,7 +51,31 @@ def get_employee_by_phone(client_id: str, phone: str) -> dict | None:
             )
         return result.data
 
-    except Exception as e:
+    except Exception:
         # .single() raises when no row is found — treat as not found, not a crash
-        print(f"[{timestamp()}] INFO db_employee: No employee found for client={client_id} phone={phone} ({e})")
-        return None
+        print(f"[{timestamp()}] INFO db_employee: No employee match in employees table for phone={phone}")
+
+    # Fallback: check if sender is the owner's personal mobile
+    try:
+        supabase = get_client()
+        owner_check = supabase.table("clients").select(
+            "id, business_name, owner_name, owner_mobile, phone"
+        ).eq("id", client_id).execute()
+        if owner_check.data:
+            owner = owner_check.data[0]
+            owner_mobile = owner.get("owner_mobile", "")
+            client_phone = owner.get("phone", "")
+            if phone and (phone == owner_mobile or phone == client_phone):
+                print(f"[{timestamp()}] INFO db_employee: Matched owner via owner_mobile/phone fallback — {owner.get('owner_name', 'Owner')}")
+                return {
+                    "id": None,
+                    "name": owner.get("owner_name", "Owner"),
+                    "phone": phone,
+                    "role": "owner",
+                    "client_id": client_id,
+                    "_source": "owner_mobile_fallback",
+                }
+    except Exception as fallback_err:
+        print(f"[{timestamp()}] WARN db_employee: owner_mobile fallback failed — {fallback_err}")
+
+    return None

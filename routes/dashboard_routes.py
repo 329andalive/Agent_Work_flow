@@ -43,13 +43,14 @@ def _resolve_client_id():
     """
     Resolve client_id for the current request.
 
-    Dev mode (debug=True or FLASK_ENV=development):
+    Dev mode (FLASK_ENV explicitly set to "development" AND debug=True):
       Allow ?client_id=XXX query param, fall back to first active client.
-    Production:
+    Production (everything else):
       client_id comes from session['client_id'] (set at /login).
       Returns None if no session → caller redirects to /login.
     """
-    if current_app.debug or os.environ.get("FLASK_ENV") == "development":
+    # Dev fallback ONLY when both conditions are true — never on Railway
+    if current_app.debug and os.environ.get("FLASK_ENV") == "development":
         qp = request.args.get("client_id")
         if qp:
             return qp
@@ -62,12 +63,13 @@ def _resolve_client_id():
             sb = _get_supabase()
             result = sb.table("clients").select("id").eq("active", True).order("created_at").limit(1).execute()
             if result.data:
+                print(f"[{_ts()}] WARN dashboard_routes: Using dev fallback client_id={result.data[0]['id'][:8]}")
                 return result.data[0]["id"]
         except Exception as e:
             print(f"[{_ts()}] ERROR dashboard_routes: _resolve_client_id dev fallback — {e}")
         return None
 
-    # Production: session only
+    # Production: session only — never fall back to first client
     return session.get("client_id")
 
 
