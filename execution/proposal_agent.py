@@ -578,18 +578,24 @@ def run(client_phone: str, customer_phone: str, raw_input: str) -> str | None:
             print(f"[{timestamp()}] WARN proposal_agent: Could not fetch edit_token — {e}")
 
     if edit_url:
-        sms_body = f"{customer_name} estimate ready — ${amount:.0f}\nReview & approve: {edit_url}"
+        notify_body = f"{customer_name} estimate ready — ${amount:.0f}\nReview & approve: {edit_url}"
     else:
         print(f"[{timestamp()}] WARN proposal_agent: No edit URL — sending raw text fallback")
-        sms_body = f"New proposal for {customer_name}:\n\n{proposal_text}"
+        notify_body = f"New proposal for {customer_name}:\n\n{proposal_text}"
 
-    print(f"[{timestamp()}] INFO proposal_agent: Sending proposal link via SMS to {owner_mobile}")
-    sms_result = send_sms(to_number=owner_mobile, message_body=sms_body, from_number=client_phone)
-
-    if not sms_result["success"]:
-        print(f"[{timestamp()}] ERROR proposal_agent: SMS send failed — {sms_result['error']}")
+    print(f"[{timestamp()}] INFO proposal_agent: Sending proposal review link to {owner_mobile}")
+    from execution.notify import notify
+    notify_result = notify(
+        client_id=client_id,
+        to_phone=owner_mobile,
+        message=notify_body,
+        subject=f"Estimate ready for {customer_name} — ${amount:.0f}",
+        message_type="proposal",
+    )
+    if not notify_result["success"]:
+        print(f"[{timestamp()}] ERROR proposal_agent: Notify failed — {notify_result['error']}")
     else:
-        print(f"[{timestamp()}] INFO proposal_agent: SMS sent (telnyx_id={sms_result['message_id']})")
+        print(f"[{timestamp()}] INFO proposal_agent: Notified owner via {notify_result['channel']}")
 
     # ------------------------------------------------------------------
     # Step 9: Log the outbound message
@@ -600,10 +606,9 @@ def run(client_phone: str, customer_phone: str, raw_input: str) -> str | None:
             direction="outbound",
             from_number=client_phone,
             to_number=owner_mobile,
-            body=sms_body,
+            body=notify_body,
             agent_used="proposal_agent",
             job_id=job_id,
-            telnyx_message_id=sms_result.get("message_id"),
         )
     except Exception as e:
         print(f"[{timestamp()}] WARN proposal_agent: Failed to log outbound message — {e}")
@@ -644,7 +649,7 @@ def run(client_phone: str, customer_phone: str, raw_input: str) -> str | None:
             action_taken="proposal_generated",
             input_summary=raw_input[:120],
             output_summary=f"Proposal for {customer_name} — ${amount:.0f}",
-            sms_sent=sms_result.get("success", False),
+            sms_sent=notify_result.get("success", False),
         )
     except Exception:
         pass

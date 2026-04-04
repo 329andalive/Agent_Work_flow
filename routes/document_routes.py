@@ -607,7 +607,6 @@ def send_document():
         from execution.db_connection import get_client as get_supabase
         from execution.document_html import build_document_html
         from execution.document_storage import upload_document_html
-        from execution.sms_send import send_sms
 
         data = request.get_json(force=True, silent=True) or {}
         edit_token = data.get("edit_token", "")
@@ -669,10 +668,6 @@ def send_document():
 
         if doc_type == "proposal":
             total = float(document.get("amount_estimate") or 0)
-            customer_msg = (
-                f"{business_name} sent you an estimate for ${total:.2f}. "
-                f"View here: {html_url} — Reply YES to approve or NO to decline."
-            )
         else:
             total = float(document.get("amount_due") or 0)
 
@@ -722,24 +717,35 @@ def send_document():
             except Exception as e:
                 print(f"[{timestamp()}] WARN document_routes: Square/token setup failed — {e} — using storage URL")
 
-            customer_msg = (
-                f"{business_name} sent you an invoice for ${total:.2f}. "
-                f"View and pay here: {invoice_view_url}"
-            )
+        # Step 4b: Deliver to customer via notify router (email or SMS based on switches)
+        from execution.notify import notify_document, notify
 
-        sms_result = send_sms(
-            to_number=customer_phone,
-            message_body=customer_msg,
-            from_number=client_phone,
+        # Determine the view URL and pay URL
+        view_url = invoice_view_url if doc_type == "invoice" else html_url or f"{base_url}/doc/edit/{edit_token}?type={doc_type}"
+        pay_url = payment_link_url if doc_type == "invoice" else None
+        customer_email = customer.get("customer_email", "") if customer else ""
+
+        delivery_result = notify_document(
+            client_id=client_id,
+            to_phone=customer_phone,
+            doc_type=doc_type,
+            doc_id=doc_id,
+            amount=total,
+            customer_name=customer_name,
+            view_url=view_url,
+            pay_url=pay_url,
+            to_email=customer_email,
         )
 
-        if not sms_result["success"]:
-            print(f"[{timestamp()}] ERROR document_routes: Customer SMS failed — {sms_result['error']}")
+        if not delivery_result["success"]:
+            print(f"[{timestamp()}] ERROR document_routes: Customer delivery failed — {delivery_result['error']}")
+        else:
+            print(f"[{timestamp()}] INFO document_routes: Delivered to customer via {delivery_result['channel']}")
 
-        # Step 5: SMS owner confirmation
+        # Step 5: Notify owner (internal — uses notify router too)
         doc_label = "Estimate" if doc_type == "proposal" else "Invoice"
-        owner_msg = f"{doc_label} sent to {customer_name} for ${total:.2f}"
-        send_sms(to_number=owner_mobile, message_body=owner_msg, from_number=client_phone)
+        owner_msg = f"{doc_label} sent to {customer_name} for ${total:.2f} (via {delivery_result.get('channel', 'unknown')})"
+        notify(client_id=client_id, to_phone=owner_mobile, message=owner_msg, message_type="confirmation")
 
         # Log activity
         try:

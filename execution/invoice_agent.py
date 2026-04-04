@@ -927,27 +927,36 @@ def run(client_phone: str, raw_input: str, customer_phone: str | None = None) ->
         )
 
     # ------------------------------------------------------------------
-    # Step 10: Send combined SMS to the OWNER'S Telnyx number
+    # Step 10: Notify owner via the routing layer (email or SMS)
     # ------------------------------------------------------------------
-    print(f"[{timestamp()}] INFO invoice_agent: Sending combined invoice+cost SMS to {owner_mobile}")
-    sms_result = send_sms(to_number=owner_mobile, message_body=combined_sms, from_number=client_phone)
-
-    if not sms_result["success"]:
-        print(f"[{timestamp()}] ERROR invoice_agent: SMS send failed — {sms_result['error']}")
+    print(f"[{timestamp()}] INFO invoice_agent: Notifying owner at {owner_mobile}")
+    from execution.notify import notify
+    notify_result = notify(
+        client_id=client_id,
+        to_phone=owner_mobile,
+        message=combined_sms,
+        subject=f"Invoice ready for {customer_name} — ${square_total:.0f}",
+        message_type="invoice",
+    )
+    if not notify_result["success"]:
+        print(f"[{timestamp()}] ERROR invoice_agent: Notify failed — {notify_result['error']}")
     else:
-        print(f"[{timestamp()}] INFO invoice_agent: SMS sent (telnyx_id={sms_result['message_id']})")
+        print(f"[{timestamp()}] INFO invoice_agent: Owner notified via {notify_result['channel']}")
 
-    # Confirm back to the sender if they're not the owner
-    # (owner already gets the full invoice SMS above)
+    # Confirm back to the field tech if they're not the owner
     if (customer_phone and
             customer_phone != owner_mobile and
             customer_phone != client_phone):
         tech_confirm = (
-            f"Invoice sent — {customer_name} ${square_total:.2f}. "
-            f"Job marked complete."
+            f"Invoice created — {customer_name} ${square_total:.2f}. "
+            f"Job marked complete. Owner will review and send."
         )
-        send_sms(to_number=customer_phone, message_body=tech_confirm, from_number=client_phone)
-        print(f"[{timestamp()}] INFO invoice_agent: Tech confirmation sent to {customer_phone}")
+        notify(
+            client_id=client_id,
+            to_phone=customer_phone,
+            message=tech_confirm,
+            message_type="confirmation",
+        )
 
     # ------------------------------------------------------------------
     # Step 11: Log the outbound message
@@ -957,11 +966,10 @@ def run(client_phone: str, raw_input: str, customer_phone: str | None = None) ->
             client_id=client_id,
             direction="outbound",
             from_number=client_phone,
-            to_number=client_phone,
+            to_number=owner_mobile,
             body=combined_sms,
             agent_used="invoice_agent",
             job_id=job_id,
-            telnyx_message_id=sms_result.get("message_id"),
         )
     except Exception as e:
         print(f"[{timestamp()}] WARN invoice_agent: outbound log failed — {e}")
@@ -991,7 +999,7 @@ def run(client_phone: str, raw_input: str, customer_phone: str | None = None) ->
             action_taken="invoice_generated",
             input_summary=raw_input[:120],
             output_summary=f"Invoice for {customer_name} — ${final_amount:.2f}",
-            sms_sent=sms_result.get("success", False),
+            sms_sent=notify_result.get("success", False),
         )
     except Exception:
         pass
