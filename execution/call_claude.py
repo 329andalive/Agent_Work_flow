@@ -83,7 +83,7 @@ def call_claude(
         max_retries=MAX_RETRIES,
     )
 
-    print(f"[{timestamp()}] INFO call_claude: Calling {model_id} | max_tokens={max_tokens}")
+    print(f"[{timestamp()}] INFO call_claude: Calling {model_id} | max_tokens={max_tokens}, system_prompt={system_prompt}, user_prompt={user_prompt}")
 
     try:
         response = client.messages.create(
