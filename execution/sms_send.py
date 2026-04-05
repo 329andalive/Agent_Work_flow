@@ -72,6 +72,13 @@ def _log_sms(client_phone: str, recipient_phone: str, message_type: str,
         from execution.db_connection import get_client as get_supabase
         sb = get_supabase()
 
+        print("client_phone:", client_phone, type(client_phone))
+        print("recipient_phone:", recipient_phone)
+        print("message_type:", message_type)
+        print("body:", (body or "")[:4000])
+        print("telnyx_message_id:", telnyx_message_id)
+        print("status:", status)
+
         # Log to sms_message_log (analytics/audit)
         sb.table("sms_message_log").insert({
             "client_phone": client_phone,
