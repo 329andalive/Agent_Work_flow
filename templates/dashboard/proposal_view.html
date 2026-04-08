@@ -39,6 +39,14 @@
   .flash-success { background: #dcfce7; color: #166534; }
   .flash-info { background: #dbeafe; color: #1e40af; }
   .flash-error { background: #fee2e2; color: #991b1b; }
+  @media print {
+    .doc-actions, .doc-back, .flash-msg, #sidebar, #hamburger, #sidebar-overlay, .topbar { display: none !important; }
+    #main { margin-left: 0 !important; padding: 0 !important; }
+    body { background: #fff; }
+    .doc-card { box-shadow: none; border: 1px solid #ddd; }
+    .doc { max-width: 100%; }
+    @page { margin: 0.5in; }
+  }
 {% endblock %}
 
 {% block content %}
@@ -127,6 +135,7 @@
           Email Estimate
         </button>
         {% endif %}
+        <button class="doc-btn doc-btn-outline" onclick="window.print()">Print</button>
       </div>
     </div>
   </div>

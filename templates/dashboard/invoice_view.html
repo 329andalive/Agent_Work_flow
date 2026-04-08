@@ -40,6 +40,14 @@
   .flash-info { background: #dbeafe; color: #1e40af; }
   .flash-error { background: #fee2e2; color: #991b1b; }
   .paid-banner { background: #dcfce7; border: 2px solid #16a34a; border-radius: 8px; padding: 14px 20px; text-align: center; font-size: 15px; font-weight: 700; color: #166534; margin-top: 8px; }
+  @media print {
+    .doc-actions, .doc-back, .flash-msg, #sidebar, #hamburger, #sidebar-overlay, .topbar { display: none !important; }
+    #main { margin-left: 0 !important; padding: 0 !important; }
+    body { background: #fff; }
+    .doc-card { box-shadow: none; border: 1px solid #ddd; }
+    .doc { max-width: 100%; }
+    @page { margin: 0.5in; }
+  }
 {% endblock %}
 
 {% block content %}
@@ -140,6 +148,8 @@
           <button type="submit" class="doc-btn doc-btn-green">Mark Paid</button>
         </form>
         {% endif %}
+
+        <button class="doc-btn doc-btn-outline" onclick="window.print()">Print</button>
 
         {% set has_text = invoice.invoice_text or line_items %}
         <button class="doc-btn doc-btn-navy" id="btn-copy"

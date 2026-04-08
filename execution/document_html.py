@@ -144,6 +144,7 @@ def build_document_html(
         bottom_bar = f"""
         <div class="sticky-bar">
           <button id="save-btn" class="btn btn-primary" onclick="saveDocument()">Save Changes</button>
+          <button class="btn btn-outline" onclick="window.print()" style="margin-left:8px">Print</button>
         </div>"""
     else:
         edit_url = f"/doc/edit/{edit_token}?type={doc_type}"
@@ -151,6 +152,7 @@ def build_document_html(
         <div class="action-bar">
           <button class="btn btn-send" onclick="sendDocument()">Send to Customer</button>
           <a href="{edit_url}" class="btn btn-outline">Edit</a>
+          <button class="btn btn-outline" onclick="window.print()">Print</button>
         </div>"""
 
     return f"""<!DOCTYPE html>
@@ -456,6 +458,12 @@ def build_document_html(
       box-shadow: 0 4px 12px rgba(0,0,0,0.15);
     }}
     .toast.error {{ background: #dc2626; }}
+    @media print {{
+      .sticky-bar, .action-bar, .toast, button {{ display: none !important; }}
+      body {{ background: #fff; padding: 0; }}
+      .card {{ box-shadow: none; border: 1px solid #ddd; max-width: 100%; }}
+      @page {{ margin: 0.5in; }}
+    }}
   </style>
 </head>
 <body>

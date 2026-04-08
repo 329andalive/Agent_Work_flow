@@ -120,10 +120,22 @@
   .scope-btn:hover { opacity: 0.85; }
   .scope-btn--approve { background: #639922; color: #fff; }
   .scope-btn--edit { background: transparent; border: 1px solid var(--border); color: var(--text-secondary); }
+  .print-btn { font-family: 'DM Mono', monospace; font-size: 12px; font-weight: 500; padding: 8px 16px; border-radius: 6px; border: 1px solid var(--border); background: transparent; color: var(--text-secondary); cursor: pointer; transition: opacity 0.15s; }
+  .print-btn:hover { opacity: 0.85; }
+  @media print {
+    .back-link, .print-btn, #sidebar, #hamburger, #sidebar-overlay, .topbar, .scope-btn { display: none !important; }
+    #main { margin-left: 0 !important; padding: 0 !important; }
+    body { background: #fff; }
+    .card { box-shadow: none; border: 1px solid #ddd; }
+    @page { margin: 0.5in; }
+  }
 {% endblock %}
 
 {% block content %}
-<a href="/dashboard/" class="back-link">&larr; Control Board</a>
+<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+  <a href="/dashboard/" class="back-link" style="margin-bottom:0">&larr; Control Board</a>
+  <button class="print-btn" onclick="window.print()">Print</button>
+</div>
 
 {% if job.scope_hold %}
 <div class="scope-banner">
