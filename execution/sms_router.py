@@ -476,12 +476,72 @@ def handle_optin_command(client: dict, body: str, from_number: str, to_number: s
         print(f"[{timestamp()}] ERROR sms_router: handle_optin_command failed — {e}")
 
 
+def _handle_job_start(client, client_id, from_number, to_number, identifier, employee):
+    """
+    Handle JOB START [identifier] — manually start a specific job.
+    Identifier can be a number, customer name, or address.
+    """
+    from execution.dispatch_chain import get_todays_route, resolve_job, _start_job
+    from execution.sms_send import send_sms
+
+    client_phone = client.get("phone", "")
+    worker_id = employee.get("id")
+    worker_name = employee.get("name", "Worker")
+
+    route = get_todays_route(client_id, worker_id) if worker_id else []
+    if not route:
+        send_sms(to_number=from_number, message_body="No jobs dispatched for you today.", from_number=client_phone)
+        return
+
+    job = resolve_job(route, identifier)
+    if not job:
+        # Build a helpful list of available jobs
+        job_list = "\n".join(
+            f"{i+1}. {j.get('customer_name', 'Job')} — {(j.get('customer_address') or '')[:30]}"
+            for i, j in enumerate(route)
+        )
+        send_sms(
+            to_number=from_number,
+            message_body=f"Couldn't find that job. Your jobs today:\n{job_list}\n\nReply: JOB START [name or #]",
+            from_number=client_phone,
+        )
+        return
+
+    # Start the job
+    # Find open time_entry for current_job tracking
+    from execution.db_connection import get_client as get_supabase
+    sb = get_supabase()
+    te_id = None
+    try:
+        te = sb.table("time_entries").select("id").eq(
+            "employee_id", worker_id
+        ).eq("client_id", client_id).eq("status", "open").order(
+            "clock_in", desc=True
+        ).limit(1).execute()
+        if te.data:
+            te_id = te.data[0]["id"]
+    except Exception:
+        pass
+
+    started = _start_job(job["job_id"], te_id)
+    if started:
+        cust = job.get("customer_name", "")
+        addr = (job.get("customer_address") or "").split(",")[0]
+        msg = f"Started: {cust}"
+        if addr:
+            msg += f" — {addr}"
+        send_sms(to_number=from_number, message_body=msg, from_number=client_phone)
+        print(f"[{timestamp()}] INFO sms_router: JOB START → {job['job_id'][:8]} by {worker_name}")
+    else:
+        send_sms(to_number=from_number, message_body="Couldn't start that job. Try again.", from_number=client_phone)
+
+
 def _handle_worker_status_reply(
     client, client_id, from_number, to_number,
-    command, job_num, sms_data, employee,
+    command, job_num, sms_data, employee, job_identifier=None,
 ):
     """
-    Handle worker SMS replies: DONE/BACK/PARTS/NOSHOW/SCOPE [job#].
+    Handle worker SMS replies: DONE/STOP/BACK/PARTS/NOSHOW/SCOPE [job# or name or address].
     Looks up today's route assignments for this worker, applies the status
     update, replies with confirmation, and logs to agent_activity.
     """
@@ -537,7 +597,7 @@ def _handle_worker_status_reply(
 
         assigned_jobs = assignments.data
 
-        # Resolve which job to update (job_num is 1-indexed)
+        # Resolve which job to update — by number, name, address, or auto
         target_assignment = None
         if job_num is not None:
             idx = job_num - 1
@@ -551,16 +611,48 @@ def _handle_worker_status_reply(
                     message_type="route",
                 )
                 return
+        elif job_identifier:
+            # Fuzzy resolve by customer name or address
+            from execution.dispatch_chain import get_todays_route, resolve_job
+            route = get_todays_route(client_id, worker_id)
+            matched = resolve_job(route, job_identifier)
+            if matched:
+                # Find the matching assignment by job_id
+                for aj in assigned_jobs:
+                    if aj["job_id"] == matched["job_id"]:
+                        target_assignment = aj
+                        break
+            if not target_assignment:
+                job_list = "\n".join(
+                    f"{i+1}. {j.get('customer_name', 'Job')}"
+                    for i, j in enumerate(route)
+                ) if route else "No jobs found."
+                send_sms(
+                    to_number=from_number,
+                    message_body=f"Couldn't match \"{job_identifier}\". Your jobs:\n{job_list}\n\nReply {command} [name or #]",
+                    from_number=client_phone,
+                    message_type="route",
+                )
+                return
         elif len(assigned_jobs) == 1:
             target_assignment = assigned_jobs[0]
         else:
-            send_sms(
-                to_number=from_number,
-                message_body=f"Which job? You have {len(assigned_jobs)} today. Reply {command} 1-{len(assigned_jobs)}.",
-                from_number=client_phone,
-                message_type="route",
-            )
-            return
+            # Multiple jobs, no identifier — check if there's a current in-progress job
+            from execution.dispatch_chain import get_current_job
+            current = get_current_job(client_id, worker_id)
+            if current and command == "DONE":
+                for aj in assigned_jobs:
+                    if aj["job_id"] == current["job_id"]:
+                        target_assignment = aj
+                        break
+            if not target_assignment:
+                send_sms(
+                    to_number=from_number,
+                    message_body=f"Which job? You have {len(assigned_jobs)} today. Reply {command} [name or 1-{len(assigned_jobs)}].",
+                    from_number=client_phone,
+                    message_type="route",
+                )
+                return
 
         job_id = target_assignment["job_id"]
 
@@ -1118,14 +1210,51 @@ def route_message(sms_data: dict) -> str:
             dispatch("scheduling_agent", sms_data, employee=employee, role=role)
             return "scheduling_agent"
 
-        # DONE with a job number (e.g. "DONE 3") → worker status reply (handled in step 6.5 below)
-        # DONE without a number + long text → invoice_agent
+        # ── JOB START [identifier] — start a specific job by name/address/number ──
         import re as _re
-        _worker_reply_match = _re.match(r'^(DONE|BACK|PARTS|NOSHOW|SCOPE)\s*(\d+)?$', body.strip(), _re.IGNORECASE)
-        if not _worker_reply_match and (body_upper.startswith("DONE") or body_upper.startswith("COMPLETE")):
-            print(f"[{timestamp()}] INFO sms_router: Explicit trigger → invoice_agent")
-            dispatch("invoice_agent", sms_data, employee=employee, role=role)
-            return "invoice_agent"
+        _job_start_match = _re.match(r'^JOB\s+START\s+(.+)$', body.strip(), _re.IGNORECASE)
+        if _job_start_match and employee and employee.get("name") != "Unknown":
+            identifier = _job_start_match.group(1).strip()
+            _handle_job_start(client, client_id, from_number, to_number, identifier, employee)
+            return "job_start"
+
+        # ── DONE/STOP/COMPLETE [identifier] — end a job by name/address/number ──
+        # Expanded pattern: command + optional identifier (number, name, or address)
+        _worker_reply_match = _re.match(
+            r'^(DONE|STOP|COMPLETE|BACK|PARTS|NOSHOW|SCOPE)\s*(.+)?$',
+            body.strip(), _re.IGNORECASE
+        )
+        if _worker_reply_match:
+            cmd = _worker_reply_match.group(1).upper()
+            identifier = (_worker_reply_match.group(2) or "").strip()
+
+            # Map STOP and COMPLETE to DONE for status handling
+            if cmd in ("STOP", "COMPLETE"):
+                cmd = "DONE"
+
+            # If identifier is purely a long description (not a job reference),
+            # route to invoice_agent for natural language parsing
+            if cmd == "DONE" and identifier and not identifier[0].isdigit() and len(identifier) > 40:
+                print(f"[{timestamp()}] INFO sms_router: DONE + long text → invoice_agent")
+                dispatch("invoice_agent", sms_data, employee=employee, role=role)
+                return "invoice_agent"
+
+            # Known worker with a valid command → worker status reply
+            if employee and employee.get("name") != "Unknown":
+                _handle_worker_status_reply(
+                    client=client, client_id=client_id, from_number=from_number,
+                    to_number=to_number, command=cmd,
+                    job_num=int(identifier) if identifier.isdigit() else None,
+                    job_identifier=identifier if identifier and not identifier.isdigit() else None,
+                    sms_data=sms_data, employee=employee,
+                )
+                return "worker_status_reply"
+
+            # Unknown sender + DONE → invoice_agent (owner texting a completion)
+            if cmd == "DONE":
+                print(f"[{timestamp()}] INFO sms_router: Explicit trigger → invoice_agent")
+                dispatch("invoice_agent", sms_data, employee=employee, role=role)
+                return "invoice_agent"
 
         if body_upper.startswith("CLOCK IN") or body_upper.startswith("CLOCK OUT"):
             print(f"[{timestamp()}] INFO sms_router: Explicit trigger → clock_agent")
@@ -1162,20 +1291,8 @@ def route_message(sms_data: dict) -> str:
             dispatch(agent, sms_data, employee=employee, role=role)
             return agent
 
-        # ------------------------------------------------------------------
-        # Step 6.5: Worker SMS reply — DONE/BACK/PARTS/NOSHOW/SCOPE + job #
-        # Pattern: ^(DONE|BACK|PARTS|NOSHOW|SCOPE)\s*(\d+)?$
-        # Only fires for known workers with open route assignments today.
-        # ------------------------------------------------------------------
-        _wr_match = _re.match(r'^(DONE|BACK|PARTS|NOSHOW|SCOPE)\s*(\d+)?$', body.strip(), _re.IGNORECASE)
-        if _wr_match and employee and employee.get("name") != "Unknown":
-            _handle_worker_status_reply(
-                client=client, client_id=client_id, from_number=from_number,
-                to_number=to_number, command=_wr_match.group(1).upper(),
-                job_num=int(_wr_match.group(2)) if _wr_match.group(2) else None,
-                sms_data=sms_data, employee=employee,
-            )
-            return "worker_status_reply"
+        # (Step 6.5 removed — worker status replies now handled in Step 6 above
+        #  with expanded DONE/STOP/COMPLETE + name/address/number resolution)
 
         # ------------------------------------------------------------------
         # Step 8: Everything else → clarification_agent

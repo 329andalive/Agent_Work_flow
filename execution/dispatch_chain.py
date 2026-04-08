@@ -231,6 +231,73 @@ def _end_job(job_id: str) -> None:
         print(f"[{timestamp()}] ERROR dispatch_chain: _end_job failed — {e}")
 
 
+def resolve_job(route: list, identifier: str) -> dict | None:
+    """
+    Resolve a job from today's route by number, customer name, or address.
+
+    Accepts:
+      - "2" or "3"         → job by 1-indexed position
+      - "alice smith"       → fuzzy match on customer_name
+      - "123 main st"       → fuzzy match on customer_address
+      - "alice"             → partial name match
+      - "main st"           → partial address match
+
+    Returns:
+        Matching job dict from the route, or None if no match.
+    """
+    if not route or not identifier:
+        return None
+
+    identifier = identifier.strip()
+
+    # Try numeric first
+    if identifier.isdigit():
+        idx = int(identifier) - 1
+        if 0 <= idx < len(route):
+            return route[idx]
+        return None
+
+    # Normalize for fuzzy matching
+    query = identifier.lower().strip()
+
+    # Try exact customer name match
+    for job in route:
+        name = (job.get("customer_name") or "").lower()
+        if name and name == query:
+            return job
+
+    # Try partial customer name match (query is substring of name or vice versa)
+    for job in route:
+        name = (job.get("customer_name") or "").lower()
+        if name and (query in name or name in query):
+            return job
+
+    # Try last name match (most distinctive part)
+    query_parts = query.split()
+    if query_parts:
+        last_word = query_parts[-1]
+        for job in route:
+            name = (job.get("customer_name") or "").lower()
+            if name and last_word in name.split():
+                return job
+
+    # Try address match
+    for job in route:
+        addr = (job.get("customer_address") or "").lower()
+        if addr and (query in addr or addr in query):
+            return job
+
+    # Try partial address (street name or number)
+    for job in route:
+        addr = (job.get("customer_address") or "").lower()
+        if addr:
+            for part in query_parts:
+                if len(part) >= 3 and part in addr:
+                    return job
+
+    return None
+
+
 def build_route_sms(jobs: list, worker_name: str, business_name: str = "") -> str:
     """
     Build a formatted SMS message with today's dispatch route.
@@ -266,5 +333,6 @@ def build_route_sms(jobs: list, worker_name: str, business_name: str = "") -> st
         lines.append(line)
 
     lines.append("")
-    lines.append("Reply DONE after each job.")
+    lines.append("JOB START [name or #] to begin")
+    lines.append("DONE [name or #] when finished")
     return "\n".join(lines)

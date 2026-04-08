@@ -47,7 +47,8 @@ def test_build_route_sms_formats_correctly():
     assert "123 Main St" in msg
     assert "$325" in msg
     assert "2. Inspection" in msg
-    assert "Reply DONE" in msg
+    assert "JOB START" in msg
+    assert "DONE" in msg
 
 
 def test_build_route_sms_empty():
@@ -130,3 +131,57 @@ def test_advance_returns_none_when_route_complete():
 
     mock_end.assert_called_once_with(FAKE_JOB_1)
     assert result is None
+
+
+# ---------------------------------------------------------------------------
+# resolve_job — fuzzy matching by name, address, number
+# ---------------------------------------------------------------------------
+
+SAMPLE_ROUTE = [
+    {"job_id": FAKE_JOB_1, "sort_order": 0, "customer_name": "Alice Smith",
+     "customer_address": "123 Main St, Belfast", "job_type": "pump_out"},
+    {"job_id": FAKE_JOB_2, "sort_order": 1, "customer_name": "Bob Jones",
+     "customer_address": "45 Oak Ave, Brooks", "job_type": "inspection"},
+    {"job_id": FAKE_JOB_3, "sort_order": 2, "customer_name": "Carol Duggan",
+     "customer_address": "12 School St, Searsport", "job_type": "repair"},
+]
+
+
+def test_resolve_by_number():
+    from execution.dispatch_chain import resolve_job
+    assert resolve_job(SAMPLE_ROUTE, "1")["job_id"] == FAKE_JOB_1
+    assert resolve_job(SAMPLE_ROUTE, "2")["job_id"] == FAKE_JOB_2
+    assert resolve_job(SAMPLE_ROUTE, "3")["job_id"] == FAKE_JOB_3
+    assert resolve_job(SAMPLE_ROUTE, "4") is None
+
+
+def test_resolve_by_full_name():
+    from execution.dispatch_chain import resolve_job
+    assert resolve_job(SAMPLE_ROUTE, "Alice Smith")["job_id"] == FAKE_JOB_1
+    assert resolve_job(SAMPLE_ROUTE, "bob jones")["job_id"] == FAKE_JOB_2
+
+
+def test_resolve_by_partial_name():
+    from execution.dispatch_chain import resolve_job
+    assert resolve_job(SAMPLE_ROUTE, "alice")["job_id"] == FAKE_JOB_1
+    assert resolve_job(SAMPLE_ROUTE, "Carol")["job_id"] == FAKE_JOB_3
+
+
+def test_resolve_by_last_name():
+    from execution.dispatch_chain import resolve_job
+    assert resolve_job(SAMPLE_ROUTE, "duggan")["job_id"] == FAKE_JOB_3
+    assert resolve_job(SAMPLE_ROUTE, "Smith")["job_id"] == FAKE_JOB_1
+
+
+def test_resolve_by_address():
+    from execution.dispatch_chain import resolve_job
+    assert resolve_job(SAMPLE_ROUTE, "123 Main St")["job_id"] == FAKE_JOB_1
+    assert resolve_job(SAMPLE_ROUTE, "Oak Ave")["job_id"] == FAKE_JOB_2
+    assert resolve_job(SAMPLE_ROUTE, "School St")["job_id"] == FAKE_JOB_3
+
+
+def test_resolve_no_match():
+    from execution.dispatch_chain import resolve_job
+    assert resolve_job(SAMPLE_ROUTE, "zzz nobody") is None
+    assert resolve_job(SAMPLE_ROUTE, "") is None
+    assert resolve_job([], "alice") is None
