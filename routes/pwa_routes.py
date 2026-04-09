@@ -368,6 +368,118 @@ def pwa_new_job_create():
 
 
 # ---------------------------------------------------------------------------
+# GET /pwa/chat — AI chat screen
+# ---------------------------------------------------------------------------
+
+@pwa_bp.route("/chat", strict_slashes=False)
+@require_pwa_auth
+def pwa_chat_screen():
+    """The AI chat screen."""
+    return render_template("pwa/chat.html",
+        employee_name=session.get("employee_name", "Tech"),
+        employee_role=session.get("employee_role", ""),
+    )
+
+
+# ---------------------------------------------------------------------------
+# GET /pwa/api/chat/messages — Last 20 messages of current session
+# ---------------------------------------------------------------------------
+
+@pwa_bp.route("/api/chat/messages", methods=["GET"])
+@require_pwa_auth
+def pwa_chat_history():
+    from execution.pwa_chat_messages import get_active_session_id, get_history
+    employee_id = session.get("employee_id")
+    if not employee_id:
+        return jsonify({"success": False, "error": "No employee in session"}), 400
+
+    session_id = get_active_session_id(employee_id)
+    messages = get_history(session_id, employee_id, limit=20)
+
+    return jsonify({
+        "success": True,
+        "session_id": session_id,
+        "messages": messages,
+    })
+
+
+# ---------------------------------------------------------------------------
+# POST /pwa/api/chat/send — Send a user message, get assistant reply
+# ---------------------------------------------------------------------------
+
+@pwa_bp.route("/api/chat/send", methods=["POST"])
+@require_pwa_auth
+def pwa_chat_send():
+    from execution.pwa_chat_messages import (
+        get_active_session_id, get_history, save_message,
+    )
+    from execution.pwa_chat import chat as run_chat
+
+    client_id = session.get("client_id")
+    employee_id = session.get("employee_id")
+    employee_name = session.get("employee_name", "Tech")
+    employee_role = session.get("employee_role", "")
+    if not employee_id:
+        return jsonify({"success": False, "error": "No employee in session"}), 400
+
+    data = request.get_json(silent=True) or {}
+    user_message = (data.get("message") or "").strip()
+    if not user_message:
+        return jsonify({"success": False, "error": "Empty message"}), 400
+
+    # Resolve session id (current active or new)
+    session_id = get_active_session_id(employee_id)
+
+    # Save the user turn first so it shows up even if Claude fails
+    save_message(client_id, employee_id, session_id, "user", user_message)
+
+    # Load recent history (excluding the message we just saved)
+    history = get_history(session_id, employee_id, limit=20)
+
+    # Drop the message we just inserted from the history pass to the agent
+    # (it's already in the user_message arg)
+    if history and history[-1].get("content") == user_message and history[-1].get("role") == "user":
+        history = history[:-1]
+
+    # Resolve business name (cheap lookup, cached client-side could come later)
+    business_name = "Bolts11"
+    try:
+        from execution.db_connection import get_client as get_supabase
+        sb = get_supabase()
+        cr = sb.table("clients").select("business_name").eq("id", client_id).limit(1).execute()
+        if cr.data:
+            business_name = cr.data[0].get("business_name") or business_name
+    except Exception:
+        pass
+
+    # Run the chat agent
+    result = run_chat(
+        client_id=client_id,
+        employee_id=employee_id,
+        employee_name=employee_name,
+        employee_role=employee_role,
+        business_name=business_name,
+        user_message=user_message,
+        history=history,
+    )
+
+    # Save the assistant reply (whether success or fallback message)
+    if result.get("reply"):
+        save_message(
+            client_id, employee_id, session_id,
+            "assistant", result["reply"],
+            metadata={"model": result.get("model", "haiku")},
+        )
+
+    return jsonify({
+        "success": result.get("success", False),
+        "reply": result.get("reply", ""),
+        "session_id": session_id,
+        "error": result.get("error"),
+    })
+
+
+# ---------------------------------------------------------------------------
 # GET /pwa/logout — Clear PWA session
 # ---------------------------------------------------------------------------
 

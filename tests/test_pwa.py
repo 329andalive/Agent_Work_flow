@@ -811,3 +811,240 @@ def test_pwa_new_job_rejects_no_phone_no_match():
         )
     assert result["success"] is False
     assert "phone" in result["error"].lower()
+
+
+# ---------------------------------------------------------------------------
+# PWA chat screen + API + agent (step 6a)
+# ---------------------------------------------------------------------------
+
+def test_pwa_chat_screen_requires_auth(pwa_client):
+    """GET /pwa/chat without session should redirect to login."""
+    resp = pwa_client.get("/pwa/chat")
+    assert resp.status_code in (301, 302, 308)
+    assert "/pwa/login" in resp.headers.get("Location", "")
+
+
+def test_pwa_chat_screen_renders_when_authed(pwa_client):
+    """GET /pwa/chat with session should render the chat screen."""
+    _set_pwa_session(pwa_client)
+    resp = pwa_client.get("/pwa/chat")
+    assert resp.status_code == 200
+    body = resp.data.decode()
+    assert "Jesse" in body
+    assert "Message" in body  # placeholder text in textarea
+
+
+def test_pwa_chat_history_returns_messages(pwa_client):
+    """GET /pwa/api/chat/messages should return ordered history."""
+    _set_pwa_session(pwa_client)
+    import execution.pwa_chat_messages  # noqa: F401
+    from unittest.mock import patch
+    fake_history = [
+        {"id": "m1", "role": "user", "content": "hi", "metadata": {}, "created_at": "2026-04-09T08:00:00+00:00"},
+        {"id": "m2", "role": "assistant", "content": "hey jesse", "metadata": {}, "created_at": "2026-04-09T08:00:01+00:00"},
+    ]
+    with patch("execution.pwa_chat_messages.get_active_session_id", return_value="sess-1"), \
+         patch("execution.pwa_chat_messages.get_history", return_value=fake_history):
+        resp = pwa_client.get("/pwa/api/chat/messages")
+
+    import json as _json
+    assert resp.status_code == 200
+    data = _json.loads(resp.data)
+    assert data["success"] is True
+    assert data["session_id"] == "sess-1"
+    assert len(data["messages"]) == 2
+    assert data["messages"][0]["role"] == "user"
+
+
+def test_pwa_chat_send_saves_user_and_assistant(pwa_client):
+    """POST /pwa/api/chat/send should save user msg, call agent, save reply."""
+    _set_pwa_session(pwa_client)
+    import execution.pwa_chat_messages  # noqa: F401
+    import execution.pwa_chat  # noqa: F401
+    from unittest.mock import patch, MagicMock
+    import json as _json
+
+    fake_chat_result = {
+        "success": True,
+        "reply": "Got it, jesse — three jobs lined up for you.",
+        "model": "haiku",
+        "system_prompt_chars": 850,
+        "error": None,
+    }
+
+    # Mock supabase for the business_name lookup
+    mock_sb = MagicMock()
+    mock_table = MagicMock()
+    for m in ("select", "eq", "limit", "execute"):
+        getattr(mock_table, m).return_value = mock_table
+    mock_table.execute.return_value = MagicMock(data=[{"business_name": "Test Trades Co"}])
+    mock_sb.table.return_value = mock_table
+
+    with patch("execution.pwa_chat_messages.get_active_session_id", return_value="sess-1"), \
+         patch("execution.pwa_chat_messages.get_history", return_value=[]), \
+         patch("execution.pwa_chat_messages.save_message", return_value="msg-id") as mock_save, \
+         patch("execution.pwa_chat.chat", return_value=fake_chat_result), \
+         patch("execution.db_connection.get_client", return_value=mock_sb):
+        resp = pwa_client.post(
+            "/pwa/api/chat/send",
+            data=_json.dumps({"message": "what jobs do i have today"}),
+            content_type="application/json",
+        )
+
+    assert resp.status_code == 200
+    data = _json.loads(resp.data)
+    assert data["success"] is True
+    assert "three jobs" in data["reply"]
+    assert data["session_id"] == "sess-1"
+
+    # User msg + assistant reply both saved
+    assert mock_save.call_count == 2
+    calls = [c.args for c in mock_save.call_args_list]
+    roles = [c[3] for c in calls]
+    assert "user" in roles
+    assert "assistant" in roles
+
+
+def test_pwa_chat_send_empty_message_returns_400(pwa_client):
+    """POST with empty message should return 400."""
+    _set_pwa_session(pwa_client)
+    import json as _json
+    resp = pwa_client.post(
+        "/pwa/api/chat/send",
+        data=_json.dumps({"message": "   "}),
+        content_type="application/json",
+    )
+    assert resp.status_code == 400
+
+
+def test_pwa_chat_endpoints_require_auth(pwa_client):
+    """Both chat API endpoints should require auth."""
+    for path, method in [
+        ("/pwa/api/chat/messages", "GET"),
+        ("/pwa/api/chat/send", "POST"),
+    ]:
+        resp = pwa_client.open(path, method=method)
+        assert resp.status_code in (301, 302, 308, 400, 401, 403)
+
+
+def test_pwa_shell_links_to_chat_screen(pwa_client):
+    """Shell should link to /pwa/chat now that step 6a is live."""
+    _set_pwa_session(pwa_client)
+    resp = pwa_client.get("/pwa/")
+    body = resp.data.decode()
+    assert "/pwa/chat" in body
+
+
+# ---------------------------------------------------------------------------
+# pwa_chat module unit tests (no Flask)
+# ---------------------------------------------------------------------------
+
+def test_pwa_chat_system_prompt_under_token_budget():
+    """The system prompt MUST stay under the 500-token (~2000-char) target."""
+    from execution.pwa_chat import (
+        _build_system_prompt, _build_route_summary, SYSTEM_PROMPT_CHAR_TARGET,
+    )
+
+    # Realistic 5-job route — typical day
+    route = [
+        {"customer_name": "Alice Smith", "job_type": "pump_out", "estimated_amount": 325, "job_start": "x", "job_end": "y"},
+        {"customer_name": "Bob Jones", "job_type": "inspection", "estimated_amount": 250, "job_start": "x", "job_end": None},
+        {"customer_name": "Carol Duggan", "job_type": "repair", "estimated_amount": 500, "job_start": None, "job_end": None},
+        {"customer_name": "Dan Reynolds", "job_type": "cleanout", "estimated_amount": 200, "job_start": None, "job_end": None},
+        {"customer_name": "Eve Anderson", "job_type": "install", "estimated_amount": 1200, "job_start": None, "job_end": None},
+    ]
+    summary = _build_route_summary(route)
+    prompt = _build_system_prompt("Jesse", "field_tech", "B&B Septic", summary)
+
+    char_count = len(prompt)
+    print(f"System prompt: {char_count} chars (~{char_count // 4} tokens)")
+    assert char_count < SYSTEM_PROMPT_CHAR_TARGET, (
+        f"System prompt is {char_count} chars (~{char_count // 4} tokens), "
+        f"exceeds {SYSTEM_PROMPT_CHAR_TARGET}-char budget"
+    )
+
+
+def test_pwa_chat_route_summary_empty_route():
+    """Empty route should produce a brief summary, not an error."""
+    from execution.pwa_chat import _build_route_summary
+    summary = _build_route_summary([])
+    assert "empty" in summary.lower() or "no jobs" in summary.lower()
+    assert len(summary) < 200  # tight even for empty case
+
+
+def test_pwa_chat_route_summary_marks_current_and_done():
+    """Route summary should mark done (✓), current (→), and pending jobs."""
+    from execution.pwa_chat import _build_route_summary
+    route = [
+        {"customer_name": "Alice", "job_type": "pump_out", "job_start": "x", "job_end": "y"},
+        {"customer_name": "Bob", "job_type": "inspection", "job_start": "x", "job_end": None},
+        {"customer_name": "Carol", "job_type": "repair", "job_start": None, "job_end": None},
+    ]
+    summary = _build_route_summary(route)
+    assert "✓" in summary  # done marker on Alice
+    assert "→" in summary  # current marker on Bob
+    assert "current" in summary.lower()
+    assert "Alice" in summary
+    assert "Bob" in summary
+    assert "Carol" in summary
+
+
+def test_pwa_chat_returns_dict_with_reply_key():
+    """The chat() entry point must return a dict (not a string) so 6b can add 'action'."""
+    from unittest.mock import patch
+    with patch("execution.pwa_chat.call_claude", return_value="Sure thing, Jesse."), \
+         patch("execution.pwa_chat._route_summary_for_employee", return_value="Today's route: empty."):
+        from execution.pwa_chat import chat
+        result = chat(
+            client_id="c1", employee_id="e1", employee_name="Jesse",
+            employee_role="field_tech", business_name="Test",
+            user_message="hi", history=[],
+        )
+    assert isinstance(result, dict)
+    assert "reply" in result
+    assert "success" in result
+
+
+def test_pwa_chat_strips_assistant_prefix():
+    """If Claude echoes 'Assistant: ...' we strip the prefix."""
+    from unittest.mock import patch
+    with patch("execution.pwa_chat.call_claude", return_value="Assistant: Hi Jesse, how can I help?"), \
+         patch("execution.pwa_chat._route_summary_for_employee", return_value="Today: empty."):
+        from execution.pwa_chat import chat
+        result = chat(
+            client_id="c1", employee_id="e1", employee_name="Jesse",
+            employee_role="field_tech", business_name="Test",
+            user_message="hi", history=[],
+        )
+    assert result["success"] is True
+    assert not result["reply"].lower().startswith("assistant:")
+    assert "Hi Jesse" in result["reply"]
+
+
+def test_pwa_chat_empty_response_returns_failure():
+    """Empty Claude response should return success=False with friendly message."""
+    from unittest.mock import patch
+    with patch("execution.pwa_chat.call_claude", return_value=""), \
+         patch("execution.pwa_chat._route_summary_for_employee", return_value="Today: empty."):
+        from execution.pwa_chat import chat
+        result = chat(
+            client_id="c1", employee_id="e1", employee_name="Jesse",
+            employee_role="field_tech", business_name="Test",
+            user_message="hi", history=[],
+        )
+    assert result["success"] is False
+    assert result["reply"]  # still has a fallback message for the UI
+
+
+def test_pwa_chat_messages_save_rejects_invalid_role():
+    """save_message should refuse roles other than user/assistant."""
+    from execution.pwa_chat_messages import save_message
+    result = save_message("c1", "e1", "s1", "system", "should fail")
+    assert result is None
+
+
+def test_pwa_chat_messages_save_rejects_empty_content():
+    """save_message should refuse empty/whitespace content."""
+    from execution.pwa_chat_messages import save_message
+    result = save_message("c1", "e1", "s1", "user", "   ")
+    assert result is None
