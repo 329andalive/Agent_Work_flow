@@ -319,6 +319,55 @@ def pwa_job_status(job_id):
 
 
 # ---------------------------------------------------------------------------
+# GET /pwa/job — New job input screen
+# ---------------------------------------------------------------------------
+
+@pwa_bp.route("/job", strict_slashes=False)
+@require_pwa_auth
+def pwa_new_job():
+    """The new-job input screen — tech types a job description + customer details."""
+    return render_template("pwa/new_job.html",
+        employee_name=session.get("employee_name", "Tech"),
+        employee_role=session.get("employee_role", ""),
+    )
+
+
+# ---------------------------------------------------------------------------
+# POST /pwa/api/job/new — Create a proposal from PWA input
+# ---------------------------------------------------------------------------
+
+@pwa_bp.route("/api/job/new", methods=["POST"])
+@require_pwa_auth
+def pwa_new_job_create():
+    from execution.pwa_new_job import create_proposal_from_pwa
+    client_id = session.get("client_id")
+    employee_id = session.get("employee_id")
+    if not employee_id:
+        return jsonify({"success": False, "error": "No employee in session"}), 400
+
+    data = request.get_json(silent=True) or {}
+    raw_input = (data.get("description") or "").strip()
+    customer_name = (data.get("customer_name") or "").strip()
+    customer_phone = (data.get("customer_phone") or "").strip()
+    customer_address = (data.get("customer_address") or "").strip()
+    customer_email = (data.get("customer_email") or "").strip()
+
+    if not raw_input:
+        return jsonify({"success": False, "error": "Job description is required"}), 400
+
+    result = create_proposal_from_pwa(
+        client_id=client_id,
+        employee_id=employee_id,
+        raw_input=raw_input,
+        customer_name=customer_name,
+        customer_phone=customer_phone,
+        customer_address=customer_address,
+        customer_email=customer_email,
+    )
+    return jsonify(result), (200 if result.get("success") else 400)
+
+
+# ---------------------------------------------------------------------------
 # GET /pwa/logout — Clear PWA session
 # ---------------------------------------------------------------------------
 

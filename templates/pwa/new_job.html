@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>New Job — Bolts11</title>
+  <link rel="manifest" href="/static/manifest.json">
+  <meta name="theme-color" content="#132038">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="apple-touch-icon" href="/static/icon-192.png">
+
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    html,body{height:100%;-webkit-tap-highlight-color:transparent}
+    body{
+      font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+      background:#132038;color:#fff;
+      min-height:100vh;display:flex;flex-direction:column;
+      padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+    }
+    .topbar{
+      display:flex;align-items:center;justify-content:space-between;
+      padding:14px 18px;background:rgba(0,0,0,.2);
+      position:sticky;top:0;z-index:5;
+    }
+    .topbar a{color:rgba(255,255,255,.7);text-decoration:none;font-size:14px;padding:6px 10px}
+    .topbar .who{font-size:13px;color:rgba(255,255,255,.6)}
+    .topbar .who strong{color:#fff;font-weight:600}
+
+    main{flex:1;padding:24px 20px 100px}
+
+    h1{font-size:24px;font-weight:800;margin-bottom:6px;letter-spacing:-.01em}
+    .sub{font-size:14px;color:rgba(255,255,255,.6);margin-bottom:24px;line-height:1.5}
+
+    .field{margin-bottom:16px}
+    label{
+      display:block;font-size:11px;font-weight:600;
+      text-transform:uppercase;letter-spacing:.06em;
+      color:rgba(255,255,255,.5);margin-bottom:6px;
+    }
+    label .req{color:#f59e0b;margin-left:4px}
+    input,textarea{
+      width:100%;font-size:16px;padding:14px 16px;min-height:48px;
+      background:rgba(255,255,255,.06);
+      border:1.5px solid rgba(255,255,255,.12);
+      border-radius:10px;
+      color:#fff;outline:none;
+      font-family:inherit;
+      -webkit-appearance:none;
+    }
+    input:focus,textarea:focus{
+      border-color:#f59e0b;
+      background:rgba(255,255,255,.10);
+    }
+    input::placeholder,textarea::placeholder{color:rgba(255,255,255,.35)}
+    textarea{min-height:120px;resize:vertical;line-height:1.5}
+
+    .row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+    @media(max-width:380px){.row{grid-template-columns:1fr}}
+
+    .hint{
+      font-size:12px;color:rgba(255,255,255,.4);
+      margin-top:6px;line-height:1.4;
+    }
+    .hint code{
+      background:rgba(255,255,255,.08);padding:1px 5px;border-radius:3px;
+      color:#f59e0b;font-size:11px;
+    }
+
+    .submit-btn{
+      display:block;width:100%;
+      padding:18px;margin-top:20px;
+      font-size:16px;font-weight:800;
+      background:#f59e0b;color:#132038;
+      border:none;border-radius:12px;
+      cursor:pointer;min-height:56px;
+      transition:opacity .15s,transform .1s;
+      font-family:inherit;
+      letter-spacing:.02em;
+      text-transform:uppercase;
+    }
+    .submit-btn:active{transform:scale(0.98)}
+    .submit-btn:disabled{opacity:.5;cursor:not-allowed}
+
+    .section-divider{
+      font-size:11px;text-transform:uppercase;letter-spacing:.06em;
+      color:rgba(255,255,255,.4);font-weight:600;
+      margin:24px 0 12px;
+      display:flex;align-items:center;gap:10px;
+    }
+    .section-divider::after{
+      content:"";flex:1;height:1px;background:rgba(255,255,255,.1);
+    }
+
+    .toast{
+      position:fixed;left:20px;right:20px;bottom:20px;
+      background:#1f2937;color:#fff;
+      padding:14px 18px;border-radius:10px;
+      font-size:14px;text-align:center;
+      transform:translateY(120%);transition:transform .3s;
+      z-index:100;line-height:1.4;
+    }
+    .toast.show{transform:translateY(0)}
+    .toast.success{background:#15803d}
+    .toast.error{background:#991b1b}
+
+    /* Success card */
+    .success-card{
+      background:rgba(34,197,94,.1);
+      border:1px solid rgba(34,197,94,.3);
+      border-radius:14px;
+      padding:20px;
+      margin-top:24px;
+      text-align:center;
+    }
+    .success-card .check{font-size:48px;line-height:1;margin-bottom:8px}
+    .success-card h2{font-size:18px;font-weight:700;margin-bottom:6px}
+    .success-card .amount{
+      font-size:32px;font-weight:800;color:#86efac;margin:8px 0;
+      font-variant-numeric:tabular-nums;
+    }
+    .success-card .review-btn{
+      display:inline-block;padding:14px 24px;margin-top:12px;
+      background:#f59e0b;color:#132038;
+      border-radius:10px;text-decoration:none;
+      font-weight:700;font-size:14px;
+    }
+    .success-card .new-link{
+      display:block;margin-top:12px;font-size:13px;
+      color:rgba(255,255,255,.6);text-decoration:none;
+    }
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <a href="/pwa/">&larr; Home</a>
+    <div class="who">Hi, <strong>{{ employee_name }}</strong></div>
+  </div>
+
+  <main id="main">
+    <h1>New Job</h1>
+    <div class="sub">Type the job in plain language. The AI builds a draft estimate for the owner to review.</div>
+
+    <form id="job-form" onsubmit="return false">
+      <div class="field">
+        <label for="description">Job Description <span class="req">*</span></label>
+        <textarea id="description" placeholder="pump out 1000 gal tank for Alice Smith $325" autofocus></textarea>
+        <div class="hint">
+          Examples:<br>
+          <code>est jeremy holt replace inlet pipe at tank 5 feet $500</code><br>
+          <code>carol duggan 12 school st pump out 300</code>
+        </div>
+      </div>
+
+      <div class="section-divider">Customer Details (optional)</div>
+
+      <div class="field">
+        <label for="customer_name">Name</label>
+        <input type="text" id="customer_name" placeholder="If not in the description above">
+      </div>
+
+      <div class="field">
+        <label for="customer_phone">Phone</label>
+        <input type="tel" id="customer_phone" placeholder="(207) 555-0100" autocomplete="off">
+        <div class="hint">Required for new customers (HARD RULE #1)</div>
+      </div>
+
+      <div class="field">
+        <label for="customer_address">Address</label>
+        <input type="text" id="customer_address" placeholder="123 Main St">
+      </div>
+
+      <div class="field">
+        <label for="customer_email">Email</label>
+        <input type="email" id="customer_email" placeholder="alice@example.com" autocomplete="off">
+      </div>
+
+      <button type="submit" class="submit-btn" id="submit-btn">Create Estimate</button>
+    </form>
+
+    <div id="success-area"></div>
+  </main>
+
+  <div class="toast" id="toast"></div>
+
+  <script>
+    var phoneInput = document.getElementById('customer_phone');
+    phoneInput.addEventListener('input', function(e){
+      var d = e.target.value.replace(/\D/g,'').replace(/^1/,'').slice(0,10);
+      if(d.length <= 3)      e.target.value = d.length ? '(' + d : '';
+      else if(d.length <= 6) e.target.value = '(' + d.slice(0,3) + ') ' + d.slice(3);
+      else                   e.target.value = '(' + d.slice(0,3) + ') ' + d.slice(3,6) + '-' + d.slice(6);
+    });
+
+    document.getElementById('job-form').addEventListener('submit', async function(){
+      var btn = document.getElementById('submit-btn');
+      var description = document.getElementById('description').value.trim();
+
+      if(!description){
+        showToast('Job description is required', 'error');
+        return;
+      }
+
+      btn.disabled = true;
+      btn.textContent = 'AI is drafting...';
+
+      var payload = {
+        description: description,
+        customer_name: document.getElementById('customer_name').value.trim(),
+        customer_phone: document.getElementById('customer_phone').value.trim(),
+        customer_address: document.getElementById('customer_address').value.trim(),
+        customer_email: document.getElementById('customer_email').value.trim(),
+      };
+
+      try{
+        var r = await fetch('/pwa/api/job/new', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify(payload),
+        });
+        if(r.status === 401 || r.status === 403){ window.location.href = '/pwa/login'; return }
+        var d = await r.json();
+
+        if(d.success){
+          showSuccess(d);
+        } else {
+          showToast(d.error || 'Could not create job', 'error');
+          btn.disabled = false;
+          btn.textContent = 'Create Estimate';
+        }
+      }catch(e){
+        showToast('Connection error — try again', 'error');
+        btn.disabled = false;
+        btn.textContent = 'Create Estimate';
+      }
+    });
+
+    function showSuccess(d){
+      // Hide the form, show the success card
+      document.getElementById('job-form').style.display = 'none';
+
+      var html = '<div class="success-card">';
+      html += '<div class="check">&#10003;</div>';
+      html += '<h2>Estimate drafted</h2>';
+      if(d.customer_name){
+        html += '<div style="font-size:14px;color:rgba(255,255,255,.7)">' + esc(d.customer_name) + '</div>';
+      }
+      if(d.amount){
+        html += '<div class="amount">$' + d.amount.toFixed(0) + '</div>';
+      }
+      if(d.customer_created){
+        html += '<div style="font-size:11px;color:#86efac;text-transform:uppercase;letter-spacing:.06em;font-weight:600;margin-top:4px">New customer added</div>';
+      }
+      if(d.review_url){
+        html += '<a href="' + d.review_url + '" class="review-btn">Open review &rarr;</a>';
+      }
+      html += '<a href="/pwa/job" class="new-link">+ Start another job</a>';
+      html += '</div>';
+
+      document.getElementById('success-area').innerHTML = html;
+      window.scrollTo({top: 0, behavior: 'smooth'});
+    }
+
+    function showToast(msg, kind){
+      var t = document.getElementById('toast');
+      t.textContent = msg;
+      t.className = 'toast show ' + (kind || '');
+      setTimeout(function(){ t.className = 'toast'; }, 4000);
+    }
+
+    function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+  </script>
+</body>
+</html>

@@ -610,3 +610,204 @@ def test_pwa_jobs_unknown_command_rejected():
     result = set_status("client-1", "emp-1", "j1", "INVALID")
     assert result["success"] is False
     assert "unknown" in result["error"].lower()
+
+
+# ---------------------------------------------------------------------------
+# PWA new job screen + API (step 5)
+# ---------------------------------------------------------------------------
+
+def test_pwa_new_job_screen_requires_auth(pwa_client):
+    """GET /pwa/job without session should redirect to login."""
+    resp = pwa_client.get("/pwa/job")
+    assert resp.status_code in (301, 302, 308)
+    assert "/pwa/login" in resp.headers.get("Location", "")
+
+
+def test_pwa_new_job_screen_renders_when_authed(pwa_client):
+    """GET /pwa/job with session should render the new-job screen."""
+    _set_pwa_session(pwa_client)
+    resp = pwa_client.get("/pwa/job")
+    assert resp.status_code == 200
+    body = resp.data.decode()
+    assert "New Job" in body
+    assert "Job Description" in body
+    assert "Jesse" in body
+
+
+def test_pwa_new_job_create_success(pwa_client):
+    """POST /pwa/api/job/new should return success with review URL."""
+    _set_pwa_session(pwa_client)
+    # Import the module first so unittest.mock can find the attribute
+    import execution.pwa_new_job  # noqa: F401
+    from unittest.mock import patch
+    import json as _json
+
+    fake_result = {
+        "success": True,
+        "proposal_id": "prop-1",
+        "review_url": "https://app.bolts11.com/doc/review/abc12345?type=proposal",
+        "amount": 325.0,
+        "customer_id": "cust-1",
+        "customer_name": "Alice Smith",
+        "customer_created": True,
+        "error": None,
+    }
+    with patch("execution.pwa_new_job.create_proposal_from_pwa", return_value=fake_result) as mock_create:
+        resp = pwa_client.post(
+            "/pwa/api/job/new",
+            data=_json.dumps({
+                "description": "pump out 1000 gal tank",
+                "customer_name": "Alice Smith",
+                "customer_phone": "(207) 555-1234",
+                "customer_address": "123 Main St",
+            }),
+            content_type="application/json",
+        )
+
+    assert resp.status_code == 200
+    data = _json.loads(resp.data)
+    assert data["success"] is True
+    assert data["proposal_id"] == "prop-1"
+    assert data["amount"] == 325.0
+    assert data["customer_created"] is True
+    assert "review_url" in data
+
+    mock_create.assert_called_once()
+    call_kwargs = mock_create.call_args.kwargs
+    assert call_kwargs["client_id"] == "client-1"
+    assert call_kwargs["employee_id"] == "emp-1"
+    assert call_kwargs["raw_input"] == "pump out 1000 gal tank"
+    assert call_kwargs["customer_name"] == "Alice Smith"
+
+
+def test_pwa_new_job_create_no_description_returns_400(pwa_client):
+    """POST without description should return 400."""
+    _set_pwa_session(pwa_client)
+    import json as _json
+    resp = pwa_client.post(
+        "/pwa/api/job/new",
+        data=_json.dumps({}),
+        content_type="application/json",
+    )
+    assert resp.status_code == 400
+    data = _json.loads(resp.data)
+    assert "description" in data["error"].lower()
+
+
+def test_pwa_new_job_failure_returns_400(pwa_client):
+    """When create_proposal_from_pwa returns failure, the route should return 400."""
+    _set_pwa_session(pwa_client)
+    import execution.pwa_new_job  # noqa: F401
+    from unittest.mock import patch
+    import json as _json
+
+    with patch("execution.pwa_new_job.create_proposal_from_pwa", return_value={
+        "success": False,
+        "error": "Customer phone required for new customers",
+    }):
+        resp = pwa_client.post(
+            "/pwa/api/job/new",
+            data=_json.dumps({"description": "test job"}),
+            content_type="application/json",
+        )
+
+    assert resp.status_code == 400
+    data = _json.loads(resp.data)
+    assert data["success"] is False
+    assert "phone" in data["error"].lower()
+
+
+def test_pwa_new_job_endpoint_requires_auth(pwa_client):
+    """POST /pwa/api/job/new without session should redirect or block."""
+    import json as _json
+    resp = pwa_client.post(
+        "/pwa/api/job/new",
+        data=_json.dumps({"description": "test"}),
+        content_type="application/json",
+    )
+    assert resp.status_code in (301, 302, 308, 400, 401, 403)
+
+
+def test_pwa_shell_links_to_new_job_screen(pwa_client):
+    """Shell should link to /pwa/job now that step 5 is live."""
+    _set_pwa_session(pwa_client)
+    resp = pwa_client.get("/pwa/")
+    body = resp.data.decode()
+    assert "/pwa/job" in body
+
+
+# ---------------------------------------------------------------------------
+# pwa_new_job module unit tests
+# ---------------------------------------------------------------------------
+
+def test_pwa_new_job_normalize_phone():
+    """E.164 normalization for various input formats."""
+    from execution.pwa_new_job import _normalize_phone
+    assert _normalize_phone("(207) 555-1234") == "+12075551234"
+    assert _normalize_phone("207-555-1234") == "+12075551234"
+    assert _normalize_phone("12075551234") == "+12075551234"
+    assert _normalize_phone("+12075551234") == "+12075551234"
+    assert _normalize_phone("") == ""
+    assert _normalize_phone(None) == ""
+
+
+def test_pwa_new_job_resolve_existing_customer_by_phone():
+    """If phone matches existing customer, should return that record."""
+    from unittest.mock import patch
+    fake_customer = {"id": "cust-1", "customer_name": "Alice", "customer_phone": "+12075551234"}
+    with patch("execution.pwa_new_job.get_customer_by_phone", return_value=fake_customer):
+        from execution.pwa_new_job import _resolve_or_create_customer
+        result = _resolve_or_create_customer(
+            client_id="client-1",
+            name="Alice",
+            phone="2075551234",
+            address="",
+            email="",
+        )
+    assert result["success"] is True
+    assert result["customer_id"] == "cust-1"
+    assert result["created"] is False
+    assert result["customer_phone"] == "+12075551234"
+
+
+def test_pwa_new_job_creates_new_customer_with_phone():
+    """If phone doesn't match existing, should create a new customer."""
+    from unittest.mock import patch
+    with patch("execution.pwa_new_job.get_customer_by_phone", return_value=None), \
+         patch("execution.pwa_new_job.create_customer", return_value="new-cust-id"):
+        from execution.pwa_new_job import _resolve_or_create_customer
+        result = _resolve_or_create_customer(
+            client_id="client-1",
+            name="Bob Jones",
+            phone="2075559999",
+            address="45 Oak Ave",
+            email="",
+        )
+    assert result["success"] is True
+    assert result["customer_id"] == "new-cust-id"
+    assert result["created"] is True
+
+
+def test_pwa_new_job_rejects_no_phone_no_match():
+    """No phone and no name match should fail with HARD RULE #1 message."""
+    from unittest.mock import patch, MagicMock
+    mock_sb = MagicMock()
+    mock_table = MagicMock()
+    mock_table.select.return_value = mock_table
+    mock_table.eq.return_value = mock_table
+    mock_table.ilike.return_value = mock_table
+    mock_table.limit.return_value = mock_table
+    mock_table.execute.return_value = MagicMock(data=[])
+    mock_sb.table.return_value = mock_table
+
+    with patch("execution.pwa_new_job.get_supabase", return_value=mock_sb):
+        from execution.pwa_new_job import _resolve_or_create_customer
+        result = _resolve_or_create_customer(
+            client_id="client-1",
+            name="Unknown Person",
+            phone="",
+            address="",
+            email="",
+        )
+    assert result["success"] is False
+    assert "phone" in result["error"].lower()
