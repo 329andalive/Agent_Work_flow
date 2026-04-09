@@ -1,16 +1,14 @@
 """
-test_sms_routing.py — Coverage for the post-PWA-pivot sms_router.
+test_sms_routing.py — Coverage for the inbound-only sms_router.
 
-The old 8-step conversational router is gone. The new router has
-exactly three paths:
+Telnyx outbound is blocked at the carrier. The router has exactly two
+behaviors:
 
-    1. STOP / YES / START / UNSTOP — TCPA opt-in/opt-out (always first)
-    2. CLOCK IN / CLOCK OUT — delegate to clock_agent (echoes back)
-    3. Everything else — one-line PWA redirect (employees only)
+    1. STOP / YES / START / UNSTOP — TCPA opt-in/opt-out (DB only)
+    2. Everything else — log and ignore (PWA owns it)
 
-Customer-facing SMS is forbidden by Hard Rule #2 — non-employee
-senders that aren't opt commands get logged and ignored, never replied
-to.
+The router must NEVER call send_sms — even via clock_agent. There's a
+regression test below that asserts the module does not import send_sms.
 """
 
 import sys
@@ -36,13 +34,6 @@ MOCK_CLIENT = {
     "active": True,
 }
 
-MOCK_EMPLOYEE = {
-    "id": "emp-1",
-    "name": "Jesse Tech",
-    "role": "field_tech",
-    "phone": "+15555550100",
-}
-
 BASE_SMS = {
     "from_number": "+15555550100",
     "to_number": "+15555550200",
@@ -54,21 +45,12 @@ def _sms(body: str) -> dict:
     return {**BASE_SMS, "body": body}
 
 
-def _common_patches(employee=MOCK_EMPLOYEE):
-    """
-    Patches that every test needs:
-      - tenant lookup → MOCK_CLIENT
-      - employee lookup → MOCK_EMPLOYEE (or None to simulate unknown sender)
-    """
-    return {
-        "execution.sms_router.get_client_by_phone": lambda phone: MOCK_CLIENT,
-        "execution.sms_router.get_employee_by_phone": lambda cid, phone: employee,
-    }
-
-
 def _apply_patches(extra=None):
+    """Patch the tenant lookup + any extras the test asks for."""
     started = []
-    for target, replacement in {**_common_patches(), **(extra or {})}.items():
+    patches = {"execution.sms_router.get_client_by_phone": lambda phone: MOCK_CLIENT}
+    patches.update(extra or {})
+    for target, replacement in patches.items():
         p = patch(target, replacement)
         p.start()
         started.append(p)
@@ -85,7 +67,7 @@ def _stop_patches(started):
 # ---------------------------------------------------------------------------
 
 def test_stop_routes_to_opt_out():
-    """STOP must route through optin_agent.handle_stop and tag 'optin_stop'."""
+    """STOP must call optin_agent.handle_stop and tag 'optin_stop'."""
     mock_handle_stop = MagicMock()
     extra = {"execution.optin_agent.handle_stop": mock_handle_stop}
     patchers = _apply_patches(extra)
@@ -93,7 +75,6 @@ def test_stop_routes_to_opt_out():
         result = route_message(_sms("STOP"))
         assert result == "optin_stop"
         mock_handle_stop.assert_called_once()
-        # First arg is the client dict, second is the sender phone
         args = mock_handle_stop.call_args.args
         assert args[0]["id"] == MOCK_CLIENT["id"]
         assert args[1] == "+15555550100"
@@ -151,167 +132,74 @@ def test_start_and_unstop_aliases_route_like_yes():
 
 
 # ---------------------------------------------------------------------------
-# Step 2 — Clock in / clock out (employees only)
+# Step 2 — Everything else gets logged and ignored
 # ---------------------------------------------------------------------------
 
-def test_clock_in_delegates_to_clock_agent():
-    """CLOCK IN from a known employee should call clock_agent.handle_clock."""
-    mock_handle_clock = MagicMock()
-    extra = {"execution.clock_agent.handle_clock": mock_handle_clock}
-    patchers = _apply_patches(extra)
+def test_clock_in_is_now_ignored():
+    """
+    CLOCK IN used to delegate to clock_agent. With Telnyx outbound dead,
+    workers must use the PWA. Inbound CLOCK IN is logged and ignored.
+    """
+    patchers = _apply_patches()
     try:
         result = route_message(_sms("CLOCK IN"))
-        assert result == "clock_agent"
-        mock_handle_clock.assert_called_once()
-        kwargs = mock_handle_clock.call_args.kwargs
-        assert kwargs["employee"]["id"] == MOCK_EMPLOYEE["id"]
-        assert kwargs["client"]["id"] == MOCK_CLIENT["id"]
-        assert kwargs["raw_input"] == "CLOCK IN"
+        assert result == "ignored"
     finally:
         _stop_patches(patchers)
 
 
-def test_clock_out_delegates_to_clock_agent():
-    """CLOCK OUT from a known employee should call clock_agent.handle_clock."""
-    mock_handle_clock = MagicMock()
-    extra = {"execution.clock_agent.handle_clock": mock_handle_clock}
-    patchers = _apply_patches(extra)
+def test_clock_out_is_now_ignored():
+    """Same story as CLOCK IN — the PWA owns clock punches now."""
+    patchers = _apply_patches()
     try:
         result = route_message(_sms("CLOCK OUT"))
-        assert result == "clock_agent"
-        mock_handle_clock.assert_called_once()
+        assert result == "ignored"
     finally:
         _stop_patches(patchers)
 
 
-def test_clock_in_from_unknown_sender_falls_through_to_unmatched():
-    """A non-employee texting CLOCK IN must NOT trigger clock_agent."""
-    mock_handle_clock = MagicMock()
-    mock_send = MagicMock()
-    patchers = []
-    for target, repl in {
-        "execution.sms_router.get_client_by_phone": lambda phone: MOCK_CLIENT,
-        "execution.sms_router.get_employee_by_phone": lambda cid, phone: None,
-        "execution.clock_agent.handle_clock": mock_handle_clock,
-        "execution.sms_send.send_sms": mock_send,
-    }.items():
-        p = patch(target, repl)
-        p.start()
-        patchers.append(p)
+def test_done_is_ignored():
+    """DONE used to route to invoice_agent. Now: ignored — PWA owns job state."""
+    patchers = _apply_patches()
     try:
-        result = route_message(_sms("CLOCK IN"))
-        assert result == "unmatched"
-        mock_handle_clock.assert_not_called()
-        mock_send.assert_not_called()  # Hard Rule #2
+        result = route_message(_sms("DONE pumped 1000 gal Beverly $350"))
+        assert result == "ignored"
     finally:
         _stop_patches(patchers)
 
 
-# ---------------------------------------------------------------------------
-# Step 3 — Everything else → PWA redirect (or ignored if non-employee)
-# ---------------------------------------------------------------------------
-
-def test_done_now_returns_pwa_redirect():
-    """DONE used to route to invoice_agent. Now it should hit the PWA redirect."""
-    mock_send = MagicMock()
-    extra = {"execution.sms_send.send_sms": mock_send}
-    patchers = _apply_patches(extra)
-    try:
-        result = route_message(_sms("DONE pumped 1000 gal tank Beverly $350"))
-        assert result == "pwa_redirect"
-        mock_send.assert_called_once()
-        kwargs = mock_send.call_args.kwargs
-        assert kwargs["to_number"] == "+15555550100"
-        assert "Bolts11 app" in kwargs["message_body"]
-        assert "/pwa/" in kwargs["message_body"]
-        assert kwargs["from_number"] == MOCK_CLIENT["phone"]
-    finally:
-        _stop_patches(patchers)
-
-
-def test_estimate_keyword_returns_pwa_redirect():
-    """EST used to route to proposal_agent. Now it should hit the PWA redirect."""
-    mock_send = MagicMock()
-    extra = {"execution.sms_send.send_sms": mock_send}
-    patchers = _apply_patches(extra)
+def test_estimate_keyword_is_ignored():
+    """EST used to route to proposal_agent. Now: ignored."""
+    patchers = _apply_patches()
     try:
         result = route_message(_sms("EST pump and camera Beverly Whitaker"))
-        assert result == "pwa_redirect"
-        mock_send.assert_called_once()
+        assert result == "ignored"
     finally:
         _stop_patches(patchers)
 
 
-def test_ambiguous_text_returns_pwa_redirect():
-    """Ambiguous text used to route to clarification_agent. Now: PWA redirect."""
-    mock_send = MagicMock()
-    extra = {"execution.sms_send.send_sms": mock_send}
-    patchers = _apply_patches(extra)
+def test_ambiguous_text_is_ignored():
+    """Ambiguous text used to fall to clarification_agent. Now: ignored."""
+    patchers = _apply_patches()
     try:
         result = route_message(_sms("hey what's up"))
-        assert result == "pwa_redirect"
-        mock_send.assert_called_once()
+        assert result == "ignored"
     finally:
         _stop_patches(patchers)
 
 
-def test_set_optin_command_now_returns_pwa_redirect():
-    """SET OPTIN used to be a special command. Now it just hits the PWA redirect."""
-    mock_send = MagicMock()
-    extra = {"execution.sms_send.send_sms": mock_send}
-    patchers = _apply_patches(extra)
+def test_set_optin_command_is_ignored():
+    """SET OPTIN was a special command. Now it just gets logged + ignored."""
+    patchers = _apply_patches()
     try:
         result = route_message(_sms("SET OPTIN +12075551234"))
-        assert result == "pwa_redirect"
-        mock_send.assert_called_once()
-    finally:
-        _stop_patches(patchers)
-
-
-def test_pwa_redirect_uses_first_name_from_employee():
-    """The redirect SMS should personalise with the tech's first name."""
-    custom_employee = {**MOCK_EMPLOYEE, "name": "Casey Long"}
-    mock_send = MagicMock()
-    patchers = []
-    for target, repl in {
-        "execution.sms_router.get_client_by_phone": lambda phone: MOCK_CLIENT,
-        "execution.sms_router.get_employee_by_phone": lambda cid, phone: custom_employee,
-        "execution.sms_send.send_sms": mock_send,
-    }.items():
-        p = patch(target, repl)
-        p.start()
-        patchers.append(p)
-    try:
-        result = route_message(_sms("how do I create an estimate"))
-        assert result == "pwa_redirect"
-        body = mock_send.call_args.kwargs["message_body"]
-        assert "Hey Casey!" in body
-    finally:
-        _stop_patches(patchers)
-
-
-def test_unknown_sender_gets_ignored_no_sms():
-    """A non-employee texting non-opt content must be silently ignored (Hard Rule #2)."""
-    mock_send = MagicMock()
-    patchers = []
-    for target, repl in {
-        "execution.sms_router.get_client_by_phone": lambda phone: MOCK_CLIENT,
-        "execution.sms_router.get_employee_by_phone": lambda cid, phone: None,
-        "execution.sms_send.send_sms": mock_send,
-    }.items():
-        p = patch(target, repl)
-        p.start()
-        patchers.append(p)
-    try:
-        result = route_message(_sms("hi can you give me a quote?"))
-        assert result == "unmatched"
-        mock_send.assert_not_called()  # never SMS a customer
+        assert result == "ignored"
     finally:
         _stop_patches(patchers)
 
 
 def test_no_client_for_telnyx_number_short_circuits():
-    """When the inbound `to_number` doesn't match any client, return 'no_client'."""
+    """When the inbound to_number doesn't match any tenant, return 'no_client'."""
     patchers = []
     for target, repl in {
         "execution.sms_router.get_client_by_phone": lambda phone: None,
@@ -322,5 +210,59 @@ def test_no_client_for_telnyx_number_short_circuits():
     try:
         result = route_message(_sms("anything goes here"))
         assert result == "no_client"
+    finally:
+        _stop_patches(patchers)
+
+
+# ---------------------------------------------------------------------------
+# Hard guarantee: sms_router never sends SMS
+# ---------------------------------------------------------------------------
+
+def test_sms_router_does_not_import_send_sms():
+    """
+    Regression guard: this module must never import send_sms or sms_send.
+    Telnyx outbound is blocked at the carrier — any outbound code path
+    would be a footgun. We walk the AST so docstring mentions don't
+    trip the check.
+    """
+    import ast
+    import inspect
+    import execution.sms_router as sms_router
+
+    tree = ast.parse(inspect.getsource(sms_router))
+    forbidden = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom):
+            if node.module and "sms_send" in node.module:
+                forbidden.append(f"from {node.module} import ...")
+            for alias in node.names:
+                if "send_sms" in (alias.name or ""):
+                    forbidden.append(f"from {node.module} import {alias.name}")
+        elif isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name and "sms_send" in alias.name:
+                    forbidden.append(f"import {alias.name}")
+    assert not forbidden, (
+        f"sms_router.py must not import send_sms — found: {forbidden}. "
+        "Telnyx outbound is blocked at the carrier. Use notify() if you "
+        "need to message anyone, and let the kill switch fall back to email."
+    )
+
+
+def test_clock_in_does_not_call_send_sms_anywhere_downstream():
+    """
+    Defense in depth: even when route_message handles a CLOCK IN body,
+    no downstream import should reach send_sms. The router shouldn't
+    even import clock_agent now, but if a future change re-introduces
+    that import, this test will catch it.
+    """
+    patchers = _apply_patches({"execution.sms_send.send_sms": MagicMock()})
+    try:
+        result = route_message(_sms("CLOCK IN"))
+        assert result == "ignored"
+        from execution import sms_send
+        # The patched MagicMock replaces sms_send.send_sms; if anything
+        # downstream called it, the mock would have a positive call count.
+        assert sms_send.send_sms.call_count == 0
     finally:
         _stop_patches(patchers)

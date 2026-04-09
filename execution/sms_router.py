@@ -1,14 +1,24 @@
 """
-sms_router.py — Inbound SMS routing (PWA-pivot edition, April 2026)
+sms_router.py — Inbound SMS routing (Telnyx-outbound-blocked edition)
 
-SMS is one-way notification only. The 8-step conversational router
-was replaced with a 3-step handler:
-    1. STOP / YES / START / UNSTOP — TCPA opt-in/opt-out (always first)
-    2. CLOCK IN / CLOCK OUT — delegate to clock_agent (echoes back)
-    3. Everything else — one-line PWA redirect (employees only, Rule #2)
+Important constraint: Telnyx outbound to workers is blocked at the
+carrier level. This router NEVER calls send_sms() — every code path
+either updates DB state or logs and returns silently.
 
-Hard rules: #2 (no SMS to non-employees), #4 (multi-tenant lookups),
-#5 (raw payload saved by sms_receive.py before this runs).
+Inbound SMS to the Telnyx brand number is still useful for one thing:
+TCPA opt-in/opt-out tracking. Workers themselves should clock in via
+the PWA (`/pwa/clock`); inbound CLOCK IN texts are ignored.
+
+Routing order:
+    1. STOP / YES / START / UNSTOP — TCPA opt-in/opt-out (DB-only;
+       optin_agent's outbound confirmation will silently fail at the
+       carrier, but the consent state is still recorded correctly)
+    2. Everything else — log and ignore. The PWA owns every other
+       worker interaction. Hard Rule #2 forbids customer-facing SMS,
+       so we never reply to non-employees either.
+
+Hard rules: #2 (no SMS to anyone, ever, from this router), #4 (multi-
+tenant lookups), #5 (raw payload saved by sms_receive.py before this).
 """
 
 import os
@@ -18,9 +28,7 @@ from datetime import datetime
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from execution.db_client import get_client_by_phone
-from execution.db_employee import get_employee_by_phone
 
-PWA_URL = os.environ.get("BOLTS11_PWA_URL", "https://app.bolts11.com/pwa/")
 
 def timestamp():
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -47,7 +55,7 @@ def route_message(sms_data: dict) -> str:
         return "no_client"
     body_upper = body.strip().upper()
 
-    # Step 1 — TCPA opt-in / opt-out (always first, applies to everyone)
+    # Step 1 — TCPA opt-in / opt-out (DB state only; outbound SMS will fail at carrier)
     if body_upper == "STOP":
         from execution.optin_agent import handle_stop
         _safe("handle_stop", handle_stop, client, from_number)
@@ -59,21 +67,8 @@ def route_message(sms_data: dict) -> str:
             _safe("handle_yes", handle_yes, client, from_number)
         return "optin_yes"
 
-    # Step 2 — CLOCK IN / CLOCK OUT (employees only — clock_agent echoes back)
-    employee = get_employee_by_phone(client["id"], from_number)
-    if employee and (body_upper.startswith("CLOCK IN") or body_upper.startswith("CLOCK OUT")):
-        from execution.clock_agent import handle_clock
-        _safe("handle_clock", handle_clock,
-              client=client, employee=employee, raw_input=body, from_number=from_number)
-        return "clock_agent"
-
-    # Step 3 — Everything else → PWA redirect. Hard Rule #2: never SMS non-employees.
-    if not employee:
-        print(f"[{timestamp()}] INFO sms_router: Unknown sender {from_number} — ignored")
-        return "unmatched"
-    first = (employee.get("name") or "there").split()[0]
-    msg = f"Hey {first}! Use the Bolts11 app for that.\nOpen it here: {PWA_URL}"
-    from execution.sms_send import send_sms
-    _safe("pwa_redirect_sms", send_sms,
-          to_number=from_number, message_body=msg, from_number=client.get("phone", to_number))
-    return "pwa_redirect"
+    # Step 2 — Everything else: log and ignore. The PWA owns clock-in,
+    # job updates, AI chat, everything. Outbound SMS is dead at the carrier
+    # so we cannot redirect via SMS even if we wanted to.
+    print(f"[{timestamp()}] INFO sms_router: Ignored (PWA owns this) — body[:60]={body[:60]!r}")
+    return "ignored"

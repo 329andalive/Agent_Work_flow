@@ -153,26 +153,40 @@ self.addEventListener('fetch', event => {
 
 ---
 
-## SMS — Retained for Notifications Only
+## SMS — Inbound Webhook Only (Outbound Dead at Carrier)
 
-SMS via Telnyx brand number is kept for:
-- Clock in / clock out confirmations (one-way echo back to tech)
-- Dispatch alerts ("Next job: 123 Main St, Bob Jones, AC unit")
-- "Your review link is ready" with URL (tech taps → opens PWA)
-- Owner/foreman internal alerts
+**Critical constraint discovered April 9, 2026:**
 
-SMS is **not** used for:
-- Two-way AI conversation with techs (→ PWA chat instead)
-- Sending proposals or invoices to customers (→ email via Resend)
-- Customer approval flows (→ email link or PWA)
-- Any flow that requires 10DLC campaign registration
+Telnyx outbound to *anyone* (workers, owners, customers) is blocked
+at the carrier level without 10DLC registration. The only working
+SMS path is **inbound** — workers texting the Telnyx brand number
+fires a webhook we can act on.
 
-**SMS routing order (sms_router.py) — retained for legacy/fallback:**
+**What inbound SMS is still used for:**
+- TCPA opt-in/opt-out (STOP / YES / START / UNSTOP) — DB state only,
+  no outbound confirmation
+- Nothing else. Workers clock in via the PWA (`/pwa/clock`).
+
+**Outbound channels — what to use instead:**
+- **Worker notifications** → notify() router → email (Resend) or PWA
+  push. Never `send_sms()` directly. The notify() module enforces a
+  3-layer permission check (client switch, recipient type, consent)
+  and falls back to email when SMS is blocked.
+- **Customer notifications** → email via Resend (Hard Rule #2)
+- **Tech feedback after action** → PWA UI updates, no out-of-band ping
+
+**Kill switch:** `clients.sms_outbound_enabled` is `false` for every
+client by default. Even if a code path bypasses notify() and calls
+`send_sms()` directly, notify() blocks at Layer 1. To re-enable SMS
+for one client, flip the column manually (only after 10DLC).
+
+**SMS routing order (sms_router.py) — minimal:**
 ```
-1. STOP / YES / START / UNSTOP — opt-in/opt-out (always first)
-2. CLOCK IN / CLOCK OUT — echo confirmation, log to jobs table
-3. Everything else → return PWA link with instructions
+1. STOP / YES / START / UNSTOP — opt-in/opt-out (DB state only)
+2. Everything else → log and ignore (PWA owns the interaction)
 ```
+
+`sms_router.py` does not import `send_sms` and never will.
 
 ---
 
@@ -180,7 +194,7 @@ SMS is **not** used for:
 
 | Channel | Direction | Used For | Provider |
 |---|---|---|---|
-| SMS (brand number) | Inbound + limited outbound | Clock in/out, dispatch pings, review link delivery | Telnyx |
+| SMS (brand number) | Inbound ONLY | Clock in/out from worker, webhook trigger | Telnyx |
 | Email | Outbound to customers | Proposals, invoices, follow-ups, review requests | Resend |
 | PWA | Tech input + AI output | Job input, estimates, invoices, AI chat, approvals | Flask + Jinja2 |
 | Dashboard | Owner/office read | Reporting, dispatch board, KPI | Flask + Jinja2 |
@@ -573,6 +587,12 @@ never writes to the database directly. The chip carries the existing
 endpoint. The endpoint owns the side effects and multi-tenant guards.
 No exceptions.
 
+**HARD RULE #7 — Railway never sends outbound SMS**
+Telnyx is inbound only. No sms_send.py call should ever target
+a worker or customer phone number. Any outbound SMS code path
+is a bug. Worker notifications go through the PWA. Customer
+documents go through email via Resend.
+
 ---
 
 ## What NOT to Do
@@ -619,8 +639,11 @@ PWA Sprint (current):
       pipeline, deep link to review screen on success
 - [x] /pwa/chat — conversational AI, action chips, voice input,
       persistent history, fuzzy job matching, 6a+6b complete
-- [x] SMS router simplified to notifications + PWA redirect —
-      80 lines, 3-step flow (opt-in/out, clock punch, PWA redirect)
+- [x] SMS router stripped to inbound-webhook-only — 74 lines,
+      no send_sms import, 1-step flow (opt-in/out only; PWA owns
+      everything else, Telnyx outbound dead at carrier)
+- [x] dispatch_routes.py worker notifications routed through
+      notify() — falls back to email when SMS kill switch is on
 
 Pending (post-PWA):
 - Self-learning agent (null field prompts)

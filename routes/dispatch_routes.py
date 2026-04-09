@@ -168,7 +168,6 @@ def dispatch_send():
         return jsonify({"success": False, "error": "No assignments to send"}), 400
 
     client = _load_client(client_id)
-    client_phone = client.get("phone", "")
     business_name = client.get("business_name", "Bolts11")
     base_url = os.environ.get("BOLTS11_BASE_URL", "https://bolts11.com")
     expires_at = (datetime.now(timezone.utc) + timedelta(hours=72)).isoformat()
@@ -271,11 +270,13 @@ def dispatch_send():
         except Exception as e:
             print(f"[{timestamp()}] WARN dispatch: route_token insert failed — {e}")
 
-        # Build SMS body
+        # Build the route notification body. Telnyx outbound is dead at the
+        # carrier so we route through notify(), which falls back to email
+        # (Resend) when SMS is blocked at any of the 3 permission layers.
         route_url = f"{base_url}/r/{route_token}"
         msg_type = "wave_assignment" if has_waves else "route"
 
-        sms_body = (
+        body_text = (
             f"{business_name} jobs for {dispatch_date}:\n"
             f"{len(jobs)} stop{'s' if len(jobs) != 1 else ''}.\n"
             f"Your route: {route_url}"
@@ -287,29 +288,31 @@ def dispatch_send():
                 if j.get("wave_id"):
                     wave_lines.append(f"  Wave {j['wave_id']}: start {j.get('wave_start', 'TBD')}")
             if wave_lines:
-                sms_body += "\n" + "\n".join(wave_lines)
+                body_text += "\n" + "\n".join(wave_lines)
 
-        # Send SMS
+        # Notify the worker (notify() picks SMS or email based on the
+        # 3-layer permission check; with the kill switch on it lands as email)
         if worker_phone:
             try:
-                from execution.sms_send import send_sms
-                result = send_sms(
-                    to_number=worker_phone,
-                    message_body=sms_body,
-                    from_number=client_phone,
+                from execution.notify import notify
+                subject = f"Today's route — {len(jobs)} stop{'s' if len(jobs) != 1 else ''}"
+                result = notify(
+                    client_id=client_id,
+                    to_phone=worker_phone,
+                    message=body_text,
+                    subject=subject,
                     message_type=msg_type,
                 )
+                workers_notified += 1
                 if result.get("success"):
                     sms_sent += 1
-                    workers_notified += 1
-                    print(f"[{timestamp()}] INFO dispatch: SMS sent to {worker_name} ({worker_phone})")
+                    print(f"[{timestamp()}] INFO dispatch: route delivered to {worker_name} via {result.get('channel')}")
                 else:
-                    sms_failed.append({"worker": worker_name, "error": result.get("error", "unknown")})
-                    workers_notified += 1
-                    print(f"[{timestamp()}] WARN dispatch: SMS failed for {worker_name} — {result.get('error')}")
+                    sms_failed.append({"worker": worker_name, "error": result.get("error", "blocked")})
+                    print(f"[{timestamp()}] WARN dispatch: route delivery blocked for {worker_name} — {result.get('error')}")
             except Exception as e:
                 sms_failed.append({"worker": worker_name, "error": str(e)})
-                print(f"[{timestamp()}] ERROR dispatch: SMS exception for {worker_name} — {e}")
+                print(f"[{timestamp()}] ERROR dispatch: notify exception for {worker_name} — {e}")
         else:
             sms_failed.append({"worker": worker_name, "error": "No phone number"})
             print(f"[{timestamp()}] WARN dispatch: No phone for worker {worker_name}")
