@@ -28,9 +28,14 @@ from datetime import datetime, timezone
 from execution.sms_router import route_message
 from execution.db_webhook_log import is_duplicate, save_webhook, mark_processed, mark_error
 
-# Point Flask templates at the project-level templates/ dir
+# Point Flask templates and static files at project-level dirs
 _project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-app = Flask(__name__, template_folder=os.path.join(_project_root, "templates"))
+app = Flask(
+    __name__,
+    template_folder=os.path.join(_project_root, "templates"),
+    static_folder=os.path.join(_project_root, "static"),
+    static_url_path="/static",
+)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-secret-change-in-production")
 
 from datetime import timedelta as _timedelta
@@ -49,6 +54,7 @@ from routes.auth_routes import auth_bp
 from routes.dispatch_routes import dispatch_bp
 from routes.booking_routes import booking_bp
 from routes.access_request_routes import access_bp
+from routes.pwa_routes import pwa_bp, register_root_sw
 app.register_blueprint(document_bp)
 app.register_blueprint(invoice_bp)
 app.register_blueprint(debug_bp)
@@ -59,6 +65,8 @@ app.register_blueprint(auth_bp)
 app.register_blueprint(dispatch_bp)
 app.register_blueprint(booking_bp)
 app.register_blueprint(access_bp)
+app.register_blueprint(pwa_bp)
+register_root_sw(app)
 
 
 def timestamp():
