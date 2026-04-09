@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Today's Route — Bolts11</title>
+  <link rel="manifest" href="/static/manifest.json">
+  <meta name="theme-color" content="#132038">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="apple-touch-icon" href="/static/icon-192.png">
+
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    html,body{height:100%;-webkit-tap-highlight-color:transparent}
+    body{
+      font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+      background:#132038;color:#fff;
+      min-height:100vh;display:flex;flex-direction:column;
+      padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+    }
+    .topbar{
+      display:flex;align-items:center;justify-content:space-between;
+      padding:14px 18px;background:rgba(0,0,0,.2);
+      position:sticky;top:0;z-index:5;
+    }
+    .topbar a{color:rgba(255,255,255,.7);text-decoration:none;font-size:14px;padding:6px 10px}
+    .topbar .who{font-size:13px;color:rgba(255,255,255,.6)}
+    .topbar .who strong{color:#fff;font-weight:600}
+
+    main{flex:1;padding:20px 18px 100px}
+
+    .hdr-summary{
+      text-align:center;margin-bottom:20px;
+    }
+    .hdr-title{font-size:22px;font-weight:800;margin-bottom:4px}
+    .hdr-meta{font-size:13px;color:rgba(255,255,255,.6)}
+
+    /* Job card */
+    .job{
+      background:rgba(255,255,255,.06);
+      border:1px solid rgba(255,255,255,.1);
+      border-radius:14px;
+      padding:16px 18px;margin-bottom:12px;
+      transition:border-color .2s,background .2s;
+    }
+    .job.current{
+      border-color:#f59e0b;
+      background:rgba(245,158,11,.08);
+    }
+    .job.done{opacity:.55}
+    .job.done .job-head{text-decoration:line-through;text-decoration-color:rgba(255,255,255,.3)}
+
+    .job-head{
+      display:flex;align-items:flex-start;gap:12px;margin-bottom:10px;
+    }
+    .job-num{
+      width:36px;height:36px;border-radius:50%;
+      background:rgba(255,255,255,.1);
+      display:flex;align-items:center;justify-content:center;
+      font-weight:700;font-size:15px;flex-shrink:0;
+    }
+    .job.current .job-num{background:#f59e0b;color:#132038}
+    .job.done .job-num{background:#16a34a;color:#fff}
+    .job.done .job-num span{display:none}
+    .job.done .job-num::before{content:"✓";font-weight:800}
+    .job-title{flex:1;min-width:0}
+    .job-customer{font-size:17px;font-weight:700;line-height:1.25}
+    .job-type{font-size:12px;color:#f59e0b;text-transform:uppercase;letter-spacing:.04em;margin-top:2px}
+    .job-amount{
+      font-size:14px;font-weight:700;color:#f59e0b;
+      flex-shrink:0;font-variant-numeric:tabular-nums;
+    }
+
+    .job-body{
+      font-size:13px;color:rgba(255,255,255,.6);
+      line-height:1.5;margin-left:48px;
+    }
+    .job-body a.tel{
+      color:#60a5fa;text-decoration:none;font-weight:600;
+    }
+    .job-body .desc{margin-top:6px;color:rgba(255,255,255,.5);font-size:12px}
+
+    /* Action buttons */
+    .actions{
+      display:grid;grid-template-columns:1fr;gap:8px;
+      margin:14px 0 0 48px;
+    }
+    .actions.split{grid-template-columns:1fr 1fr}
+    .btn{
+      padding:14px 16px;
+      font-size:14px;font-weight:700;
+      border:none;border-radius:10px;
+      cursor:pointer;min-height:48px;
+      transition:opacity .15s,transform .1s;
+      font-family:inherit;
+      letter-spacing:.02em;
+      text-transform:uppercase;
+    }
+    .btn:active{transform:scale(0.97)}
+    .btn:disabled{opacity:.5;cursor:not-allowed}
+    .btn-start{background:#f59e0b;color:#132038}
+    .btn-done{background:#16a34a;color:#fff}
+    .btn-more{
+      background:rgba(255,255,255,.08);
+      color:rgba(255,255,255,.85);
+      border:1px solid rgba(255,255,255,.1);
+    }
+
+    /* More-actions sheet */
+    .sheet-bg{
+      position:fixed;inset:0;
+      background:rgba(0,0,0,.6);
+      display:none;z-index:90;
+      align-items:flex-end;
+    }
+    .sheet-bg.open{display:flex}
+    .sheet{
+      width:100%;background:#1f2937;color:#fff;
+      border-radius:18px 18px 0 0;
+      padding:20px 18px env(safe-area-inset-bottom);
+      max-height:80vh;overflow-y:auto;
+    }
+    .sheet h3{font-size:17px;font-weight:700;margin-bottom:14px;text-align:center}
+    .sheet .opt{
+      display:block;width:100%;
+      padding:18px;margin-bottom:8px;
+      font-size:15px;font-weight:600;
+      background:rgba(255,255,255,.05);
+      border:1px solid rgba(255,255,255,.08);
+      border-radius:12px;color:#fff;cursor:pointer;
+      text-align:left;font-family:inherit;
+    }
+    .sheet .opt:active{background:rgba(255,255,255,.1)}
+    .sheet .opt .label{display:block;font-weight:700}
+    .sheet .opt .desc{display:block;font-size:12px;color:rgba(255,255,255,.5);margin-top:2px}
+    .sheet .cancel{
+      background:none;border:none;color:rgba(255,255,255,.6);
+      width:100%;padding:14px;font-size:14px;cursor:pointer;
+      margin-top:6px;font-family:inherit;
+    }
+
+    /* Toast */
+    .toast{
+      position:fixed;left:20px;right:20px;bottom:20px;
+      background:#1f2937;color:#fff;
+      padding:14px 18px;border-radius:10px;
+      font-size:14px;text-align:center;
+      transform:translateY(120%);transition:transform .3s;
+      z-index:100;
+    }
+    .toast.show{transform:translateY(0)}
+    .toast.success{background:#15803d}
+    .toast.error{background:#991b1b}
+
+    .empty{
+      text-align:center;padding:60px 20px;
+      color:rgba(255,255,255,.4);font-size:14px;
+    }
+    .loading{text-align:center;padding:40px;color:rgba(255,255,255,.4)}
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <a href="/pwa/">&larr; Home</a>
+    <div class="who">Hi, <strong>{{ employee_name }}</strong></div>
+  </div>
+
+  <main>
+    <div id="content">
+      <div class="loading">Loading route...</div>
+    </div>
+  </main>
+
+  <!-- More-actions sheet -->
+  <div class="sheet-bg" id="sheet">
+    <div class="sheet">
+      <h3>Mark this job as...</h3>
+      <button class="opt" onclick="setStatus('BACK')">
+        <span class="label">Come Back</span>
+        <span class="desc">Carry forward to a future day</span>
+      </button>
+      <button class="opt" onclick="setStatus('PARTS')">
+        <span class="label">Need Parts</span>
+        <span class="desc">Pending parts before completion</span>
+      </button>
+      <button class="opt" onclick="setStatus('NOSHOW')">
+        <span class="label">Customer No-Show</span>
+        <span class="desc">Customer was not on site</span>
+      </button>
+      <button class="opt" onclick="setStatus('SCOPE')">
+        <span class="label">Scope Change</span>
+        <span class="desc">Flag for owner review</span>
+      </button>
+      <button class="cancel" onclick="closeSheet()">Cancel</button>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script>
+    var STATE = null;
+    var SHEET_JOB_ID = null;
+
+    function fmt$(n){return'$'+Number(n||0).toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:0})}
+    function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
+    function fmtType(s){return(s||'job').replace(/_/g,' ').replace(/\b\w/g,function(c){return c.toUpperCase()})}
+    function fmtPhone(p){if(!p)return'';var d=p.replace(/\D/g,'').replace(/^1/,'');if(d.length===10)return'('+d.slice(0,3)+') '+d.slice(3,6)+'-'+d.slice(6);return p}
+
+    async function loadRoute(){
+      try{
+        var r = await fetch('/pwa/api/route');
+        if(r.status === 401 || r.status === 403){ window.location.href = '/pwa/login'; return }
+        var d = await r.json();
+        if(!d.success){ showError(d.error || 'Could not load route'); return }
+        STATE = d;
+        render(d);
+      }catch(e){ showError('Connection error') }
+    }
+
+    function render(d){
+      var html = '';
+
+      // Header summary
+      html += '<div class="hdr-summary">';
+      html += '<div class="hdr-title">Today\'s Route</div>';
+      html += '<div class="hdr-meta">' + d.completed_today + ' of ' + d.total_jobs + ' done</div>';
+      html += '</div>';
+
+      if(!d.route || !d.route.length){
+        html += '<div class="empty">No jobs dispatched for you today.</div>';
+        document.getElementById('content').innerHTML = html;
+        return;
+      }
+
+      // Job cards
+      d.route.forEach(function(job, i){
+        var isCurrent = !!(job.job_start && !job.job_end);
+        var isDone = !!job.job_end;
+        var notStarted = !job.job_start && !job.job_end;
+        var cls = 'job' + (isCurrent ? ' current' : '') + (isDone ? ' done' : '');
+
+        html += '<div class="' + cls + '">';
+
+        // Header row
+        html += '<div class="job-head">';
+        html += '<div class="job-num"><span>' + (i + 1) + '</span></div>';
+        html += '<div class="job-title">';
+        html += '<div class="job-customer">' + esc(job.customer_name || 'Customer') + '</div>';
+        if(job.job_type){
+          html += '<div class="job-type">' + esc(fmtType(job.job_type)) + '</div>';
+        }
+        html += '</div>';
+        if(job.estimated_amount){
+          html += '<div class="job-amount">' + fmt$(job.estimated_amount) + '</div>';
+        }
+        html += '</div>';
+
+        // Body
+        if(job.customer_address || job.customer_phone || job.job_description){
+          html += '<div class="job-body">';
+          if(job.customer_address){
+            html += '<div>📍 ' + esc(job.customer_address) + '</div>';
+          }
+          if(job.customer_phone){
+            html += '<div>📞 <a class="tel" href="tel:' + esc(job.customer_phone) + '">' + esc(fmtPhone(job.customer_phone)) + '</a></div>';
+          }
+          if(job.job_description){
+            html += '<div class="desc">' + esc(job.job_description) + '</div>';
+          }
+          html += '</div>';
+        }
+
+        // Action buttons (only for not-completed jobs)
+        if(!isDone){
+          if(notStarted){
+            html += '<div class="actions split">';
+            html += '<button class="btn btn-start" onclick="startJob(\'' + job.job_id + '\')">Start</button>';
+            html += '<button class="btn btn-more" onclick="openSheet(\'' + job.job_id + '\')">More</button>';
+            html += '</div>';
+          } else {
+            // Current/in-progress
+            html += '<div class="actions split">';
+            html += '<button class="btn btn-done" onclick="completeJob(\'' + job.job_id + '\')">Done</button>';
+            html += '<button class="btn btn-more" onclick="openSheet(\'' + job.job_id + '\')">More</button>';
+            html += '</div>';
+          }
+        }
+
+        html += '</div>';
+      });
+
+      document.getElementById('content').innerHTML = html;
+    }
+
+    async function startJob(jobId){
+      try{
+        var r = await fetch('/pwa/api/job/' + jobId + '/start', {method: 'POST'});
+        var d = await r.json();
+        if(d.success){
+          showToast('Started · ' + (d.customer_name || ''), 'success');
+          loadRoute();
+        } else {
+          showError(d.error || 'Could not start job');
+        }
+      }catch(e){ showError('Connection error') }
+    }
+
+    async function completeJob(jobId){
+      if(!confirm('Mark this job done?')) return;
+      try{
+        var r = await fetch('/pwa/api/job/' + jobId + '/done', {method: 'POST'});
+        var d = await r.json();
+        if(d.success){
+          var msg = 'Done · ' + (d.customer_name || '');
+          if(d.invoice_amount){ msg += ' · invoice $' + d.invoice_amount.toFixed(0); }
+          if(d.next_job){ msg += ' · next: ' + (d.next_job.customer_name || ''); }
+          if(d.route_complete){ msg += ' · route complete!'; }
+          showToast(msg, 'success');
+          loadRoute();
+        } else {
+          showError(d.error || 'Could not complete job');
+        }
+      }catch(e){ showError('Connection error') }
+    }
+
+    function openSheet(jobId){
+      SHEET_JOB_ID = jobId;
+      document.getElementById('sheet').classList.add('open');
+    }
+    function closeSheet(){
+      SHEET_JOB_ID = null;
+      document.getElementById('sheet').classList.remove('open');
+    }
+
+    async function setStatus(command){
+      if(!SHEET_JOB_ID) return;
+      var jobId = SHEET_JOB_ID;
+      var prompts = {
+        BACK: 'Carry this job to another day?',
+        PARTS: 'Mark this job as needing parts?',
+        NOSHOW: 'Mark customer as no-show?',
+        SCOPE: 'Flag scope change for owner review?',
+      };
+      if(!confirm(prompts[command] || 'Continue?')){ closeSheet(); return }
+      closeSheet();
+
+      try{
+        var r = await fetch('/pwa/api/job/' + jobId + '/status', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({command: command}),
+        });
+        var d = await r.json();
+        if(d.success){
+          showToast('Marked ' + d.status.replace(/_/g, ' '), 'success');
+          loadRoute();
+        } else {
+          showError(d.error || 'Update failed');
+        }
+      }catch(e){ showError('Connection error') }
+    }
+
+    function showToast(msg, kind){
+      var t = document.getElementById('toast');
+      t.textContent = msg;
+      t.className = 'toast show ' + (kind || '');
+      setTimeout(function(){ t.className = 'toast'; }, 3500);
+    }
+    function showError(msg){ showToast(msg, 'error') }
+
+    // Close sheet on background tap
+    document.getElementById('sheet').addEventListener('click', function(e){
+      if(e.target === this) closeSheet();
+    });
+
+    // Initial load + refresh on visibility change
+    loadRoute();
+    document.addEventListener('visibilitychange', function(){
+      if(!document.hidden) loadRoute();
+    });
+  </script>
+</body>
+</html>

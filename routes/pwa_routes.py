@@ -236,6 +236,89 @@ def pwa_clock_out():
 
 
 # ---------------------------------------------------------------------------
+# GET /pwa/route — Today's route detail screen
+# ---------------------------------------------------------------------------
+
+@pwa_bp.route("/route", strict_slashes=False)
+@require_pwa_auth
+def pwa_route():
+    """The route detail screen — list of jobs with action buttons."""
+    return render_template("pwa/route.html",
+        employee_name=session.get("employee_name", "Tech"),
+        employee_role=session.get("employee_role", ""),
+    )
+
+
+# ---------------------------------------------------------------------------
+# GET /pwa/api/route — today's route + current job state
+# ---------------------------------------------------------------------------
+
+@pwa_bp.route("/api/route", methods=["GET"])
+@require_pwa_auth
+def pwa_route_data():
+    from execution.pwa_jobs import get_route
+    client_id = session.get("client_id")
+    employee_id = session.get("employee_id")
+    if not employee_id:
+        return jsonify({"success": False, "error": "No employee in session"}), 400
+    return jsonify(get_route(client_id, employee_id))
+
+
+# ---------------------------------------------------------------------------
+# POST /pwa/api/job/<job_id>/start — Start a specific job
+# ---------------------------------------------------------------------------
+
+@pwa_bp.route("/api/job/<job_id>/start", methods=["POST"])
+@require_pwa_auth
+def pwa_job_start(job_id):
+    from execution.pwa_jobs import start_job
+    client_id = session.get("client_id")
+    employee_id = session.get("employee_id")
+    if not employee_id:
+        return jsonify({"success": False, "error": "No employee in session"}), 400
+    result = start_job(client_id, employee_id, job_id)
+    return jsonify(result), (200 if result.get("success") else 400)
+
+
+# ---------------------------------------------------------------------------
+# POST /pwa/api/job/<job_id>/done — Complete a job + auto-invoice + advance
+# ---------------------------------------------------------------------------
+
+@pwa_bp.route("/api/job/<job_id>/done", methods=["POST"])
+@require_pwa_auth
+def pwa_job_done(job_id):
+    from execution.pwa_jobs import complete_job
+    client_id = session.get("client_id")
+    employee_id = session.get("employee_id")
+    if not employee_id:
+        return jsonify({"success": False, "error": "No employee in session"}), 400
+    result = complete_job(client_id, employee_id, job_id)
+    return jsonify(result), (200 if result.get("success") else 400)
+
+
+# ---------------------------------------------------------------------------
+# POST /pwa/api/job/<job_id>/status — BACK / PARTS / NOSHOW / SCOPE
+# ---------------------------------------------------------------------------
+
+@pwa_bp.route("/api/job/<job_id>/status", methods=["POST"])
+@require_pwa_auth
+def pwa_job_status(job_id):
+    from execution.pwa_jobs import set_status
+    client_id = session.get("client_id")
+    employee_id = session.get("employee_id")
+    if not employee_id:
+        return jsonify({"success": False, "error": "No employee in session"}), 400
+
+    data = request.get_json(silent=True) or {}
+    command = (data.get("command") or "").strip().upper()
+    if not command:
+        return jsonify({"success": False, "error": "Missing command"}), 400
+
+    result = set_status(client_id, employee_id, job_id, command)
+    return jsonify(result), (200 if result.get("success") else 400)
+
+
+# ---------------------------------------------------------------------------
 # GET /pwa/logout — Clear PWA session
 # ---------------------------------------------------------------------------
 

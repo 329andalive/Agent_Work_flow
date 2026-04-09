@@ -429,3 +429,184 @@ def test_pwa_shell_links_to_clock_screen(pwa_client):
     resp = pwa_client.get("/pwa/")
     body = resp.data.decode()
     assert "/pwa/clock" in body
+
+
+# ---------------------------------------------------------------------------
+# PWA route screen + job actions (step 4)
+# ---------------------------------------------------------------------------
+
+def test_pwa_route_screen_requires_auth(pwa_client):
+    """GET /pwa/route without session should redirect to login."""
+    resp = pwa_client.get("/pwa/route")
+    assert resp.status_code in (301, 302, 308)
+    assert "/pwa/login" in resp.headers.get("Location", "")
+
+
+def test_pwa_route_screen_renders_when_authed(pwa_client):
+    """GET /pwa/route with session should render the route screen."""
+    _set_pwa_session(pwa_client)
+    resp = pwa_client.get("/pwa/route")
+    assert resp.status_code == 200
+    body = resp.data.decode()
+    assert "Today" in body
+    assert "Jesse" in body
+
+
+def test_pwa_route_data_returns_json(pwa_client):
+    """GET /pwa/api/route should return JSON route data."""
+    _set_pwa_session(pwa_client)
+    from unittest.mock import patch
+    fake = {
+        "success": True,
+        "route": [
+            {"job_id": "j1", "sort_order": 0, "customer_name": "Alice",
+             "job_type": "pump_out", "estimated_amount": 325,
+             "job_start": None, "job_end": None},
+        ],
+        "current_job_id": None,
+        "completed_today": 0,
+        "total_jobs": 1,
+    }
+    with patch("execution.pwa_jobs.get_route", return_value=fake):
+        resp = pwa_client.get("/pwa/api/route")
+
+    import json as _json
+    assert resp.status_code == 200
+    data = _json.loads(resp.data)
+    assert data["success"] is True
+    assert len(data["route"]) == 1
+    assert data["route"][0]["customer_name"] == "Alice"
+
+
+def test_pwa_job_start_calls_module(pwa_client):
+    """POST /pwa/api/job/<id>/start should call start_job()."""
+    _set_pwa_session(pwa_client)
+    from unittest.mock import patch
+    with patch("execution.pwa_jobs.start_job", return_value={
+        "success": True,
+        "job_id": "j1",
+        "started_at": "2026-04-09T08:00:00+00:00",
+        "customer_name": "Alice",
+    }) as mock_start:
+        resp = pwa_client.post("/pwa/api/job/j1/start")
+
+    import json as _json
+    assert resp.status_code == 200
+    data = _json.loads(resp.data)
+    assert data["success"] is True
+    assert data["customer_name"] == "Alice"
+    mock_start.assert_called_once_with("client-1", "emp-1", "j1")
+
+
+def test_pwa_job_done_calls_complete_job(pwa_client):
+    """POST /pwa/api/job/<id>/done should call complete_job() and return next job."""
+    _set_pwa_session(pwa_client)
+    from unittest.mock import patch
+    with patch("execution.pwa_jobs.complete_job", return_value={
+        "success": True,
+        "job_id": "j1",
+        "customer_name": "Alice",
+        "invoice_id": "inv-1",
+        "invoice_amount": 325.0,
+        "next_job": {"job_id": "j2", "customer_name": "Bob"},
+        "route_complete": False,
+    }) as mock_done:
+        resp = pwa_client.post("/pwa/api/job/j1/done")
+
+    import json as _json
+    assert resp.status_code == 200
+    data = _json.loads(resp.data)
+    assert data["success"] is True
+    assert data["invoice_id"] == "inv-1"
+    assert data["next_job"]["customer_name"] == "Bob"
+    mock_done.assert_called_once_with("client-1", "emp-1", "j1")
+
+
+def test_pwa_job_status_back_command(pwa_client):
+    """POST /pwa/api/job/<id>/status with BACK should call set_status()."""
+    _set_pwa_session(pwa_client)
+    from unittest.mock import patch
+    import json as _json
+    with patch("execution.pwa_jobs.set_status", return_value={
+        "success": True, "job_id": "j1", "status": "carry_forward",
+        "customer_name": "Alice",
+    }) as mock_set:
+        resp = pwa_client.post(
+            "/pwa/api/job/j1/status",
+            data=_json.dumps({"command": "BACK"}),
+            content_type="application/json",
+        )
+
+    assert resp.status_code == 200
+    data = _json.loads(resp.data)
+    assert data["status"] == "carry_forward"
+    mock_set.assert_called_once_with("client-1", "emp-1", "j1", "BACK")
+
+
+def test_pwa_job_status_missing_command_returns_400(pwa_client):
+    """POST /pwa/api/job/<id>/status without command should return 400."""
+    _set_pwa_session(pwa_client)
+    import json as _json
+    resp = pwa_client.post(
+        "/pwa/api/job/j1/status",
+        data=_json.dumps({}),
+        content_type="application/json",
+    )
+    assert resp.status_code == 400
+
+
+def test_pwa_job_endpoints_require_auth(pwa_client):
+    """All job action endpoints should require auth."""
+    for path, method in [
+        ("/pwa/api/route", "GET"),
+        ("/pwa/api/job/j1/start", "POST"),
+        ("/pwa/api/job/j1/done", "POST"),
+        ("/pwa/api/job/j1/status", "POST"),
+    ]:
+        resp = pwa_client.open(path, method=method)
+        assert resp.status_code in (301, 302, 308, 400, 401, 403)
+
+
+def test_pwa_shell_links_to_route_screen(pwa_client):
+    """Shell should link to /pwa/route now that step 4 is live."""
+    _set_pwa_session(pwa_client)
+    resp = pwa_client.get("/pwa/")
+    body = resp.data.decode()
+    assert "/pwa/route" in body
+
+
+# ---------------------------------------------------------------------------
+# pwa_jobs module unit tests (no Flask)
+# ---------------------------------------------------------------------------
+
+def test_pwa_jobs_start_rejects_job_not_in_route():
+    """start_job should refuse if job is not in employee's route."""
+    from unittest.mock import patch
+    with patch("execution.pwa_jobs.get_todays_route", return_value=[
+        {"job_id": "other-job", "customer_name": "Alice"},
+    ]):
+        from execution.pwa_jobs import start_job
+        result = start_job("client-1", "emp-1", "wrong-job")
+    assert result["success"] is False
+    assert "route" in result["error"].lower()
+
+
+def test_pwa_jobs_start_rejects_already_completed():
+    """start_job should refuse if job already has job_end set."""
+    from unittest.mock import patch
+    with patch("execution.pwa_jobs.get_todays_route", return_value=[
+        {"job_id": "j1", "customer_name": "Alice",
+         "job_start": "2026-04-09T08:00:00", "job_end": "2026-04-09T09:00:00"},
+    ]):
+        from execution.pwa_jobs import start_job
+        result = start_job("client-1", "emp-1", "j1")
+    assert result["success"] is False
+    assert "completed" in result["error"].lower()
+
+
+def test_pwa_jobs_unknown_command_rejected():
+    """set_status should reject unknown commands."""
+    from execution.pwa_jobs import set_status
+    result = set_status("client-1", "emp-1", "j1", "INVALID")
+    assert result["success"] is False
+    assert "unknown" in result["error"].lower()
