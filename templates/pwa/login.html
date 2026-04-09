@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Sign in — Bolts11</title>
+  <link rel="manifest" href="/static/manifest.json">
+  <meta name="theme-color" content="#132038">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="apple-touch-icon" href="/static/icon-192.png">
+
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    html,body{height:100%;-webkit-tap-highlight-color:transparent}
+    body{
+      font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+      background:#132038;color:#fff;
+      min-height:100vh;display:flex;flex-direction:column;
+      padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+    }
+    .hdr{padding:32px 20px 16px;text-align:center}
+    .logo{font-size:36px;font-weight:800;letter-spacing:.02em}
+    .logo span{color:#f59e0b}
+    .tagline{font-size:13px;color:rgba(255,255,255,.55);margin-top:6px}
+
+    main{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px}
+    .card{
+      background:rgba(255,255,255,.06);
+      border:1px solid rgba(255,255,255,.1);
+      border-radius:14px;
+      padding:28px 24px;
+      width:100%;
+      max-width:380px;
+      backdrop-filter:blur(10px);
+    }
+    h1{font-size:22px;font-weight:700;margin-bottom:8px}
+    .sub{font-size:14px;color:rgba(255,255,255,.65);margin-bottom:24px;line-height:1.5}
+
+    label{
+      display:block;font-size:12px;font-weight:600;
+      text-transform:uppercase;letter-spacing:.06em;
+      color:rgba(255,255,255,.5);margin-bottom:8px;
+    }
+    input[type=tel]{
+      width:100%;font-size:18px;padding:14px 16px;min-height:52px;
+      background:rgba(255,255,255,.08);
+      border:1.5px solid rgba(255,255,255,.15);
+      border-radius:10px;
+      color:#fff;outline:none;
+      font-family:inherit;
+      -webkit-appearance:none;
+    }
+    input[type=tel]:focus{
+      border-color:#f59e0b;
+      background:rgba(255,255,255,.12);
+    }
+    input::placeholder{color:rgba(255,255,255,.35)}
+
+    .btn{
+      display:block;width:100%;
+      padding:16px;margin-top:16px;
+      font-size:16px;font-weight:700;
+      background:#f59e0b;color:#132038;
+      border:none;border-radius:10px;
+      cursor:pointer;min-height:52px;
+      transition:opacity .15s;
+      font-family:inherit;
+    }
+    .btn:hover{opacity:.9}
+    .btn:disabled{opacity:.5;cursor:not-allowed}
+
+    .msg{
+      margin-top:16px;padding:12px 14px;border-radius:8px;
+      font-size:13px;line-height:1.4;display:none;
+    }
+    .msg.show{display:block}
+    .msg.success{background:rgba(34,197,94,.15);border:1px solid rgba(34,197,94,.3);color:#86efac}
+    .msg.error{background:rgba(239,68,68,.15);border:1px solid rgba(239,68,68,.3);color:#fca5a5}
+
+    .help{
+      font-size:12px;color:rgba(255,255,255,.4);
+      margin-top:24px;text-align:center;line-height:1.5;
+    }
+
+    footer{padding:16px;text-align:center;font-size:11px;color:rgba(255,255,255,.3)}
+  </style>
+</head>
+<body>
+  <div class="hdr">
+    <div class="logo"><span>&#9889;</span> BOLTS11</div>
+    <div class="tagline">Job Dispatch &middot; Invoicing</div>
+  </div>
+
+  <main>
+    <div class="card">
+      <h1>Sign in</h1>
+      <div class="sub">Enter your phone number and we'll send you a one-tap login link.</div>
+
+      <form id="login-form" onsubmit="return false">
+        <label for="phone">Your phone</label>
+        <input type="tel" id="phone" placeholder="(207) 555-0100" autocomplete="tel" required>
+        <button type="submit" class="btn" id="send-btn">Send Login Link</button>
+        <div class="msg{% if error %} show error{% endif %}" id="msg">{% if error %}{{ error }}{% endif %}</div>
+      </form>
+
+      <div class="help">
+        The link expires in 15 minutes.<br>
+        Trouble signing in? Ask your office.
+      </div>
+    </div>
+  </main>
+
+  <footer>Bolts11 PWA</footer>
+
+  <script>
+    // Auto-format phone input as user types
+    var phoneInput = document.getElementById('phone');
+    phoneInput.addEventListener('input', function(e){
+      var d = e.target.value.replace(/\D/g,'').replace(/^1/,'').slice(0,10);
+      if (d.length <= 3)      e.target.value = d.length ? '(' + d : '';
+      else if (d.length <= 6) e.target.value = '(' + d.slice(0,3) + ') ' + d.slice(3);
+      else                    e.target.value = '(' + d.slice(0,3) + ') ' + d.slice(3,6) + '-' + d.slice(6);
+    });
+
+    document.getElementById('login-form').addEventListener('submit', async function(){
+      var btn = document.getElementById('send-btn');
+      var msg = document.getElementById('msg');
+      var phone = phoneInput.value.trim();
+
+      if (!phone) {
+        showMsg('error', 'Enter your phone number first.');
+        return;
+      }
+
+      btn.disabled = true;
+      btn.textContent = 'Sending...';
+      msg.className = 'msg';
+
+      try {
+        var r = await fetch('/pwa/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ phone: phone }),
+        });
+        var d = await r.json();
+        if (d.success) {
+          showMsg('success', d.message || 'Check your email/texts for the login link.');
+          btn.textContent = 'Link Sent &check;';
+          btn.style.background = '#16a34a';
+          btn.style.color = '#fff';
+        } else {
+          showMsg('error', d.error || 'Something went wrong.');
+          btn.disabled = false;
+          btn.textContent = 'Send Login Link';
+        }
+      } catch (err) {
+        showMsg('error', 'Connection error. Try again.');
+        btn.disabled = false;
+        btn.textContent = 'Send Login Link';
+      }
+    });
+
+    function showMsg(kind, text){
+      var msg = document.getElementById('msg');
+      msg.className = 'msg show ' + kind;
+      msg.textContent = text;
+    }
+  </script>
+</body>
+</html>

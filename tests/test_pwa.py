@@ -32,37 +32,33 @@ def pwa_client():
 # /pwa/ shell
 # ---------------------------------------------------------------------------
 
-def test_pwa_shell_returns_200(pwa_client):
-    """GET /pwa/ should serve the shell template."""
+def test_pwa_shell_redirects_when_unauthed(pwa_client):
+    """GET /pwa/ without auth should redirect to /pwa/login."""
+    resp = pwa_client.get("/pwa/")
+    assert resp.status_code in (301, 302, 308)
+    assert "/pwa/login" in resp.headers.get("Location", "")
+
+
+def test_pwa_shell_renders_when_authed(pwa_client):
+    """GET /pwa/ with PWA session should render the shell."""
+    with pwa_client.session_transaction() as sess:
+        sess["pwa_authed"] = True
+        sess["client_id"] = "00000000-0000-0000-0000-000000000001"
+        sess["employee_name"] = "Jesse"
+        sess["employee_role"] = "field_tech"
     resp = pwa_client.get("/pwa/")
     assert resp.status_code == 200
-
-
-def test_pwa_shell_includes_manifest(pwa_client):
-    """Shell HTML must link to /static/manifest.json."""
-    resp = pwa_client.get("/pwa/")
     body = resp.data.decode()
+    assert "Jesse" in body
     assert 'rel="manifest"' in body
     assert "/static/manifest.json" in body
-
-
-def test_pwa_shell_registers_service_worker(pwa_client):
-    """Shell HTML must register the service worker at /sw.js."""
-    resp = pwa_client.get("/pwa/")
-    body = resp.data.decode()
     assert "serviceWorker.register" in body
     assert "/sw.js" in body
-
-
-def test_pwa_shell_includes_theme_color(pwa_client):
-    """Shell HTML must include theme-color meta for browser chrome."""
-    resp = pwa_client.get("/pwa/")
-    body = resp.data.decode()
     assert 'name="theme-color"' in body
 
 
 def test_pwa_shell_no_trailing_slash(pwa_client):
-    """GET /pwa (no slash) should also resolve."""
+    """GET /pwa (no slash) should resolve."""
     resp = pwa_client.get("/pwa")
     assert resp.status_code in (200, 301, 302, 308)
 
@@ -146,3 +142,126 @@ def test_icon_512_served(pwa_client):
     resp = pwa_client.get("/static/icon-512.png")
     assert resp.status_code == 200
     assert "image/png" in resp.headers.get("Content-Type", "")
+
+
+# ---------------------------------------------------------------------------
+# PWA magic-link auth (step 2)
+# ---------------------------------------------------------------------------
+
+def test_pwa_login_form_renders(pwa_client):
+    """GET /pwa/login should render the magic-link form."""
+    resp = pwa_client.get("/pwa/login")
+    assert resp.status_code == 200
+    body = resp.data.decode()
+    assert "Sign in" in body
+    assert "phone" in body.lower()
+
+
+def test_pwa_login_post_no_phone_returns_400(pwa_client):
+    """Empty phone should return 400."""
+    import json as _json
+    resp = pwa_client.post(
+        "/pwa/login",
+        data=_json.dumps({"phone": ""}),
+        content_type="application/json",
+    )
+    assert resp.status_code == 400
+
+
+def test_pwa_login_unknown_phone_returns_generic_success(pwa_client):
+    """
+    Unknown phone should still return success (no enumeration).
+    The magic message tells the tech to check email/texts whether
+    or not the number exists.
+    """
+    import json as _json
+    from unittest.mock import patch
+    with patch("execution.pwa_auth.find_client_by_phone", return_value=None):
+        resp = pwa_client.post(
+            "/pwa/login",
+            data=_json.dumps({"phone": "+19999999999"}),
+            content_type="application/json",
+        )
+    assert resp.status_code == 200
+    data = _json.loads(resp.data)
+    assert data["success"] is True
+
+
+def test_pwa_login_known_phone_creates_link_and_notifies(pwa_client):
+    """Valid phone should create a magic link and call notify()."""
+    import json as _json
+    from unittest.mock import patch
+    with patch("execution.pwa_auth.find_client_by_phone", return_value="client-1"), \
+         patch("execution.pwa_auth.create_magic_link", return_value={
+             "success": True,
+             "url": "https://example.com/pwa/auth/abc12345",
+             "employee": {"name": "Jesse Smith", "phone": "+12075551234"},
+             "expires_at": "2026-04-09T15:00:00+00:00",
+             "error": None,
+         }) as mock_create, \
+         patch("execution.notify.notify", return_value={
+             "success": True, "channel": "email", "error": None,
+         }) as mock_notify:
+        resp = pwa_client.post(
+            "/pwa/login",
+            data=_json.dumps({"phone": "+12075551234"}),
+            content_type="application/json",
+        )
+
+    assert resp.status_code == 200
+    data = _json.loads(resp.data)
+    assert data["success"] is True
+    mock_create.assert_called_once()
+    mock_notify.assert_called_once()
+    # Verify the magic link URL was passed to notify
+    call_args = mock_notify.call_args
+    assert "abc12345" in call_args.kwargs.get("message", "")
+
+
+def test_pwa_auth_token_invalid_returns_login_page(pwa_client):
+    """Bad token should re-render the login page with an error."""
+    from unittest.mock import patch
+    with patch("execution.pwa_auth.consume_magic_link", return_value={
+        "success": False, "error": "Invalid or expired link",
+    }):
+        resp = pwa_client.get("/pwa/auth/badtoken")
+    assert resp.status_code == 401
+    assert b"Invalid" in resp.data or b"expired" in resp.data
+
+
+def test_pwa_auth_token_valid_sets_session_and_redirects(pwa_client):
+    """Valid token should set the PWA session and redirect to /pwa/."""
+    from unittest.mock import patch
+    with patch("execution.pwa_auth.consume_magic_link", return_value={
+        "success": True,
+        "client_id": "client-1",
+        "employee_id": "emp-1",
+        "employee_name": "Jesse",
+        "employee_role": "field_tech",
+        "employee_phone": "+12075551234",
+        "error": None,
+    }):
+        resp = pwa_client.get("/pwa/auth/goodtoken")
+
+    assert resp.status_code in (301, 302, 308)
+    assert "/pwa/" in resp.headers.get("Location", "")
+
+    # Verify session was set
+    with pwa_client.session_transaction() as sess:
+        assert sess.get("pwa_authed") is True
+        assert sess.get("client_id") == "client-1"
+        assert sess.get("employee_name") == "Jesse"
+
+
+def test_pwa_logout_clears_session(pwa_client):
+    """GET /pwa/logout should clear PWA session and redirect."""
+    with pwa_client.session_transaction() as sess:
+        sess["pwa_authed"] = True
+        sess["employee_name"] = "Jesse"
+
+    resp = pwa_client.get("/pwa/logout")
+    assert resp.status_code in (301, 302, 308)
+
+    with pwa_client.session_transaction() as sess:
+        assert sess.get("pwa_authed") is None
+        assert sess.get("employee_name") is None

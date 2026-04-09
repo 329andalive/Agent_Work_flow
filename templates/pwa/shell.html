@@ -65,12 +65,14 @@
 <body>
   <div class="hdr">
     <div class="logo"><span>&#9889;</span> BOLTS11</div>
-    <div class="tagline">Job Dispatch & Invoicing</div>
+    <div class="tagline">Signed in as <strong>{{ employee_name }}</strong>{% if employee_role %} &middot; {{ employee_role|replace('_', ' ')|title }}{% endif %}</div>
   </div>
 
   <main>
     <h1>PWA shell ready</h1>
     <p>Tech screens are coming online. Clock in/out, today's route, and AI chat will land here in the next builds.</p>
+
+    <a href="/pwa/logout" style="font-size:13px;color:rgba(255,255,255,.5);text-decoration:none;margin-top:16px">Sign out</a>
 
     <div class="install-hint" id="install-hint" style="display:none">
       <strong>Install Bolts11 to your home screen</strong>

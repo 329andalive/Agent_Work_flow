@@ -17,10 +17,15 @@ Future routes (not in this commit — see CLAUDE.md):
 
 import os
 import sys
+from functools import wraps
+from datetime import datetime
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from flask import Blueprint, render_template, send_from_directory
+from flask import (
+    Blueprint, render_template, send_from_directory,
+    request, jsonify, redirect, session,
+)
 
 pwa_bp = Blueprint("pwa_bp", __name__, url_prefix="/pwa")
 
@@ -28,20 +33,163 @@ _project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _static_dir = os.path.join(_project_root, "static")
 
 
+def _ts():
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+
 # ---------------------------------------------------------------------------
-# GET /pwa/ — PWA shell
+# Auth decorator — protects PWA routes
+# ---------------------------------------------------------------------------
+
+def require_pwa_auth(view):
+    """Redirect to /pwa/login if no PWA session is set."""
+    @wraps(view)
+    def wrapper(*args, **kwargs):
+        if not session.get("pwa_authed") or not session.get("client_id"):
+            return redirect("/pwa/login")
+        return view(*args, **kwargs)
+    return wrapper
+
+
+# ---------------------------------------------------------------------------
+# GET /pwa/ — PWA shell (auth required)
 # ---------------------------------------------------------------------------
 
 @pwa_bp.route("/", strict_slashes=False)
+@require_pwa_auth
 def pwa_shell():
-    """
-    Serve the PWA shell template. This is what loads when a tech taps
-    the home-screen icon. Subsequent screens (clock, job, chat) will
-    be added in follow-up commits.
+    """The PWA shell that loads when the tech taps their home-screen icon."""
+    return render_template("pwa/shell.html",
+        employee_name=session.get("employee_name", "Tech"),
+        employee_role=session.get("employee_role", ""),
+    )
 
-    No login required at this stage — token-based auth lands in step 2.
+
+# ---------------------------------------------------------------------------
+# GET /pwa/login — Magic link request screen
+# ---------------------------------------------------------------------------
+
+@pwa_bp.route("/login", strict_slashes=False)
+def pwa_login_form():
+    """Render the phone-number entry form."""
+    return render_template("pwa/login.html")
+
+
+# ---------------------------------------------------------------------------
+# POST /pwa/login — Send magic link
+# ---------------------------------------------------------------------------
+
+@pwa_bp.route("/login", methods=["POST"])
+def pwa_login_send():
     """
-    return render_template("pwa/shell.html")
+    Generate and send a magic-link login URL.
+
+    Body: { phone: "+12075551234" }
+    """
+    from execution.pwa_auth import create_magic_link, find_client_by_phone
+    from execution.notify import notify
+
+    data = request.get_json(silent=True) or {}
+    phone = (data.get("phone") or "").strip()
+
+    if not phone:
+        return jsonify({"success": False, "error": "Phone number required"}), 400
+
+    # Find which client this tech belongs to
+    client_id = find_client_by_phone(phone)
+    if not client_id:
+        # Don't reveal whether the phone exists — generic message
+        return jsonify({
+            "success": True,
+            "message": "If that number is on file, a login link is on the way.",
+        })
+
+    base_url = request.host_url.rstrip("/")
+    result = create_magic_link(client_id, phone, base_url)
+
+    if not result["success"]:
+        # Same generic response — never confirm/deny existence
+        return jsonify({
+            "success": True,
+            "message": "If that number is on file, a login link is on the way.",
+        })
+
+    # Send the link via notify router (auto-routes email vs SMS)
+    employee = result["employee"] or {}
+    employee_name = employee.get("name", "")
+    first = employee_name.split()[0] if employee_name else ""
+
+    message = (
+        f"Hey {first}! Your Bolts11 login link:\n{result['url']}\n\n"
+        f"Tap to sign in. Link expires in 15 minutes."
+    )
+    subject = "Your Bolts11 login link"
+
+    notify_result = notify(
+        client_id=client_id,
+        to_phone=phone,
+        message=message,
+        subject=subject,
+        message_type="pwa_login",
+    )
+
+    print(f"[{_ts()}] INFO pwa_login: Magic link sent to {employee_name} via {notify_result.get('channel')}")
+
+    return jsonify({
+        "success": True,
+        "message": "Login link sent. Check your email or texts.",
+        "channel": notify_result.get("channel"),
+    })
+
+
+# ---------------------------------------------------------------------------
+# GET /pwa/auth/<token> — Verify magic link and set session
+# ---------------------------------------------------------------------------
+
+@pwa_bp.route("/auth/<token>")
+def pwa_auth_verify(token):
+    """Consume a magic link, set the PWA session, redirect to /pwa/."""
+    from execution.pwa_auth import consume_magic_link
+
+    result = consume_magic_link(
+        token,
+        request_ip=request.remote_addr,
+        user_agent=request.headers.get("User-Agent", ""),
+    )
+
+    if not result["success"]:
+        return render_template("pwa/login.html", error=result.get("error", "Invalid link")), 401
+
+    # Set the PWA session
+    session["client_id"] = result["client_id"]
+    session["employee_id"] = result.get("employee_id")
+    session["employee_name"] = result.get("employee_name", "Tech")
+    session["employee_role"] = result.get("employee_role", "field_tech")
+    session["employee_phone"] = result.get("employee_phone", "")
+    session["pwa_authed"] = True
+    session.permanent = True
+
+    print(f"[{_ts()}] INFO pwa_auth: Session set for {result.get('employee_name')} client={result.get('client_id', '')[:8]}")
+    return redirect("/pwa/")
+
+
+# ---------------------------------------------------------------------------
+# GET /pwa/logout — Clear PWA session
+# ---------------------------------------------------------------------------
+
+@pwa_bp.route("/logout")
+def pwa_logout():
+    """Clear PWA-specific session keys and return to login."""
+    for key in ("pwa_authed", "employee_id", "employee_name",
+                "employee_role", "employee_phone"):
+        session.pop(key, None)
+    # Don't clear client_id if dashboard auth is also active
+    return redirect("/pwa/login")
+
+
+# ---------------------------------------------------------------------------
+# GET /sw.js — Service worker at root scope
+# ---------------------------------------------------------------------------
 
 
 # ---------------------------------------------------------------------------
