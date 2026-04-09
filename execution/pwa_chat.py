@@ -1,22 +1,36 @@
 """
-pwa_chat.py — PWA AI chat agent (Step 6a — text replies only)
+pwa_chat.py — PWA AI chat agent (Step 6b — action chips)
 
-Wraps Claude Haiku as a router (NOT an executor). When the tech asks
-to do something that creates or modifies data, the agent acknowledges
-and tells them an action button will appear in a future build. It
-never calls proposal_agent.run() or any other write path directly.
+Wraps Claude Haiku as a router (NOT an executor). The chat agent
+classifies the tech's intent and, when appropriate, returns a
+structured "action" dict that the PWA renders as a tappable chip.
+The chip's tap handler hits the existing PWA endpoint (e.g.
+/pwa/api/job/new) that owns the actual write. The chat agent
+itself never calls proposal_agent.run() or any other write path.
 
-Step 6b will add structured action chips: the agent will return
-{reply, action} JSON, the PWA will render the chip, and the chip's
-onclick will hit the existing /pwa/api/job/new endpoint that owns
-the proposal creation. This file already returns a dict with a
-"reply" key so the contract is stable when 6b lands.
+Return shape:
+    {
+        "success": True,
+        "reply":   "I can draft that estimate for Alice — $325.",
+        "action":  {
+            "type":     "create_proposal",   # or mark_job_done / start_job / clock_in / clock_out
+            "label":    "Create estimate · $325",
+            "params":   { ... endpoint-specific args ... },
+            "endpoint": "/pwa/api/job/new",
+            "method":   "POST",
+        } or None,
+        "model":   "haiku",
+        "system_prompt_chars": int,
+        "error":   str or None,
+    }
 
 System prompt budget: under 500 input tokens, repeated every turn.
 """
 
 import os
 import sys
+import json
+import re
 from datetime import datetime
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -81,8 +95,8 @@ def _build_system_prompt(employee_name: str, employee_role: str,
     Sections in order of importance:
       1. Identity (who is this AI, who is the tech)
       2. Today's context (route summary)
-      3. What you can do (actions)
-      4. How to respond (format)
+      3. Actions (when to return one + JSON contract)
+      4. Style rules
     """
     role_label = (employee_role or "field tech").replace("_", " ")
 
@@ -90,15 +104,24 @@ def _build_system_prompt(employee_name: str, employee_role: str,
         f"You are the AI assistant for {business_name}. "
         f"You are texting with {employee_name}, a {role_label} on the road.\n\n"
         f"{route_summary}\n\n"
-        f"What you can do today: answer questions about the schedule, "
-        f"acknowledge requests to create estimates, invoices, or new "
-        f"customers, and explain how things work.\n\n"
-        f"You CANNOT yet directly create things — when the tech asks to "
-        f"create an estimate or add a customer, acknowledge what they "
-        f"want and tell them an action button will appear in the next "
-        f"update. Do NOT pretend you created it.\n\n"
-        f"Style: short, plain, no corporate filler. Reply in 1-3 sentences "
-        f"unless they ask for details. Use the tech's name occasionally."
+        f"WHEN TO RETURN AN ACTION:\n"
+        f"If the tech clearly asks to do something below, return JSON with both "
+        f"\"reply\" and \"action\". Otherwise return JSON with just \"reply\".\n"
+        f"Available actions:\n"
+        f"- create_proposal: tech describes a job to estimate. "
+        f"params: {{description, customer_name?, customer_phone?, customer_address?, amount?}}\n"
+        f"- mark_job_done: tech says they finished a job on today's route. "
+        f"params: {{customer_name}} (matched server-side)\n"
+        f"- start_job: tech says they're starting a job on today's route. "
+        f"params: {{customer_name}}\n"
+        f"- clock_in / clock_out: tech says they're starting/ending shift. params: {{}}\n\n"
+        f"RESPONSE FORMAT — always valid JSON, never markdown fences:\n"
+        f"{{\"reply\": \"text\"}}  OR  "
+        f"{{\"reply\": \"text\", \"action\": {{\"type\": \"create_proposal\", \"params\": {{...}}}}}}\n"
+        f"Never invent customer names. Never include action ids you don't have. "
+        f"If unsure, just reply without an action.\n\n"
+        f"Style: short, plain, no corporate filler. 1-3 sentences unless asked "
+        f"for details. Use the tech's name occasionally."
     )
 
 
@@ -130,6 +153,90 @@ def _format_history_for_claude(history: list) -> list:
     return messages
 
 
+# Action types we accept from the model. Anything else is dropped.
+_ALLOWED_ACTIONS = {
+    "create_proposal",
+    "mark_job_done",
+    "start_job",
+    "clock_in",
+    "clock_out",
+}
+
+
+def _strip_json_fences(text: str) -> str:
+    """
+    Strip ```json ... ``` or ``` ... ``` fences if Claude wraps its
+    response despite being told not to. Be permissive — model behavior
+    drifts and we don't want a fenced response to break the chat.
+    """
+    s = text.strip()
+    if s.startswith("```"):
+        # Drop the opening fence (with optional language tag) and closing fence
+        s = re.sub(r"^```(?:json)?\s*", "", s)
+        s = re.sub(r"\s*```\s*$", "", s)
+    return s.strip()
+
+
+def _parse_claude_response(raw: str) -> dict:
+    """
+    Parse Claude's response into {reply, action}.
+
+    The model is instructed to always return JSON. Reality:
+      - Sometimes it wraps the JSON in markdown fences. Strip them.
+      - Sometimes it returns plain text instead of JSON. Treat the
+        whole thing as the reply with no action.
+      - Sometimes it returns valid JSON with an unknown action type.
+        Drop the action, keep the reply.
+
+    Returns:
+        {"reply": str, "action": dict or None}
+    """
+    if not raw:
+        return {"reply": "", "action": None}
+
+    cleaned = _strip_json_fences(raw)
+
+    # Strip a leading "Assistant:" prefix the model occasionally echoes.
+    if cleaned.lower().startswith("assistant:"):
+        cleaned = cleaned.split(":", 1)[1].strip()
+
+    # Try JSON first
+    try:
+        parsed = json.loads(cleaned)
+    except (json.JSONDecodeError, ValueError):
+        # Not JSON — treat the whole response as the reply text
+        return {"reply": cleaned, "action": None}
+
+    if not isinstance(parsed, dict):
+        return {"reply": cleaned, "action": None}
+
+    reply = parsed.get("reply") or ""
+    if not isinstance(reply, str):
+        reply = str(reply)
+    reply = reply.strip()
+
+    action = parsed.get("action")
+    if not isinstance(action, dict):
+        return {"reply": reply, "action": None}
+
+    action_type = action.get("type")
+    if action_type not in _ALLOWED_ACTIONS:
+        # Unknown action — drop it, keep the reply
+        return {"reply": reply, "action": None}
+
+    params = action.get("params") or {}
+    if not isinstance(params, dict):
+        params = {}
+
+    return {
+        "reply": reply,
+        "action": {
+            "type": action_type,
+            "params": params,
+        },
+    }
+
+
 def chat(
     client_id: str,
     employee_id: str,
@@ -140,23 +247,22 @@ def chat(
     history: list,
 ) -> dict:
     """
-    Main entry point. Send a user message + history to Claude Haiku
-    and return the assistant's reply.
+    Main entry point. Send a user message + history to Claude Haiku,
+    parse the JSON response, validate any embedded action, and return
+    the assistant's reply + an optional decorated action chip.
 
     Returns:
         {
             "success": bool,
             "reply": str,
+            "action": dict or None,  # see _decorate_action() for shape
             "model": str,
-            "system_prompt_chars": int,  # for monitoring the budget
+            "system_prompt_chars": int,
             "error": str or None,
         }
-
-    Note: This function returns a dict (not a string) so 6b can add
-    an "action" key without changing the route signature.
     """
     if not user_message or not user_message.strip():
-        return {"success": False, "reply": "", "error": "Empty message"}
+        return {"success": False, "reply": "", "action": None, "error": "Empty message"}
 
     # Build the system prompt with today's context
     route_summary = _route_summary_for_employee(client_id, employee_id)
@@ -184,7 +290,7 @@ def chat(
         # call_claude takes a single user_prompt string in this codebase, so
         # we collapse history into the user_prompt and rely on the model's
         # behavior. Better long-term: extend call_claude to accept a messages
-        # array, but that's a bigger change. For 6a we encode the recent
+        # array, but that's a bigger change. For 6b we still encode recent
         # turns as a transcript inside the user message.
         transcript_lines = []
         for msg in claude_messages[:-1]:
@@ -197,13 +303,14 @@ def chat(
             system_prompt=system_prompt,
             user_prompt=user_prompt,
             model="haiku",
-            max_tokens=400,
+            max_tokens=500,
         )
     except Exception as e:
         print(f"[{_ts()}] ERROR pwa_chat: Claude call failed — {e}")
         return {
             "success": False,
             "reply": "Sorry — I can't reach the AI right now. Try again in a moment.",
+            "action": None,
             "model": "haiku",
             "system_prompt_chars": char_count,
             "error": str(e),
@@ -213,19 +320,37 @@ def chat(
         return {
             "success": False,
             "reply": "I didn't get an answer back. Try rephrasing?",
+            "action": None,
             "model": "haiku",
             "system_prompt_chars": char_count,
             "error": "Empty response",
         }
 
-    # Strip any leading "Assistant:" prefix the model might echo back
-    cleaned = reply_text.strip()
-    if cleaned.lower().startswith("assistant:"):
-        cleaned = cleaned.split(":", 1)[1].strip()
+    # Parse Claude's JSON response → {reply, action}
+    parsed = _parse_claude_response(reply_text)
+    reply = parsed["reply"] or "Got it."
+    raw_action = parsed["action"]
+
+    # Validate + decorate the action server-side (resolves customer
+    # name to job_id, builds the chip label, attaches the endpoint).
+    decorated_action = None
+    if raw_action:
+        try:
+            from execution.pwa_chat_actions import decorate_action
+            decorated_action = decorate_action(
+                client_id=client_id,
+                employee_id=employee_id,
+                action_type=raw_action["type"],
+                params=raw_action.get("params") or {},
+            )
+        except Exception as e:
+            print(f"[{_ts()}] WARN pwa_chat: decorate_action failed — {e}")
+            decorated_action = None
 
     return {
         "success": True,
-        "reply": cleaned,
+        "reply": reply,
+        "action": decorated_action,
         "model": "haiku",
         "system_prompt_chars": char_count,
         "error": None,

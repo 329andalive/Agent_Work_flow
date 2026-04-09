@@ -76,6 +76,57 @@
     }
     .msg.user .ts{text-align:right}
 
+    /* Action chip — sits below the assistant bubble */
+    .chip{
+      align-self:flex-start;
+      margin-top:6px;
+      padding:10px 16px;
+      background:#f59e0b;
+      color:#132038;
+      border:none;
+      border-radius:18px;
+      font-size:14px;
+      font-weight:700;
+      font-family:inherit;
+      cursor:pointer;
+      display:inline-flex;align-items:center;gap:6px;
+      transition:opacity .15s,transform .1s;
+      max-width:100%;
+      text-align:left;
+    }
+    .chip:active{transform:scale(.96)}
+    .chip:disabled{opacity:.5;cursor:wait}
+    .chip.done{
+      background:rgba(22,163,74,.18);
+      color:#86efac;
+      border:1px solid rgba(22,163,74,.3);
+      cursor:default;
+      font-weight:600;
+    }
+    .chip.done:active{transform:none}
+    .chip-link{
+      align-self:flex-start;
+      margin-top:6px;
+      padding:8px 14px;
+      background:rgba(245,158,11,.15);
+      color:#f59e0b;
+      border:1px solid rgba(245,158,11,.4);
+      border-radius:14px;
+      font-size:13px;font-weight:600;
+      text-decoration:none;
+      display:inline-flex;align-items:center;gap:6px;
+    }
+    .chip-error{
+      align-self:flex-start;
+      margin-top:6px;
+      padding:8px 14px;
+      background:rgba(220,38,38,.12);
+      border:1px solid rgba(220,38,38,.3);
+      color:#fca5a5;
+      border-radius:14px;
+      font-size:12px;
+    }
+
     /* Typing indicator */
     .typing{
       display:flex;gap:4px;padding:14px;
@@ -131,6 +182,29 @@
     }
     .send-btn:active{transform:scale(.95)}
     .send-btn:disabled{opacity:.4;cursor:not-allowed}
+
+    /* Voice input mic button — same size as send, sits before the textarea */
+    .mic-btn{
+      width:44px;height:44px;flex-shrink:0;
+      border:none;border-radius:50%;
+      background:rgba(255,255,255,.08);
+      color:#fff;
+      font-size:20px;
+      cursor:pointer;
+      display:none; /* JS reveals if Web Speech API is available */
+      align-items:center;justify-content:center;
+      transition:background .15s,transform .1s;
+    }
+    .mic-btn.available{display:flex}
+    .mic-btn:active{transform:scale(.95)}
+    .mic-btn.recording{
+      background:#dc2626;
+      animation:pulse 1.2s infinite ease-in-out;
+    }
+    @keyframes pulse{
+      0%,100%{box-shadow:0 0 0 0 rgba(220,38,38,.5)}
+      50%{box-shadow:0 0 0 8px rgba(220,38,38,0)}
+    }
   </style>
 </head>
 <body>
@@ -148,6 +222,7 @@
   </main>
 
   <form class="composer" id="composer" onsubmit="return false">
+    <button type="button" class="mic-btn" id="mic-btn" aria-label="Voice input">&#127908;</button>
     <textarea
       id="input"
       placeholder="Message..."
@@ -171,7 +246,7 @@ function fmtTime(iso){
   }catch(e){ return '' }
 }
 
-function appendMessage(role, content, ts, isError){
+function appendMessage(role, content, ts, isError, action){
   var hide = document.getElementById('empty-state');
   if(hide) hide.remove();
 
@@ -195,9 +270,92 @@ function appendMessage(role, content, ts, isError){
     col.appendChild(t);
   }
 
+  // Action chip — only on assistant messages, only when present
+  if(role === 'assistant' && action && action.type){
+    var chip = renderChip(action);
+    if(chip) col.appendChild(chip);
+  }
+
   wrap.appendChild(col);
   document.getElementById('messages').appendChild(wrap);
   scrollToBottom();
+}
+
+// ---------------------------------------------------------------------------
+// Action chips — server-validated, server-decorated. We just render and POST.
+// ---------------------------------------------------------------------------
+
+function renderChip(action){
+  var btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'chip';
+  btn.textContent = action.label || 'Run action';
+  btn.onclick = function(){ tapChip(btn, action); };
+  return btn;
+}
+
+function replaceChip(oldNode, newNode){
+  if(!oldNode || !oldNode.parentNode) return;
+  oldNode.parentNode.replaceChild(newNode, oldNode);
+}
+
+async function tapChip(btn, action){
+  if(!action || !action.endpoint) return;
+  btn.disabled = true;
+  var originalLabel = btn.textContent;
+  btn.textContent = 'Working…';
+
+  var method = (action.method || 'POST').toUpperCase();
+  var fetchOpts = {
+    method: method,
+    headers: {'Content-Type': 'application/json'},
+  };
+  if(method !== 'GET'){
+    fetchOpts.body = JSON.stringify(action.params || {});
+  }
+
+  try{
+    var r = await fetch(action.endpoint, fetchOpts);
+    if(r.status === 401 || r.status === 403){
+      window.location.href = '/pwa/login';
+      return;
+    }
+    var d = {};
+    try{ d = await r.json(); }catch(e){}
+
+    if(!r.ok || d.success === false){
+      var err = document.createElement('div');
+      err.className = 'chip-error';
+      err.textContent = (d && d.error) ? d.error : 'Action failed.';
+      replaceChip(btn, err);
+      return;
+    }
+
+    // Success — transform the chip into a follow-up link if we have one,
+    // otherwise show a green "done" pill in place of the button.
+    var followUrl = d.review_url || d.html_url || d.url || null;
+    if(followUrl){
+      var link = document.createElement('a');
+      link.className = 'chip-link';
+      link.href = followUrl;
+      link.target = '_blank';
+      link.rel = 'noopener';
+      link.textContent = 'Open review →';
+      replaceChip(btn, link);
+    }else{
+      var done = document.createElement('button');
+      done.type = 'button';
+      done.className = 'chip done';
+      done.textContent = '✓ ' + originalLabel;
+      done.disabled = true;
+      replaceChip(btn, done);
+    }
+  }catch(e){
+    var fail = document.createElement('div');
+    fail.className = 'chip-error';
+    fail.textContent = 'Network error. Try the screen directly.';
+    replaceChip(btn, fail);
+  }
 }
 
 function appendTyping(){
@@ -233,7 +391,11 @@ async function loadHistory(){
       if(hide) hide.remove();
 
       d.messages.forEach(function(m){
-        appendMessage(m.role, m.content, m.created_at, false);
+        // Action chips are persisted on assistant messages in metadata.action.
+        // We re-render them on history load so a tech who closes and re-opens
+        // the chat still sees the chip (until they tap or it goes stale).
+        var act = (m.metadata && m.metadata.action) || null;
+        appendMessage(m.role, m.content, m.created_at, false, act);
       });
     }
   }catch(e){
@@ -266,7 +428,7 @@ async function sendMessage(){
     removeTyping();
 
     if(d.reply){
-      appendMessage('assistant', d.reply, new Date().toISOString(), !d.success);
+      appendMessage('assistant', d.reply, new Date().toISOString(), !d.success, d.action || null);
     }
   }catch(e){
     removeTyping();
@@ -298,6 +460,80 @@ document.getElementById('input').addEventListener('keydown', function(e){
     sendMessage();
   }
 });
+
+// ---------------------------------------------------------------------------
+// Voice input (Web Speech API) — push-to-talk into the textarea.
+// We do NOT auto-send the transcript. The tech can edit/correct first.
+// Hidden entirely if the browser doesn't support speech recognition.
+// ---------------------------------------------------------------------------
+
+(function setupVoice(){
+  var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if(!SR) return;
+
+  var micBtn = document.getElementById('mic-btn');
+  var input = document.getElementById('input');
+  micBtn.classList.add('available');
+
+  var rec = new SR();
+  rec.lang = 'en-US';
+  rec.interimResults = false;
+  rec.continuous = false;
+  rec.maxAlternatives = 1;
+
+  var listening = false;
+
+  function start(){
+    if(listening) return;
+    try{
+      rec.start();
+      listening = true;
+      micBtn.classList.add('recording');
+      micBtn.setAttribute('aria-label', 'Stop recording');
+    }catch(e){
+      console.warn('speech start failed', e);
+    }
+  }
+
+  function stop(){
+    if(!listening) return;
+    try{ rec.stop(); }catch(e){}
+    listening = false;
+    micBtn.classList.remove('recording');
+    micBtn.setAttribute('aria-label', 'Voice input');
+  }
+
+  micBtn.addEventListener('click', function(){
+    if(listening){ stop(); } else { start(); }
+  });
+
+  rec.onresult = function(ev){
+    var transcript = '';
+    for(var i = 0; i < ev.results.length; i++){
+      transcript += ev.results[i][0].transcript;
+    }
+    transcript = transcript.trim();
+    if(!transcript) return;
+
+    // Append to whatever's already in the textarea (don't overwrite)
+    var current = input.value.trim();
+    input.value = current ? (current + ' ' + transcript) : transcript;
+    autosizeInput();
+    input.focus();
+  };
+
+  rec.onerror = function(ev){
+    console.warn('speech error', ev.error);
+    stop();
+  };
+
+  rec.onend = function(){
+    // Browser ended the session — make sure UI matches
+    listening = false;
+    micBtn.classList.remove('recording');
+    micBtn.setAttribute('aria-label', 'Voice input');
+  };
+})();
 
 // Initial load
 loadHistory();

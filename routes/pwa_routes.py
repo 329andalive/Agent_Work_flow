@@ -463,17 +463,22 @@ def pwa_chat_send():
         history=history,
     )
 
-    # Save the assistant reply (whether success or fallback message)
+    # Save the assistant reply (whether success or fallback message).
+    # Persist the action chip in metadata so re-loading history shows it.
     if result.get("reply"):
+        meta = {"model": result.get("model", "haiku")}
+        if result.get("action"):
+            meta["action"] = result["action"]
         save_message(
             client_id, employee_id, session_id,
             "assistant", result["reply"],
-            metadata={"model": result.get("model", "haiku")},
+            metadata=meta,
         )
 
     return jsonify({
         "success": result.get("success", False),
         "reply": result.get("reply", ""),
+        "action": result.get("action"),
         "session_id": session_id,
         "error": result.get("error"),
     })

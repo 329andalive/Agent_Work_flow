@@ -1048,3 +1048,276 @@ def test_pwa_chat_messages_save_rejects_empty_content():
     from execution.pwa_chat_messages import save_message
     result = save_message("c1", "e1", "s1", "user", "   ")
     assert result is None
+
+
+# ---------------------------------------------------------------------------
+# Step 6b — action chips, JSON parsing, server-side decoration
+# ---------------------------------------------------------------------------
+
+def test_pwa_chat_parse_response_plain_text():
+    """Plain (non-JSON) Claude response should become a reply with no action."""
+    from execution.pwa_chat import _parse_claude_response
+    out = _parse_claude_response("Hi Jesse, three jobs lined up today.")
+    assert out["action"] is None
+    assert "Jesse" in out["reply"]
+
+
+def test_pwa_chat_parse_response_json_reply_only():
+    """JSON with reply only → reply set, action None."""
+    from execution.pwa_chat import _parse_claude_response
+    out = _parse_claude_response('{"reply": "All clear, boss."}')
+    assert out["reply"] == "All clear, boss."
+    assert out["action"] is None
+
+
+def test_pwa_chat_parse_response_json_with_action():
+    """JSON with reply + action → both extracted."""
+    from execution.pwa_chat import _parse_claude_response
+    raw = (
+        '{"reply": "I can draft that estimate for Alice.",'
+        ' "action": {"type": "create_proposal", '
+        '"params": {"description": "pump out 1000 gal", "customer_name": "Alice"}}}'
+    )
+    out = _parse_claude_response(raw)
+    assert "Alice" in out["reply"]
+    assert out["action"]["type"] == "create_proposal"
+    assert out["action"]["params"]["description"] == "pump out 1000 gal"
+
+
+def test_pwa_chat_parse_response_strips_markdown_fences():
+    """Claude sometimes wraps JSON in ```json fences. Strip them."""
+    from execution.pwa_chat import _parse_claude_response
+    raw = '```json\n{"reply": "Got it."}\n```'
+    out = _parse_claude_response(raw)
+    assert out["reply"] == "Got it."
+    assert out["action"] is None
+
+
+def test_pwa_chat_parse_response_drops_unknown_action_type():
+    """Unknown action types should be dropped — keep the reply only."""
+    from execution.pwa_chat import _parse_claude_response
+    raw = '{"reply": "Sure.", "action": {"type": "delete_database", "params": {}}}'
+    out = _parse_claude_response(raw)
+    assert out["reply"] == "Sure."
+    assert out["action"] is None
+
+
+def test_pwa_chat_parse_response_strips_assistant_prefix_in_json():
+    """Leading 'Assistant:' prefix should be stripped before JSON parse."""
+    from execution.pwa_chat import _parse_claude_response
+    raw = 'Assistant: {"reply": "Hey"}'
+    out = _parse_claude_response(raw)
+    assert out["reply"] == "Hey"
+
+
+def test_pwa_chat_decorate_create_proposal_builds_chip():
+    """create_proposal with a description should produce a chip targeting /pwa/api/job/new."""
+    from execution.pwa_chat_actions import decorate_action
+    chip = decorate_action(
+        client_id="c1", employee_id="e1",
+        action_type="create_proposal",
+        params={"description": "pump out tank", "customer_name": "Alice", "amount": 325},
+    )
+    assert chip is not None
+    assert chip["type"] == "create_proposal"
+    assert chip["endpoint"] == "/pwa/api/job/new"
+    assert chip["method"] == "POST"
+    assert "325" in chip["label"]
+    assert chip["params"]["description"] == "pump out tank"
+
+
+def test_pwa_chat_decorate_create_proposal_requires_description():
+    """No description → no chip."""
+    from execution.pwa_chat_actions import decorate_action
+    chip = decorate_action(
+        client_id="c1", employee_id="e1",
+        action_type="create_proposal",
+        params={"customer_name": "Alice"},
+    )
+    assert chip is None
+
+
+def test_pwa_chat_decorate_mark_job_done_resolves_customer_name():
+    """mark_job_done should fuzzy-match customer name to a job_id from today's route."""
+    from unittest.mock import patch
+    import execution.pwa_chat_actions  # noqa: F401
+
+    fake_route = [
+        {"job_id": "job-aaa", "customer_name": "Alice Smith"},
+        {"job_id": "job-bbb", "customer_name": "Bob Jones"},
+    ]
+    with patch("execution.dispatch_chain.get_todays_route", return_value=fake_route):
+        from execution.pwa_chat_actions import decorate_action
+        chip = decorate_action(
+            client_id="c1", employee_id="e1",
+            action_type="mark_job_done",
+            params={"customer_name": "alice"},
+        )
+    assert chip is not None
+    assert chip["type"] == "mark_job_done"
+    assert chip["params"]["job_id"] == "job-aaa"
+    assert chip["endpoint"] == "/pwa/api/job/job-aaa/done"
+    assert "Alice" in chip["label"]
+
+
+def test_pwa_chat_decorate_mark_job_done_no_match_returns_none():
+    """If no job in the route matches, return None — drop the chip."""
+    from unittest.mock import patch
+    import execution.pwa_chat_actions  # noqa: F401
+
+    fake_route = [{"job_id": "job-aaa", "customer_name": "Alice Smith"}]
+    with patch("execution.dispatch_chain.get_todays_route", return_value=fake_route):
+        from execution.pwa_chat_actions import decorate_action
+        chip = decorate_action(
+            client_id="c1", employee_id="e1",
+            action_type="mark_job_done",
+            params={"customer_name": "Zelda"},
+        )
+    assert chip is None
+
+
+def test_pwa_chat_decorate_start_job_resolves_and_targets_start_endpoint():
+    """start_job should resolve and target /pwa/api/job/<id>/start."""
+    from unittest.mock import patch
+    import execution.pwa_chat_actions  # noqa: F401
+
+    fake_route = [{"job_id": "job-xyz", "customer_name": "Carol Duggan"}]
+    with patch("execution.dispatch_chain.get_todays_route", return_value=fake_route):
+        from execution.pwa_chat_actions import decorate_action
+        chip = decorate_action(
+            client_id="c1", employee_id="e1",
+            action_type="start_job",
+            params={"customer_name": "Carol"},
+        )
+    assert chip is not None
+    assert chip["endpoint"] == "/pwa/api/job/job-xyz/start"
+
+
+def test_pwa_chat_decorate_clock_in_no_params_needed():
+    """clock_in/clock_out should always produce a chip (no params needed)."""
+    from execution.pwa_chat_actions import decorate_action
+    chip_in = decorate_action("c1", "e1", "clock_in", {})
+    chip_out = decorate_action("c1", "e1", "clock_out", {})
+    assert chip_in["endpoint"] == "/pwa/api/clock/in"
+    assert chip_out["endpoint"] == "/pwa/api/clock/out"
+
+
+def test_pwa_chat_decorate_unknown_action_returns_none():
+    """Unknown action types should be rejected at the validator boundary too."""
+    from execution.pwa_chat_actions import decorate_action
+    chip = decorate_action("c1", "e1", "delete_everything", {"x": 1})
+    assert chip is None
+
+
+def test_pwa_chat_returns_action_when_claude_emits_one():
+    """End-to-end: chat() should surface a decorated action when Claude returns JSON."""
+    from unittest.mock import patch
+    import execution.pwa_chat  # noqa: F401
+
+    json_reply = (
+        '{"reply": "Got it — clocking you in.",'
+        ' "action": {"type": "clock_in", "params": {}}}'
+    )
+
+    with patch("execution.pwa_chat.call_claude", return_value=json_reply), \
+         patch("execution.pwa_chat._route_summary_for_employee", return_value="Today: empty."):
+        from execution.pwa_chat import chat
+        result = chat(
+            client_id="c1", employee_id="e1", employee_name="Jesse",
+            employee_role="field_tech", business_name="Test",
+            user_message="clock me in", history=[],
+        )
+
+    assert result["success"] is True
+    assert result["action"] is not None
+    assert result["action"]["type"] == "clock_in"
+    assert result["action"]["endpoint"] == "/pwa/api/clock/in"
+
+
+def test_pwa_chat_no_action_when_plain_text():
+    """If Claude returns plain text, action should be None."""
+    from unittest.mock import patch
+    import execution.pwa_chat  # noqa: F401
+
+    with patch("execution.pwa_chat.call_claude", return_value="No action needed, boss."), \
+         patch("execution.pwa_chat._route_summary_for_employee", return_value="Today: empty."):
+        from execution.pwa_chat import chat
+        result = chat(
+            client_id="c1", employee_id="e1", employee_name="Jesse",
+            employee_role="field_tech", business_name="Test",
+            user_message="hi", history=[],
+        )
+    assert result["success"] is True
+    assert result["action"] is None
+    assert "boss" in result["reply"]
+
+
+def test_pwa_chat_send_persists_action_in_metadata(pwa_client):
+    """The chat send route should save the action under metadata.action."""
+    _set_pwa_session(pwa_client)
+    import execution.pwa_chat_messages  # noqa: F401
+    import execution.pwa_chat  # noqa: F401
+    from unittest.mock import patch, MagicMock
+    import json as _json
+
+    fake_chat_result = {
+        "success": True,
+        "reply": "Clocking you in now.",
+        "action": {
+            "type": "clock_in",
+            "label": "Clock in",
+            "params": {},
+            "endpoint": "/pwa/api/clock/in",
+            "method": "POST",
+        },
+        "model": "haiku",
+        "system_prompt_chars": 900,
+        "error": None,
+    }
+
+    mock_sb = MagicMock()
+    mock_table = MagicMock()
+    for m in ("select", "eq", "limit", "execute"):
+        getattr(mock_table, m).return_value = mock_table
+    mock_table.execute.return_value = MagicMock(data=[{"business_name": "Test Co"}])
+    mock_sb.table.return_value = mock_table
+
+    with patch("execution.pwa_chat_messages.get_active_session_id", return_value="sess-1"), \
+         patch("execution.pwa_chat_messages.get_history", return_value=[]), \
+         patch("execution.pwa_chat_messages.save_message", return_value="msg-id") as mock_save, \
+         patch("execution.pwa_chat.chat", return_value=fake_chat_result), \
+         patch("execution.db_connection.get_client", return_value=mock_sb):
+        resp = pwa_client.post(
+            "/pwa/api/chat/send",
+            data=_json.dumps({"message": "clock me in"}),
+            content_type="application/json",
+        )
+
+    assert resp.status_code == 200
+    data = _json.loads(resp.data)
+    assert data["success"] is True
+    assert data["action"]["type"] == "clock_in"
+
+    # Find the assistant save call and verify metadata.action survived
+    assistant_call = None
+    for call in mock_save.call_args_list:
+        if call.args[3] == "assistant":
+            assistant_call = call
+            break
+    assert assistant_call is not None
+    meta = assistant_call.kwargs.get("metadata") or {}
+    assert meta.get("action", {}).get("type") == "clock_in"
+
+
+def test_pwa_chat_html_renders_chip_and_voice_markup():
+    """Chat template should ship the chip + mic button hooks."""
+    # Cheap render-side check that the 6b pieces are wired into the template.
+    from pathlib import Path
+    html = Path(__file__).parent.parent / "templates" / "pwa" / "chat.html"
+    body = html.read_text()
+    # Action chip CSS class + render function
+    assert "renderChip" in body
+    assert ".chip" in body
+    # Voice input button + Web Speech wiring
+    assert "mic-btn" in body
+    assert "SpeechRecognition" in body
