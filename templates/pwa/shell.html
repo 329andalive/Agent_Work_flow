@@ -35,6 +35,29 @@
     }
     h1{font-size:22px;font-weight:700;margin-bottom:12px}
     p{font-size:15px;color:rgba(255,255,255,.7);line-height:1.5;max-width:320px;margin-bottom:20px}
+    .nav-grid{
+      display:grid;grid-template-columns:1fr 1fr;gap:12px;
+      width:100%;max-width:380px;margin:8px 0 16px;
+    }
+    .nav-tile{
+      background:rgba(255,255,255,.06);
+      border:1px solid rgba(255,255,255,.1);
+      border-radius:14px;
+      padding:24px 16px;
+      text-align:center;text-decoration:none;color:#fff;
+      transition:background .15s,transform .1s;
+      display:flex;flex-direction:column;align-items:center;gap:8px;
+      min-height:110px;justify-content:center;
+    }
+    .nav-tile:active{transform:scale(0.97)}
+    .nav-tile:hover{background:rgba(255,255,255,.1)}
+    .nav-tile .icon{font-size:32px;line-height:1}
+    .nav-tile .label{font-size:14px;font-weight:600}
+    .nav-tile.coming{opacity:.4}
+    .nav-tile.coming::after{
+      content:"soon";font-size:10px;color:#f59e0b;
+      text-transform:uppercase;letter-spacing:.06em;
+    }
     .install-hint{
       background:rgba(245,158,11,.12);
       border:1px solid rgba(245,158,11,.3);
@@ -69,10 +92,26 @@
   </div>
 
   <main>
-    <h1>PWA shell ready</h1>
-    <p>Tech screens are coming online. Clock in/out, today's route, and AI chat will land here in the next builds.</p>
+    <div class="nav-grid">
+      <a href="/pwa/clock" class="nav-tile">
+        <div class="icon">&#9201;</div>
+        <div class="label">Clock In / Out</div>
+      </a>
+      <a href="#" class="nav-tile coming" onclick="return false">
+        <div class="icon">&#128221;</div>
+        <div class="label">New Job</div>
+      </a>
+      <a href="#" class="nav-tile coming" onclick="return false">
+        <div class="icon">&#128737;</div>
+        <div class="label">Today's Route</div>
+      </a>
+      <a href="#" class="nav-tile coming" onclick="return false">
+        <div class="icon">&#128172;</div>
+        <div class="label">AI Chat</div>
+      </a>
+    </div>
 
-    <a href="/pwa/logout" style="font-size:13px;color:rgba(255,255,255,.5);text-decoration:none;margin-top:16px">Sign out</a>
+    <a href="/pwa/logout" style="font-size:13px;color:rgba(255,255,255,.5);text-decoration:none;margin-top:8px">Sign out</a>
 
     <div class="install-hint" id="install-hint" style="display:none">
       <strong>Install Bolts11 to your home screen</strong>

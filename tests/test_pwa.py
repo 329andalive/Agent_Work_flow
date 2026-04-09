@@ -265,3 +265,167 @@ def test_pwa_logout_clears_session(pwa_client):
     with pwa_client.session_transaction() as sess:
         assert sess.get("pwa_authed") is None
         assert sess.get("employee_name") is None
+
+
+# ---------------------------------------------------------------------------
+# PWA clock screen + API (step 3)
+# ---------------------------------------------------------------------------
+
+def _set_pwa_session(pwa_client, employee_id="emp-1"):
+    """Helper: set a logged-in PWA session."""
+    with pwa_client.session_transaction() as sess:
+        sess["pwa_authed"] = True
+        sess["client_id"] = "client-1"
+        sess["employee_id"] = employee_id
+        sess["employee_name"] = "Jesse"
+        sess["employee_role"] = "field_tech"
+        sess["employee_phone"] = "+12075551234"
+
+
+def test_pwa_clock_screen_requires_auth(pwa_client):
+    """GET /pwa/clock without session should redirect to /pwa/login."""
+    resp = pwa_client.get("/pwa/clock")
+    assert resp.status_code in (301, 302, 308)
+    assert "/pwa/login" in resp.headers.get("Location", "")
+
+
+def test_pwa_clock_screen_renders_when_authed(pwa_client):
+    """GET /pwa/clock with PWA session should render the clock screen."""
+    _set_pwa_session(pwa_client)
+    resp = pwa_client.get("/pwa/clock")
+    assert resp.status_code == 200
+    body = resp.data.decode()
+    assert "Clock" in body
+    assert "Jesse" in body
+
+
+def test_pwa_clock_status_returns_json(pwa_client):
+    """GET /pwa/api/clock/status should return JSON status."""
+    _set_pwa_session(pwa_client)
+    from unittest.mock import patch
+    fake_status = {
+        "clocked_in": False,
+        "entry_id": None,
+        "clock_in_at": None,
+        "elapsed_minutes": None,
+        "elapsed_label": None,
+        "current_job": None,
+        "todays_route": [],
+        "completed_today": 0,
+        "total_jobs": 0,
+    }
+    with patch("execution.pwa_clock.get_status", return_value=fake_status):
+        resp = pwa_client.get("/pwa/api/clock/status")
+    import json as _json
+    assert resp.status_code == 200
+    data = _json.loads(resp.data)
+    assert data["success"] is True
+    assert data["clocked_in"] is False
+
+
+def test_pwa_clock_status_requires_employee_id(pwa_client):
+    """API should return 400 if session has no employee_id."""
+    with pwa_client.session_transaction() as sess:
+        sess["pwa_authed"] = True
+        sess["client_id"] = "client-1"
+        # no employee_id
+
+    resp = pwa_client.get("/pwa/api/clock/status")
+    assert resp.status_code == 400
+
+
+def test_pwa_clock_in_success(pwa_client):
+    """POST /pwa/api/clock/in should call clock_in() and return success."""
+    _set_pwa_session(pwa_client)
+    from unittest.mock import patch
+    with patch("execution.pwa_clock.clock_in", return_value={
+        "success": True,
+        "entry_id": "te-1",
+        "clock_in_at": "2026-04-09T08:00:00+00:00",
+        "job_label": None,
+        "started_job": None,
+        "error": None,
+    }) as mock_in:
+        resp = pwa_client.post("/pwa/api/clock/in")
+
+    import json as _json
+    assert resp.status_code == 200
+    data = _json.loads(resp.data)
+    assert data["success"] is True
+    assert data["entry_id"] == "te-1"
+    mock_in.assert_called_once_with("client-1", "emp-1")
+
+
+def test_pwa_clock_in_already_clocked_in(pwa_client):
+    """POST /pwa/api/clock/in when already clocked in should return 400."""
+    _set_pwa_session(pwa_client)
+    from unittest.mock import patch
+    with patch("execution.pwa_clock.clock_in", return_value={
+        "success": False,
+        "error": "Already clocked in. Clock out before starting a new shift.",
+    }):
+        resp = pwa_client.post("/pwa/api/clock/in")
+
+    import json as _json
+    assert resp.status_code == 400
+    data = _json.loads(resp.data)
+    assert data["success"] is False
+    assert "Already" in data["error"]
+
+
+def test_pwa_clock_out_success(pwa_client):
+    """POST /pwa/api/clock/out should call clock_out() and return duration."""
+    _set_pwa_session(pwa_client)
+    from unittest.mock import patch
+    with patch("execution.pwa_clock.clock_out", return_value={
+        "success": True,
+        "entry_id": "te-1",
+        "duration_minutes": 135,
+        "duration_label": "2h 15m",
+        "error": None,
+    }) as mock_out:
+        resp = pwa_client.post("/pwa/api/clock/out")
+
+    import json as _json
+    assert resp.status_code == 200
+    data = _json.loads(resp.data)
+    assert data["success"] is True
+    assert data["duration_minutes"] == 135
+    assert data["duration_label"] == "2h 15m"
+    mock_out.assert_called_once_with("client-1", "emp-1")
+
+
+def test_pwa_clock_out_not_clocked_in(pwa_client):
+    """POST /pwa/api/clock/out when not clocked in should return 400."""
+    _set_pwa_session(pwa_client)
+    from unittest.mock import patch
+    with patch("execution.pwa_clock.clock_out", return_value={
+        "success": False,
+        "error": "You're not clocked in.",
+    }):
+        resp = pwa_client.post("/pwa/api/clock/out")
+
+    import json as _json
+    assert resp.status_code == 400
+    data = _json.loads(resp.data)
+    assert data["success"] is False
+
+
+def test_pwa_clock_endpoints_require_auth(pwa_client):
+    """All clock API endpoints should redirect to login when unauthed."""
+    for path, method in [
+        ("/pwa/api/clock/status", "GET"),
+        ("/pwa/api/clock/in", "POST"),
+        ("/pwa/api/clock/out", "POST"),
+    ]:
+        resp = pwa_client.open(path, method=method)
+        # Either redirect to login or 401/403
+        assert resp.status_code in (301, 302, 308, 401, 403)
+
+
+def test_pwa_shell_links_to_clock_screen(pwa_client):
+    """Shell should have a link/tile to /pwa/clock."""
+    _set_pwa_session(pwa_client)
+    resp = pwa_client.get("/pwa/")
+    body = resp.data.decode()
+    assert "/pwa/clock" in body

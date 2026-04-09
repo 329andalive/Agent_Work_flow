@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Clock — Bolts11</title>
+  <link rel="manifest" href="/static/manifest.json">
+  <meta name="theme-color" content="#132038">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="apple-touch-icon" href="/static/icon-192.png">
+
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    html,body{height:100%;-webkit-tap-highlight-color:transparent}
+    body{
+      font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+      background:#132038;color:#fff;
+      min-height:100vh;display:flex;flex-direction:column;
+      padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+    }
+    .topbar{
+      display:flex;align-items:center;justify-content:space-between;
+      padding:14px 18px;background:rgba(0,0,0,.2);
+    }
+    .topbar a{
+      color:rgba(255,255,255,.7);text-decoration:none;font-size:14px;
+      padding:6px 10px;
+    }
+    .topbar .who{font-size:13px;color:rgba(255,255,255,.6)}
+    .topbar .who strong{color:#fff;font-weight:600}
+
+    main{
+      flex:1;display:flex;flex-direction:column;
+      padding:24px 20px 80px;
+    }
+
+    /* Big status card */
+    .status-card{
+      background:rgba(255,255,255,.06);
+      border:1px solid rgba(255,255,255,.1);
+      border-radius:18px;
+      padding:28px 24px;
+      text-align:center;
+      margin-bottom:16px;
+    }
+    .status-label{
+      font-size:11px;text-transform:uppercase;letter-spacing:.08em;
+      color:rgba(255,255,255,.5);font-weight:600;
+    }
+    .status-state{
+      font-size:32px;font-weight:800;margin-top:6px;
+      color:#dc2626;
+    }
+    .status-state.active{color:#16a34a}
+    .status-meta{
+      font-size:14px;color:rgba(255,255,255,.65);
+      margin-top:6px;
+    }
+    .status-elapsed{
+      font-size:48px;font-weight:800;margin-top:14px;
+      font-variant-numeric:tabular-nums;letter-spacing:-.02em;
+    }
+    .status-elapsed.dim{color:rgba(255,255,255,.3);font-size:24px;font-weight:600}
+
+    /* Clock button */
+    .clock-btn{
+      display:block;width:100%;
+      padding:22px;
+      font-size:18px;font-weight:800;
+      border:none;border-radius:14px;
+      cursor:pointer;min-height:64px;
+      transition:opacity .15s,transform .1s;
+      font-family:inherit;
+      letter-spacing:.02em;
+      text-transform:uppercase;
+    }
+    .clock-btn:active{transform:scale(0.98)}
+    .clock-btn:disabled{opacity:.5;cursor:not-allowed}
+    .btn-in{background:#16a34a;color:#fff}
+    .btn-out{background:#dc2626;color:#fff}
+
+    /* Today's route */
+    .route-section{margin-top:24px}
+    .section-title{
+      font-size:11px;text-transform:uppercase;letter-spacing:.08em;
+      color:rgba(255,255,255,.5);font-weight:600;
+      margin-bottom:10px;padding-left:4px;
+    }
+    .job-card{
+      background:rgba(255,255,255,.05);
+      border:1px solid rgba(255,255,255,.08);
+      border-radius:12px;
+      padding:14px 16px;margin-bottom:8px;
+      display:flex;align-items:center;gap:12px;
+    }
+    .job-card.current{
+      border-color:#f59e0b;
+      background:rgba(245,158,11,.08);
+    }
+    .job-card.done{opacity:.5}
+    .job-num{
+      width:32px;height:32px;border-radius:50%;
+      background:rgba(255,255,255,.1);
+      display:flex;align-items:center;justify-content:center;
+      font-weight:700;font-size:14px;flex-shrink:0;
+    }
+    .job-card.current .job-num{background:#f59e0b;color:#132038}
+    .job-card.done .job-num{background:#16a34a;color:#fff}
+    .job-card.done .job-num::before{content:"✓";font-weight:800}
+    .job-card.done .job-num span{display:none}
+    .job-info{flex:1;min-width:0}
+    .job-customer{font-size:15px;font-weight:600;line-height:1.3}
+    .job-meta{
+      font-size:12px;color:rgba(255,255,255,.5);
+      margin-top:2px;line-height:1.3;
+      white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+    }
+    .job-amount{
+      font-size:13px;font-weight:600;color:#f59e0b;
+      flex-shrink:0;font-variant-numeric:tabular-nums;
+    }
+
+    .empty{
+      text-align:center;padding:32px 20px;
+      color:rgba(255,255,255,.4);font-size:14px;
+    }
+
+    /* Toast */
+    .toast{
+      position:fixed;left:20px;right:20px;bottom:20px;
+      background:#1f2937;color:#fff;
+      padding:14px 18px;border-radius:10px;
+      font-size:14px;text-align:center;
+      transform:translateY(120%);transition:transform .3s;
+      z-index:100;
+    }
+    .toast.show{transform:translateY(0)}
+    .toast.error{background:#991b1b}
+    .toast.success{background:#15803d}
+
+    .loading{
+      text-align:center;padding:40px;color:rgba(255,255,255,.4);
+    }
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <a href="/pwa/">&larr; Home</a>
+    <div class="who">Hi, <strong>{{ employee_name }}</strong></div>
+  </div>
+
+  <main>
+    <div id="content">
+      <div class="loading">Loading...</div>
+    </div>
+  </main>
+
+  <div class="toast" id="toast"></div>
+
+  <script>
+    var POLL_INTERVAL = 30000; // refresh status every 30s when clocked in
+    var pollTimer = null;
+    var elapsedTimer = null;
+    var STATE = null;
+
+    function fmt$(n){return'$'+Number(n||0).toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:0})}
+    function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+    function fmtType(s){return(s||'job').replace(/_/g,' ').replace(/\b\w/g,function(c){return c.toUpperCase()})}
+
+    function fmtElapsed(mins){
+      if(mins == null) return '—';
+      var h = Math.floor(mins/60);
+      var m = mins % 60;
+      if(h) return h + 'h ' + (m < 10 ? '0' : '') + m + 'm';
+      return m + 'm';
+    }
+
+    async function loadStatus(){
+      try{
+        var r = await fetch('/pwa/api/clock/status');
+        if(r.status === 401 || r.status === 403){ window.location.href = '/pwa/login'; return }
+        var d = await r.json();
+        if(!d.success){ showError(d.error || 'Could not load status'); return }
+        STATE = d;
+        render(d);
+      }catch(e){ showError('Connection error') }
+    }
+
+    function render(d){
+      var html = '';
+
+      // Status card
+      html += '<div class="status-card">';
+      html += '<div class="status-label">Status</div>';
+      if(d.clocked_in){
+        html += '<div class="status-state active">Clocked In</div>';
+        html += '<div class="status-elapsed" id="elapsed">' + fmtElapsed(d.elapsed_minutes) + '</div>';
+        html += '<div class="status-meta">Started ' + formatTime(d.clock_in_at) + '</div>';
+      } else {
+        html += '<div class="status-state">Off the clock</div>';
+        html += '<div class="status-elapsed dim">Ready when you are</div>';
+      }
+      html += '</div>';
+
+      // Clock button
+      if(d.clocked_in){
+        html += '<button class="clock-btn btn-out" id="clockBtn" onclick="clockOut()">Clock Out</button>';
+      } else {
+        html += '<button class="clock-btn btn-in" id="clockBtn" onclick="clockIn()">Clock In</button>';
+      }
+
+      // Today's route
+      html += '<div class="route-section">';
+      html += '<div class="section-title">Today &middot; ' + d.completed_today + ' of ' + d.total_jobs + ' done</div>';
+      if(d.todays_route && d.todays_route.length){
+        d.todays_route.forEach(function(job, i){
+          var isCurrent = d.current_job && d.current_job.job_id === job.job_id;
+          var isDone = !!job.job_end;
+          var cls = 'job-card' + (isCurrent ? ' current' : '') + (isDone ? ' done' : '');
+          html += '<div class="' + cls + '">';
+          html += '<div class="job-num"><span>' + (i + 1) + '</span></div>';
+          html += '<div class="job-info">';
+          html += '<div class="job-customer">' + esc(job.customer_name || 'Customer') + '</div>';
+          var meta = [];
+          if(job.job_type) meta.push(fmtType(job.job_type));
+          if(job.customer_address) meta.push(job.customer_address.split(',')[0]);
+          html += '<div class="job-meta">' + esc(meta.join(' · ')) + '</div>';
+          html += '</div>';
+          if(job.estimated_amount){
+            html += '<div class="job-amount">' + fmt$(job.estimated_amount) + '</div>';
+          }
+          html += '</div>';
+        });
+      } else {
+        html += '<div class="empty">No jobs dispatched for you today.</div>';
+      }
+      html += '</div>';
+
+      document.getElementById('content').innerHTML = html;
+
+      // Live elapsed counter
+      if(elapsedTimer){ clearInterval(elapsedTimer); elapsedTimer = null; }
+      if(d.clocked_in && d.elapsed_minutes != null){
+        var startMins = d.elapsed_minutes;
+        var startedAt = Date.now();
+        elapsedTimer = setInterval(function(){
+          var addedMins = Math.floor((Date.now() - startedAt) / 60000);
+          var el = document.getElementById('elapsed');
+          if(el) el.textContent = fmtElapsed(startMins + addedMins);
+        }, 30000);
+      }
+
+      // Background poll
+      if(pollTimer){ clearTimeout(pollTimer); }
+      if(d.clocked_in){
+        pollTimer = setTimeout(loadStatus, POLL_INTERVAL);
+      }
+    }
+
+    function formatTime(iso){
+      if(!iso) return '';
+      try{
+        var d = new Date(iso);
+        return d.toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'});
+      }catch(e){ return '' }
+    }
+
+    async function clockIn(){
+      var btn = document.getElementById('clockBtn');
+      btn.disabled = true; btn.textContent = 'Clocking in...';
+      try{
+        var r = await fetch('/pwa/api/clock/in', {method: 'POST'});
+        var d = await r.json();
+        if(d.success){
+          showToast('Clocked in', 'success');
+          loadStatus();
+        } else {
+          showError(d.error || 'Clock in failed');
+          btn.disabled = false; btn.textContent = 'Clock In';
+        }
+      }catch(e){
+        showError('Connection error');
+        btn.disabled = false; btn.textContent = 'Clock In';
+      }
+    }
+
+    async function clockOut(){
+      if(!confirm('Clock out now?')) return;
+      var btn = document.getElementById('clockBtn');
+      btn.disabled = true; btn.textContent = 'Clocking out...';
+      try{
+        var r = await fetch('/pwa/api/clock/out', {method: 'POST'});
+        var d = await r.json();
+        if(d.success){
+          showToast('Clocked out · ' + (d.duration_label || ''), 'success');
+          loadStatus();
+        } else {
+          showError(d.error || 'Clock out failed');
+          btn.disabled = false; btn.textContent = 'Clock Out';
+        }
+      }catch(e){
+        showError('Connection error');
+        btn.disabled = false; btn.textContent = 'Clock Out';
+      }
+    }
+
+    function showToast(msg, kind){
+      var t = document.getElementById('toast');
+      t.textContent = msg;
+      t.className = 'toast show ' + (kind || '');
+      setTimeout(function(){ t.className = 'toast'; }, 3000);
+    }
+    function showError(msg){ showToast(msg, 'error'); }
+
+    // Initial load
+    loadStatus();
+
+    // Refresh when page becomes visible (tech opens app from background)
+    document.addEventListener('visibilitychange', function(){
+      if(!document.hidden) loadStatus();
+    });
+  </script>
+</body>
+</html>

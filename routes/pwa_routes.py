@@ -174,6 +174,68 @@ def pwa_auth_verify(token):
 
 
 # ---------------------------------------------------------------------------
+# GET /pwa/clock — Clock in/out screen
+# ---------------------------------------------------------------------------
+
+@pwa_bp.route("/clock", strict_slashes=False)
+@require_pwa_auth
+def pwa_clock():
+    """The clock in/out + today's route screen."""
+    return render_template("pwa/clock.html",
+        employee_name=session.get("employee_name", "Tech"),
+        employee_role=session.get("employee_role", ""),
+    )
+
+
+# ---------------------------------------------------------------------------
+# GET /pwa/api/clock/status — current clock state + today's route
+# ---------------------------------------------------------------------------
+
+@pwa_bp.route("/api/clock/status", methods=["GET"])
+@require_pwa_auth
+def pwa_clock_status():
+    from execution.pwa_clock import get_status
+    client_id = session.get("client_id")
+    employee_id = session.get("employee_id")
+    if not employee_id:
+        return jsonify({"success": False, "error": "No employee in session"}), 400
+    status = get_status(client_id, employee_id)
+    return jsonify({"success": True, **status})
+
+
+# ---------------------------------------------------------------------------
+# POST /pwa/api/clock/in — clock in
+# ---------------------------------------------------------------------------
+
+@pwa_bp.route("/api/clock/in", methods=["POST"])
+@require_pwa_auth
+def pwa_clock_in():
+    from execution.pwa_clock import clock_in
+    client_id = session.get("client_id")
+    employee_id = session.get("employee_id")
+    if not employee_id:
+        return jsonify({"success": False, "error": "No employee in session"}), 400
+    result = clock_in(client_id, employee_id)
+    return jsonify(result), (200 if result.get("success") else 400)
+
+
+# ---------------------------------------------------------------------------
+# POST /pwa/api/clock/out — clock out
+# ---------------------------------------------------------------------------
+
+@pwa_bp.route("/api/clock/out", methods=["POST"])
+@require_pwa_auth
+def pwa_clock_out():
+    from execution.pwa_clock import clock_out
+    client_id = session.get("client_id")
+    employee_id = session.get("employee_id")
+    if not employee_id:
+        return jsonify({"success": False, "error": "No employee in session"}), 400
+    result = clock_out(client_id, employee_id)
+    return jsonify(result), (200 if result.get("success") else 400)
+
+
+# ---------------------------------------------------------------------------
 # GET /pwa/logout — Clear PWA session
 # ---------------------------------------------------------------------------
 
