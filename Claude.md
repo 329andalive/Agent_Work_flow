@@ -1,11 +1,39 @@
 # CLAUDE.md — Trades AI Agent Stack
-> Mirrored across CLAUDE.md, AGENTS.md, and GEMINI.md so the same 
+> Mirrored across CLAUDE.md, AGENTS.md, and GEMINI.md so the same
 > instructions load in any AI environment.
 
-You are building and operating an AI-powered back office system for 
-small trades businesses. The first client vertical is Sewer and Drain. 
-Every decision you make should be evaluated against one question: 
-would a 55-year-old rural Tradesmen service actually use this?
+You are building and operating an AI-powered back office system for
+small trades businesses. The first client vertical is Sewer and Drain.
+Every decision you make should be evaluated against one question:
+would a 55-year-old rural tradesman actually use this?
+
+---
+
+## Architecture Overview — PWA Pivot (April 2026)
+
+**The core communication pivot:**
+
+SMS as a two-way conversational AI interface is no longer viable.
+10DLC registration, carrier filtering, throughput limits, and cost
+make it a poor foundation for what Bolts11 needs to do at scale.
+
+**New model:**
+- **SMS = one-way notification only.** Clock in, clock out, dispatch
+  alerts, "your review link is ready." Low-volume, transactional,
+  carrier-safe.
+- **PWA = the tech's primary interface.** Installed on their phone
+  home screen. Replaces SMS replies for all AI interaction —
+  estimates, invoices, job notes, clarifications, approvals.
+- **Email = primary outbound to customers.** Proposals, invoices,
+  confirmations, follow-ups. HTML documents delivered instantly
+  via Resend. No 10DLC required.
+- **Dashboard = owner/office read-only surface.** Reporting,
+  dispatch board, KPI visibility. Not a document creation tool.
+
+**What this means for every build decision:**
+Before adding an SMS reply flow, ask: should this be a PWA screen
+instead? Before building a dashboard form, ask: should the AI draft
+this from a tech's PWA input instead?
 
 ---
 
@@ -30,23 +58,23 @@ would a 55-year-old rural Tradesmen service actually use this?
 - Handle API calls, data processing, SMS sending, database operations
 - Every script must be commented, testable, and handle errors cleanly
 
-**Why this works:** errors compound fast. 90% accuracy per step = 
-59% success over 5 steps. Push complexity into deterministic code 
+**Why this works:** errors compound fast. 90% accuracy per step =
+59% success over 5 steps. Push complexity into deterministic code
 so the orchestration layer only makes decisions.
 
 ---
 
 ## The Personality Layer — Most Important Concept
 
-Before any agent does anything, it must load the client's 
+Before any agent does anything, it must load the client's
 Personality Layer from:
 ```
 directives/clients/{client_phone}/personality.md
 ```
 
-This document contains everything about that business — their voice, 
-their pricing language, their service area, their values, their 
-customer base. Every single output must sound like that owner wrote 
+This document contains everything about that business — their voice,
+their pricing language, their service area, their values, their
+customer base. Every single output must sound like that owner wrote
 it personally. Never generic. Never robotic.
 
 **Loading sequence for every agent:**
@@ -57,78 +85,188 @@ it personally. Never generic. Never robotic.
 
 ---
 
-## Active Agents
+## The PWA — Tech Interface
+
+The PWA is the tech's primary tool on the road. It installs to their
+home screen via the browser install prompt. No app store. No download.
+No SMS conversation required.
+
+**PWA entry points:**
+- `static/manifest.json` — Install metadata (name, icons, start_url)
+- `static/sw.js` — Service worker (offline fallback, caching)
+- `/pwa/` — PWA shell (authenticated, tech-facing)
+- `/doc/edit/<token>` — Document review page (PWA-optimized)
+
+**PWA manifest (static/manifest.json):**
+```json
+{
+  "name": "Bolts11",
+  "short_name": "Bolts11",
+  "description": "Job Dispatch & Invoicing",
+  "start_url": "/pwa/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#000000",
+  "icons": [
+    { "src": "/static/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/static/icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}
 ```
-proposal_agent        — generates estimates from job descriptions
+
+**Service worker (static/sw.js) — basic offline fallback:**
+```javascript
+self.addEventListener('fetch', event => {
+  event.respondWith(
+    fetch(event.request).catch(() => caches.match(event.request))
+  );
+});
+```
+
+**Every PWA-facing template must include in `<head>`:**
+```html
+<link rel="manifest" href="/static/manifest.json">
+<meta name="theme-color" content="#000000">
+<script>
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/static/sw.js');
+  }
+</script>
+```
+
+**PWA screens (build in this order):**
+
+| Screen | Route | Replaces |
+|---|---|---|
+| Job dashboard | `/pwa/` | SMS job list queries |
+| Clock in/out | `/pwa/clock` | SMS CLOCK IN / CLOCK OUT |
+| New job input | `/pwa/job` | SMS estimate/invoice triggers |
+| Document review | `/doc/edit/<token>` | SMS review link (already exists) |
+| AI chat | `/pwa/chat` | SMS conversational replies |
+
+**PWA design rules:**
+- Mobile-first, thumb-friendly tap targets (min 44px)
+- No browser chrome in standalone mode — design for full screen
+- Offline-aware: show cached data when no signal, sync on resume
+- Never require a password to view a document — token auth only
+- Rural signal friendly: minimize payload size, lazy-load non-critical assets
+
+---
+
+## SMS — Retained for Notifications Only
+
+SMS via Telnyx brand number is kept for:
+- Clock in / clock out confirmations (one-way echo back to tech)
+- Dispatch alerts ("Next job: 123 Main St, Bob Jones, AC unit")
+- "Your review link is ready" with URL (tech taps → opens PWA)
+- Owner/foreman internal alerts
+
+SMS is **not** used for:
+- Two-way AI conversation with techs (→ PWA chat instead)
+- Sending proposals or invoices to customers (→ email via Resend)
+- Customer approval flows (→ email link or PWA)
+- Any flow that requires 10DLC campaign registration
+
+**SMS routing order (sms_router.py) — retained for legacy/fallback:**
+```
+1. STOP / YES / START / UNSTOP — opt-in/opt-out (always first)
+2. CLOCK IN / CLOCK OUT — echo confirmation, log to jobs table
+3. Everything else → return PWA link with instructions
+```
+
+---
+
+## Communication Layer Summary
+
+| Channel | Direction | Used For | Provider |
+|---|---|---|---|
+| SMS (brand number) | Inbound + limited outbound | Clock in/out, dispatch pings, review link delivery | Telnyx |
+| Email | Outbound to customers | Proposals, invoices, follow-ups, review requests | Resend |
+| PWA | Tech input + AI output | Job input, estimates, invoices, AI chat, approvals | Flask + Jinja2 |
+| Dashboard | Owner/office read | Reporting, dispatch board, KPI | Flask + Jinja2 |
+| Voice (Phase 3) | Owner input | Hands-free commands from truck | ElevenLabs + Whisper |
+
+**Why email-first for customer outbound:**
+- No 10DLC registration required
+- Instant delivery, free on Resend free tier
+- HTML documents render properly — line items, PAY NOW buttons
+- Trades customers expect emailed estimates
+
+---
+
+## Active Agents
+
+```
+proposal_agent        — generates estimates from PWA job input or SMS description
 invoice_agent         — creates invoices from completed job notes
-clarification_agent   — intercepts ambiguous SMS, asks follow-ups, routes
+clarification_agent   — intercepts ambiguous input, asks follow-ups, routes
 followup_agent        — follows up on unanswered estimates
 review_agent          — requests Google reviews after job completion
 content_agent         — creates social/marketing content
 safety_agent          — generates safety checklists and OSHA docs
-voice_controller      — routes voice commands to the right agent
+self_learning_agent   — prompts for NULL pricebook fields, updates confidence scores
 ```
 
 Each agent has a directive in `directives/agents/{agent_name}.md`
 
+**Agent input surfaces (post-PWA pivot):**
+- Primary: PWA job input form (`/pwa/job`) or PWA chat (`/pwa/chat`)
+- Secondary: SMS description (legacy, still supported)
+- Never: Dashboard creation forms (removed — new_estimate.html, new_invoice.html)
+
 ---
 
-## Communication Layer
+## Document Flow (AI-First, Draft-Always)
 
-**Inbound: SMS via Telnyx (brand number)**
-- Plumber texts job descriptions, commands, completions to dedicated number
-- Brand number registration (not 10DLC) — simpler approval, inbound-only
-- No app required. Works on every phone. Rural friendly.
-- When service resumes after dead zones, SMS queues deliver
-- Keywords: ESTIMATE, DONE, CLOCK IN/OUT, SCHEDULE, ADD CUSTOMER, etc.
+Every estimate and invoice follows this path — no exceptions:
 
-**Outbound: Dual Delivery (Email primary, SMS secondary)**
-- Email is the primary outbound channel for all customer-facing documents:
-  proposals, invoices, confirmations, follow-ups, review requests
-- Email delivered via Resend API (`execution/resend_agent.py`)
-- Branded HTML templates (navy/amber) with line items, PAY NOW buttons
-- SMS outbound available for internal team notifications (owner, foreman, techs)
-  and brief confirmations back to employees who texted commands
-- Full 10DLC campaign is deferred — too much friction for initial release
-- If 10DLC is later approved, SMS becomes a second outbound channel to customers
+```
+1. Tech inputs job description (PWA form or SMS)
+2. Agent drafts document (proposal_agent or invoice_agent)
+3. Draft saved with status='draft'
+4. Review link generated and sent to tech (SMS ping or PWA notification)
+5. Tech reviews on PWA (/doc/edit/<token>) — tap-to-edit cards
+6. Every edit diffed and logged to draft_corrections (training signal)
+7. Tech taps Approve & Send → document delivered to customer via email
+8. Customer receives branded HTML email with PAY NOW link (Square)
+```
 
-**Why email-first for outbound:**
-- 10DLC registration is slow, expensive, and blocks customer-facing SMS
-- Brand numbers allow inbound SMS with near-zero friction
-- Email delivery is instant, free (Resend free tier), and already built
-- Proposals/invoices are HTML documents — they're better as email anyway
-- Trades customers expect emailed estimates. SMS links are a nice-to-have.
-
-**Phase 2: ElevenLabs voice interface**
-- Owner speaks commands hands-free from truck
-- Voice Controller agent routes to appropriate agent
-- Transcription via Whisper, response via ElevenLabs TTS
+**Hard rule:** The AI is the sole author of all estimates and invoices.
+No dashboard form, no manual entry. If a tech needs a document,
+they describe the job — to the PWA or via SMS — and the agent drafts it.
 
 ---
 
 ## File Organization
+
 ```
 /
 ├── CLAUDE.md                          # This file
 ├── HANDOFF.md                         # Session log — read for current status
 ├── .env                               # All API keys — never commit
 ├── .python-version                    # Pins Python 3.12.9 — DO NOT DELETE
-├── requirements.txt                   # 66 pinned packages — regenerate with pip freeze
+├── requirements.txt                   # Pinned packages — regenerate with pip freeze
+├── static/
+│   ├── manifest.json                  # PWA install manifest
+│   ├── sw.js                          # Service worker (offline fallback)
+│   ├── icon-192.png                   # PWA icon (lightning bolt, 192x192)
+│   └── icon-512.png                   # PWA icon (lightning bolt, 512x512)
 ├── execution/                         # Python scripts (deterministic)
 │   ├── sms_receive.py                 # Flask app entry point + blueprint registration
-│   ├── sms_send.py                    # Outbound SMS via Telnyx (internal team only until 10DLC)
-│   ├── sms_router.py                  # SMS routing + worker reply handler (DONE/BACK/etc)
+│   ├── sms_send.py                    # Outbound SMS via Telnyx (notifications only)
+│   ├── sms_router.py                  # SMS routing (clock in/out + PWA redirect)
 │   ├── call_claude.py                 # Claude API wrapper (Haiku/Sonnet/Opus)
 │   ├── context_loader.py             # Stateful context assembly for commands
-│   ├── proposal_agent.py             # Structured JSON proposals + Haiku summarization
-│   ├── invoice_agent.py              # Invoice generation + Square Step 8b
+│   ├── proposal_agent.py             # Draft-first estimates — always returns review link
+│   ├── invoice_agent.py              # Draft-first invoices — always returns review link
+│   ├── self_learning_agent.py        # NULL field prompts, confidence scoring (NEW)
 │   ├── geocode.py                    # Google Maps geocoding + zone clustering
-│   ├── db_scheduling.py             # Scheduling DB helpers (7 functions, multi-tenant)
-│   ├── dispatch_suggestion.py       # AI dispatch suggestions (Phase 2, 30+ sessions)
+│   ├── db_scheduling.py             # Scheduling DB helpers (multi-tenant)
+│   ├── dispatch_suggestion.py       # AI dispatch suggestions
 │   ├── scheduled_sms.py            # Nudges, reminders, no-show marking
 │   ├── token_generator.py           # Signed token URLs + mark_invoice_paid() fallback
-│   ├── square_agent.py              # Square Payment Links API (v44)
-│   ├── job_cost_agent.py            # Job cost tracking (defensive)
+│   ├── square_agent.py              # Square Payment Links API
+│   ├── job_cost_agent.py            # Job cost tracking
 │   ├── clarification_agent.py       # Claude-powered intent classification
 │   ├── db_clarification.py          # DB ops for clarifications + approvals
 │   ├── db_customer.py               # Customer table queries
@@ -139,9 +277,10 @@ Each agent has a directive in `directives/agents/{agent_name}.md`
 │   ├── document_html.py             # Build edit/view HTML for documents
 │   ├── db_document.py               # DB ops for edit/learn system
 │   ├── db_pricing.py                # Pricing benchmarks + adjustment logging
-│   └── resend_agent.py              # Email delivery via Resend (primary outbound channel)
+│   └── resend_agent.py              # Email delivery via Resend (primary outbound)
 ├── routes/                            # Flask Blueprints
-│   ├── dashboard_routes.py           # All dashboard pages (20+ templates)
+│   ├── pwa_routes.py                 # /pwa/* — Tech PWA shell + screens (NEW)
+│   ├── dashboard_routes.py           # All dashboard pages (read-only, owner/office)
 │   ├── dispatch_routes.py           # /api/dispatch/* + /r/<token> worker route
 │   ├── booking_routes.py            # /book/<token> + /api/book/* + /api/slots/*
 │   ├── command_routes.py            # /api/command + context loader wiring
@@ -150,32 +289,41 @@ Each agent has a directive in `directives/agents/{agent_name}.md`
 │   ├── document_routes.py           # /doc/edit, /doc/save, /doc/send
 │   ├── onboarding_routes.py         # /api/onboarding/*, /onboard/<token>
 │   └── routes_debug.py              # /debug (dev-only)
-├── templates/                         # Jinja2 HTML templates
+├── templates/
+│   ├── pwa/                           # PWA tech-facing screens (NEW)
+│   │   ├── shell.html                 # PWA shell (manifest + SW registration)
+│   │   ├── dashboard.html             # Job dashboard (today's jobs, status)
+│   │   ├── clock.html                 # Clock in/out screen
+│   │   ├── job_input.html             # New job description input
+│   │   └── chat.html                  # AI chat window
 │   ├── base.html                      # Shared sidebar + layout (navy/amber)
 │   ├── book.html                      # Public booking page (mobile-first)
 │   ├── worker_route.html             # Worker route page (mobile, no login)
 │   ├── proposal.html                  # Mobile-first proposal view
 │   ├── invoice.html                   # Mobile-first invoice view (PAY NOW)
 │   ├── error.html                     # Branded error/expired pages
-│   └── dashboard/                     # Dashboard templates (extend base.html)
+│   └── dashboard/                     # Dashboard templates (owner/office only)
 │       ├── control.html              # Control Board
 │       ├── dispatch.html             # Dispatch board (drag-drop)
-│       ├── classes.html              # Class slot management
 │       ├── schedule.html             # Appointment timeline
-│       ├── admin.html                # Super admin heartbeat
-│       └── ... (20+ templates)       # See HANDOFF.md for full list
-├── sql/                               # SQL migrations (run in Supabase)
+│       └── ... (read-only reporting pages)
+├── sql/                               # SQL migrations
+│   ├── draft_corrections.sql          # NEW: Training loop table
+│   ├── job_photos.sql                 # NEW: MMS photo storage
+│   ├── invoice_drafts.sql             # NEW: Multi-day job partials
+│   ├── job_extended_data.sql          # NEW: Trade-specific fields
 │   ├── square_payment_writeback.sql
 │   └── scheduling_migration.sql
 ├── directives/                        # SOPs and context docs
-│   ├── agents/proposal_agent.md      # Proposal architecture + line item rules
-│   └── clients/personality.md        # Example personality template
-└── tests/                             # Test scripts
+│   ├── agents/proposal_agent.md
+│   └── clients/personality.md
+└── tests/
 ```
 
 ---
 
 ## API Credentials (.env)
+
 ```
 ANTHROPIC_API_KEY=
 TELNYX_API_KEY=
@@ -198,10 +346,8 @@ Never hardcode credentials. Always load from `.env` using
 
 ## Routes (Flask Blueprints)
 
-See HANDOFF.md URL Map for the complete list (50+ routes).
-Key route groups:
-
-**dashboard_bp** — All dashboard pages (20+ templates)
+**pwa_bp** — `/pwa/*` Tech PWA screens (job input, clock, chat, dashboard)
+**dashboard_bp** — All dashboard pages (owner/office, read-only reporting)
 **dispatch_bp** — `/api/dispatch/*` + `/r/<token>` worker route
 **booking_bp** — `/book/<token>` + `/api/book/*` + `/api/slots/*`
 **command_bp** — `/api/command` + context loader wiring
@@ -210,96 +356,39 @@ Key route groups:
 **document_bp** — `/doc/edit`, `/doc/save`, `/doc/send`
 **onboarding_bp** — `/api/onboarding/*`, `/onboard/<token>`
 
-Token routes (`/p/` and `/i/`) handle:
-- Invalid tokens → branded error page
-- Expired tokens → branded expiry page with contact link
-- Valid tokens → update viewed_at, render Jinja2 template, log to agent_activity
-
-Document routes (`/doc/`) handle:
-- edit_token-based auth (secret URL, no login)
-- Line item editing with auto-recalculate
-- Edit diffing logged to estimate_edits table
-- Learning loop: after 2+ edits, Claude analyzes patterns → client_prompt_overrides
-
 ---
 
 ## Platform Hard Rules
 
 **HARD RULE #1 — Phone number required on every customer**
 Every customer record must have a phone number. No exceptions.
-- `db_customer.create_customer()` raises `ValueError` if phone is missing
-- Any agent that creates a customer without a phone fails loudly
-- SQL: `ALTER TABLE customers ALTER COLUMN customer_phone SET NOT NULL`
+`db_customer.create_customer()` raises `ValueError` if phone is missing.
 
-**HARD RULE #2 — Customer-facing outbound goes via email (not SMS)**
-Until 10DLC is approved, all customer-facing outbound (proposals, 
-invoices, confirmations, follow-ups) must be delivered via email.
-- SMS outbound to customers is blocked — no 10DLC = no customer SMS
-- SMS outbound to internal team (owner, foreman, techs) is allowed
-  via the brand number for command confirmations and alerts
-- Email requires a customer email address on file
-- If no email: log `delivery_blocked_no_email` to agent_activity,
-  surface a needs_attention card so owner can provide the email
-- SMS opt-in columns remain in schema for future 10DLC activation
-- When 10DLC is approved, re-enable SMS as a secondary delivery channel
+**HARD RULE #2 — Customer-facing outbound goes via email only**
+All customer-facing outbound (proposals, invoices, confirmations,
+follow-ups) must be delivered via email. No SMS to customers.
+10DLC registration is deferred indefinitely.
+If no customer email on file: log `delivery_blocked_no_email` to
+agent_activity and surface a needs_attention card.
 
-## SMS Routing Order (sms_router.py)
+**HARD RULE #3 — AI drafts every document. No exceptions.**
+Estimates and invoices are never created through dashboard forms.
+Dashboard is read-only for owners and office staff.
+Techs input jobs via PWA. Agents draft. Techs review. Agents send.
 
-All inbound SMS is processed in this exact sequence, first match wins:
-```
-1. STOP / YES / START / UNSTOP — opt-in/opt-out (always first)
-2. Priority intents — loss_reason, accepted, declined, lost_report
-3. No-show response — owner/foreman with open alert
-4. Pending clarification — employee has active clarification session
-5. Customer approval reply — YES/NO/STOP from customer
-6. Explicit keywords — ESTIMATE, SCHEDULE, DONE, CLOCK IN/OUT, SET OPTIN
-7. High-confidence keywords — invoice/clock/job_list/noshow phrases
-8. Everything else → clarification_agent (Claude classifies intent)
-```
+**HARD RULE #4 — Multi-tenancy is sacred**
+Every single database query must filter by `client_phone` or tenant
+identifier. No exceptions. Never return data from one client to another.
 
----
-
-## Operating Principles
-
-**1. Check for existing scripts first**
-Before writing a new execution script, check `execution/`. 
-Only create new scripts if none exist for the task.
-
-**2. Self-anneal when things break**
-- Read the full error message and stack trace
-- Fix the script and test it
-- Update the relevant directive with what you learned
-- Do not retry API calls that cost money without checking first
-
-**3. Directives are living documents**
-Update directives when you discover API limits, better approaches, 
-or common errors. Do not overwrite directives without asking. 
-They are the institutional memory of this system.
-
-**4. The self-annealing loop**
-1. Error occurs
-2. Fix the script
-3. Test the fix
-4. Update the directive
-5. System is now stronger
-
-**5. Webhook payload rule — non-negotiable**
-Save the raw inbound webhook payload to the database 
-BEFORE any processing begins. This is the first line 
-of every webhook handler, no exceptions. If downstream 
-processing fails, the raw data must still exist for 
-recovery and debugging.
-
-**6. Multi-tenancy is sacred**
-Every single database query must filter by client_phone 
-or tenant identifier. No exceptions. Never return data 
-from one client to another. When in doubt, add the filter.
+**HARD RULE #5 — Webhook payloads saved before processing**
+Save the raw inbound webhook payload to the database BEFORE any
+processing begins. No exceptions. If downstream processing fails,
+the raw data must still exist for recovery.
 
 ---
 
 ## Claude API Call Structure
 
-Every call to Claude must follow this pattern:
 ```python
 system_prompt = f"""
 You are the AI back office assistant for {business_name}.
@@ -308,8 +397,8 @@ Read this Personality Layer completely before doing anything:
 
 {personality_doc}
 
-Every response must sound exactly like this business owner 
-wrote it. Their tone, their pricing language, their market. 
+Every response must sound exactly like this business owner
+wrote it. Their tone, their pricing language, their market.
 Never sound like a robot. Never use corporate filler.
 """
 
@@ -321,268 +410,168 @@ Input: {raw_user_input}
 ```
 
 **Model selection:**
-- Haiku: SMS parsing, simple classifications, data extraction
-- Sonnet: Proposals, invoices, follow-ups, review requests
+- Haiku: SMS parsing, simple classifications, data extraction, PWA quick replies
+- Sonnet: Proposals, invoices, follow-ups, review requests, PWA chat
 - Opus: Training documents, safety docs, complex reasoning
 
 ---
 
 ## Supabase Schema
 
-**The cards/needs_attention table**
+*(Existing tables unchanged — see previous schema entries below)*
+
+**draft_corrections (NEW — training loop)**
 ```
-needs_attention table
+id              uuid PRIMARY KEY
+job_id          uuid REFERENCES jobs(id)
+client_id       uuid REFERENCES clients(id) NOT NULL
+document_type   text NOT NULL  -- estimate | invoice
+field_name      text NOT NULL
+original_value  text
+corrected_value text
+correction_type text NOT NULL  -- edit | add_item | remove_item | reject
+tech_id         uuid
+created_at      timestamptz DEFAULT now()
+```
+
+**job_photos (NEW — MMS ingestion)**
+```
+id              uuid PRIMARY KEY
+job_id          uuid REFERENCES jobs(id)
+client_id       uuid REFERENCES clients(id) NOT NULL
+storage_path    text NOT NULL
+thumbnail_path  text
+caption         text
+sort_order      integer DEFAULT 0
+source          text DEFAULT 'tech_mms'  -- tech_mms | review_ui | owner_upload
+created_at      timestamptz DEFAULT now()
+```
+
+**invoice_drafts (NEW — multi-day jobs)**
+```
+id                  uuid PRIMARY KEY
+job_id              uuid REFERENCES jobs(id)
+client_id           uuid REFERENCES clients(id) NOT NULL
+customer_id         uuid REFERENCES customers(id)
+draft_date          date NOT NULL
+status              text DEFAULT 'draft'  -- draft | saved | compiled | sent
+line_items          jsonb DEFAULT '[]'
+labor_hours         numeric(5,2)
+material_entries    jsonb DEFAULT '[]'
+photos              jsonb DEFAULT '[]'
+tech_id             uuid
+corrections_applied boolean DEFAULT false
+compiled_into       uuid  -- FK to invoices.id when compiled
+created_at          timestamptz DEFAULT now()
+```
+
+**job_extended_data (NEW — trade-specific fields)**
+```
+id          uuid PRIMARY KEY
+job_id      uuid REFERENCES jobs(id) NOT NULL
+client_id   uuid REFERENCES clients(id) NOT NULL
+field_name  text NOT NULL
+field_value text
+field_type  text DEFAULT 'text'  -- number | text | boolean
+source      text DEFAULT 'tech_pwa'  -- tech_pwa | tech_sms | ai_inferred | manual
+confidence  numeric(3,2) DEFAULT 0.0
+created_at  timestamptz DEFAULT now()
+```
+
+**needs_attention table**
+```
 id                uuid (auto)
 client_phone      text
-card_type         text  
-priority          text (low, medium, high)
-related_record    text (job_id, customer_id, message_id)
+card_type         text
+priority          text  -- low | medium | high
+related_record    text
 raw_context       text
 claude_suggestion text
-status            text (open, resolved, dismissed)
+status            text  -- open | resolved | dismissed
 created_at        timestamp (auto)
 resolved_by       text
 resolved_at       timestamp
 ```
 
-**The agent_activity log table**
+**agent_activity log**
 ```
-agent_activity table
-id            uuid (auto)
-client_phone  text
-agent_name    text
-action_taken  text
-input_summary text
-output_summary text
-sms_sent      boolean
-created_at    timestamp (auto)
+id              uuid (auto)
+client_phone    text
+agent_name      text
+action_taken    text
+input_summary   text
+output_summary  text
+sms_sent        boolean
+created_at      timestamp (auto)
 ```
 
 **clients table**
 ```
 id            uuid (auto)
 business_name text
-owner_name    text  
-phone         text (used as lookup key)
+owner_name    text
+phone         text (lookup key)
 personality   text (full personality layer doc)
 created_at    timestamp (auto)
 ```
-**The customers table**
+
+**customers table**
 ```
-customers table
 id              uuid (auto)
-client_phone    text (which trade business they belong to)
+client_phone    text
 customer_phone  text NOT NULL (HARD RULE #1)
 customer_name   text
 address         text
 notes           text
-sms_consent     boolean NOT NULL DEFAULT false (HARD RULE #2)
+sms_consent     boolean NOT NULL DEFAULT false
 sms_consent_at  timestamptz
-sms_consent_src text (web_form / owner_command / customer_reply)
+sms_consent_src text
 last_contact    timestamp
 created_at      timestamp (auto)
 ```
 
-**jobs table**
+**proposals / invoices tables (updated columns)**
 ```
-id            uuid (auto)
-client_phone  text
-agent_used    text
-raw_input     text
-output        text
-created_at    timestamp (auto)
-```
-
-**invoice_links table (signed token URLs)**
-```
-invoice_links table
-id            uuid PRIMARY KEY DEFAULT gen_random_uuid()
-token         text UNIQUE NOT NULL (8 char alphanumeric)
-job_id        text
-client_phone  text
-type          text (proposal or invoice)
-created_at    timestamptz DEFAULT now()
-expires_at    timestamptz NOT NULL (72 hours from creation)
-viewed_at     timestamptz
-expired       boolean DEFAULT false
-```
-
-**pending_clarifications table (multi-step intent gathering)**
-```
-pending_clarifications table
-id                      uuid PRIMARY KEY DEFAULT gen_random_uuid()
-client_id               uuid REFERENCES clients(id)
-employee_phone          text
-original_message        text
-stage                   integer DEFAULT 1 (1=asked intent, 2=asked address)
-collected_intent        text (estimate/schedule/completion/both)
-collected_address       text
-collected_customer_name text
-collected_scope         text
-expires_at              timestamptz DEFAULT now() + interval '30 minutes'
-created_at              timestamptz DEFAULT now()
-```
-
-**customer_approvals table (on-site estimate approval)**
-```
-customer_approvals table
-id                  uuid PRIMARY KEY DEFAULT gen_random_uuid()
-client_id           uuid REFERENCES clients(id)
-customer_id         uuid REFERENCES customers(id)
-job_id              uuid REFERENCES jobs(id)
-proposal_id         uuid REFERENCES proposals(id)
-tech_phone          text
-customer_phone      text
-estimate_amount     numeric(10,2)
-sent_at             timestamptz DEFAULT now()
-expires_at          timestamptz DEFAULT now() + interval '10 minutes'
-status              text DEFAULT 'pending' (pending/approved/declined/expired)
-followup_1_sent_at  timestamptz
-followup_2_sent_at  timestamptz
-approved_at         timestamptz
-created_at          timestamptz DEFAULT now()
-```
-
-**onboarding_sessions table (client setup wizard)**
-```
-onboarding_sessions table
-id                    uuid PRIMARY KEY DEFAULT gen_random_uuid()
-client_id             uuid REFERENCES clients(id)
-token                 text UNIQUE NOT NULL
-status                text DEFAULT 'pending' (pending/in_progress/completed/approved)
-created_at            timestamptz DEFAULT now()
-expires_at            timestamptz DEFAULT now() + interval '7 days'
-completed_at          timestamptz
-last_activity_at      timestamptz DEFAULT now()
-step_reached          integer DEFAULT 1
-company_name          text
-owner_name            text
-owner_email           text
-owner_mobile          text
-company_address       text
-company_city          text
-company_state         text
-company_zip           text
-company_phone         text
-years_in_business     text
-trade_vertical        text
-trade_specialties     text[]
-service_radius_miles  integer
-service_area_desc     text
-tone_preference       text
-customer_type         text
-pricing_style         text
-tagline               text
-how_they_found_us     text
-employees_json        jsonb
-pricing_json          jsonb
-logo_url              text
-personality_md        text
-personality_md_approved boolean DEFAULT false
-```
-
-**trade_verticals table (registry of supported trades)**
-```
-trade_verticals table
-id              uuid PRIMARY KEY DEFAULT gen_random_uuid()
-vertical_key    text UNIQUE NOT NULL
-vertical_label  text NOT NULL
-icon            text
-sort_order      integer DEFAULT 0
-active          boolean DEFAULT true
-specialties     text[]
-created_at      timestamptz DEFAULT now()
-```
-
-**pricing_benchmarks table (researched service pricing)**
-```
-pricing_benchmarks table
-id              uuid PRIMARY KEY DEFAULT gen_random_uuid()
-vertical_key    text NOT NULL
-vertical_label  text NOT NULL
-service_name    text NOT NULL
-price_low       numeric(10,2)
-price_typical   numeric(10,2)
-price_high      numeric(10,2)
-price_unit      text DEFAULT 'per job'
-sort_order      integer DEFAULT 0
-notes           text
-region          text DEFAULT 'northeast_us'
-active          boolean DEFAULT true
-created_at      timestamptz DEFAULT now()
-updated_at      timestamptz DEFAULT now()
-```
-
-**pricing_adjustments table (learning foundation)**
-```
-pricing_adjustments table
-id              uuid PRIMARY KEY DEFAULT gen_random_uuid()
-client_id       uuid REFERENCES clients(id)
-vertical_key    text
-service_name    text
-original_price  numeric(10,2)
-adjusted_price  numeric(10,2)
-delta           numeric(10,2)
-direction       text (up / down / same)
-context         text (proposal_edit / invoice_edit / onboarding_setup / manual_override)
-created_at      timestamptz DEFAULT now()
-```
-
-**estimate_edits table (edit diff log)**
-```
-estimate_edits table
-id              uuid (auto)
-document_type   text (proposal or invoice)
-document_id     text
-client_id       text
-field_changed   text
-original_value  text
-new_value       text
-created_at      timestamptz DEFAULT now()
-```
-
-**client_prompt_overrides table (learning loop)**
-```
-client_prompt_overrides table
-id                    uuid (auto)
-client_id             text UNIQUE
-estimate_style_notes  text
-invoice_style_notes   text
-updated_at            timestamptz
-```
-
-**proposals table (updated columns)**
-```
-+ line_items    jsonb (array of {description, qty, unit_price, total})
++ line_items    jsonb
 + edit_token    uuid DEFAULT gen_random_uuid()
 + html_url      text
 + subtotal      numeric
 + tax_rate      numeric
 + tax_amount    numeric
-```
-
-**invoices table (updated columns)**
-```
-+ line_items    jsonb (array of {description, qty, unit_price, total})
-+ edit_token    uuid DEFAULT gen_random_uuid()
-+ html_url      text
-+ subtotal      numeric
-+ tax_rate      numeric
-+ tax_amount    numeric
++ status        text DEFAULT 'draft'
 ```
 
 ---
 
-## Testing
+## Operating Principles
 
-Before marking any script complete:
-1. Run it with test data
-2. Confirm the output is correct
-3. Confirm error handling works
-4. Update the directive if behavior differed from expected
+**1. Check for existing scripts first**
+Before writing a new execution script, check `execution/`.
+Only create new scripts if none exist for the task.
 
-Test SMS number for dev: use your personal cell
-Test client record: create a record in Supabase for your own number
+**2. Self-anneal when things break**
+Read the full error. Fix the script. Test it. Update the directive.
+Do not retry paid API calls without checking first.
+
+**3. Directives are living documents**
+Update when you discover API limits, better approaches, or errors.
+Do not overwrite without asking. They are institutional memory.
+
+**4. PWA before SMS**
+When designing a new tech-facing interaction, default to a PWA
+screen. Only use SMS for notification pings that prompt the tech
+to open the PWA.
+
+**5. Rural signal first**
+Design every PWA screen to work on a 3G connection with intermittent
+signal. Minimize JS payload. Cache aggressively. Sync on resume.
+A tech in a basement should still be able to clock out.
+
+**HARD RULE #6 — Chat agent is a router, never an executor**
+pwa_chat.py returns action JSON. It never calls proposal_agent.run(),
+never writes to the database directly. The chip carries the existing
+endpoint. The endpoint owns the side effects and multi-tenant guards.
+No exceptions.
 
 ---
 
@@ -593,31 +582,53 @@ Test client record: create a record in Supabase for your own number
 - Never overwrite a client's personality.md without confirmation
 - Never send SMS to real customers during testing
 - Never skip loading the Personality Layer — ever
-- Never make the output sound generic — that defeats the purpose
+- Never make output sound generic — that defeats the purpose
+- Never create dashboard forms for estimates or invoices
+- Never design a two-way SMS AI conversation flow — that's a PWA screen
+
+---
 
 ## Current Build Status
-Phase 1 — Partial Release (Inbound SMS + Email Delivery)
 
-Working:
-- Inbound SMS webhook routing (brand number, no 10DLC needed)
+**Phase 1 — PWA Foundation (Active Sprint)**
+
+Completed (pre-pivot):
+- Inbound SMS webhook routing (brand number)
 - Role-based permissions (owner, foreman, field_tech, office)
-- Proposal generation via Claude → styled HTML → email delivery
-- Invoice generation → styled HTML → email with PAY NOW link
+- Proposal + invoice generation via Claude → styled HTML → email
 - Proposal follow-up tracking (accepted/declined/lost)
 - Clock in/out stub
-- Scheduling agent (SMS parse → job + schedule → confirm)
-- Job list query by day
-- Email delivery via Resend (proposals, invoices, confirmations)
+- Scheduling agent
+- Email delivery via Resend
 - Dashboard (20+ pages, dispatch board, planner, control board)
 - Square payment links (sandbox)
+- Document edit + diff tracking (/doc/edit/<token>)
 
-Pending:
-- Email delivery for all remaining outbound (follow-ups, review requests)
-- Customer email collection workflow (prompt when missing)
-- needs_attention card for missing customer email
-- 10DLC registration (deferred — not blocking release)
+PWA Sprint (current):
+- [x] static/manifest.json
+- [x] static/sw.js
+- [x] PWA manifest link in /doc/edit/<token> template
+- [x] /pwa/ shell route + template
+- [x] /pwa/login — magic link auth (phone entry + email/SMS delivery)
+- [x] /pwa/auth/<token> — token verification + session creation
+- [x] @require_pwa_auth decorator — protects all /pwa/ routes
+- [x] pwa_tokens table — single-use, 15-min expiry, audit trail
+- [x] /pwa/clock — clock in/out screen with live elapsed timer,
+- [x] /pwa/route — today's route, per-job actions, auto-advance on done
+- [x] /pwa/job — new job input, customer resolver, proposal_agent
+      pipeline, deep link to review screen on success
+- [x] /pwa/chat — conversational AI, action chips, voice input,
+      persistent history, fuzzy job matching, 6a+6b complete
+- [x] SMS router simplified to notifications + PWA redirect —
+      80 lines, 3-step flow (opt-in/out, clock punch, PWA redirect)
+
+Pending (post-PWA):
+- Self-learning agent (null field prompts)
+- MMS photo ingestion
+- Multi-day invoice drafts (Save & Add)
 - Square production credentials
-- Customer matching logic (not started)
+- Customer email collection workflow
+- 10DLC — deferred indefinitely
 
-Do not suggest features beyond Phase 1 and Phase 2 
+Do not suggest features beyond the PWA sprint
 until explicitly asked.

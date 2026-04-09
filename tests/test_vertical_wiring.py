@@ -46,9 +46,14 @@ def test_invoice_agent_loads_vertical_prompts():
         assert "USE LANDSCAPING LANGUAGE" in prompt, "Vertical prompts not found in system prompt"
 
 
-def test_sms_router_uses_vertical_keywords():
-    """Mock load_vertical to return custom invoice keywords for a different vertical."""
-    from execution.sms_router import _invoice_keywords
+def test_vertical_invoice_keywords_load_from_mocked_config():
+    """
+    The post-PWA-pivot sms_router no longer reads vertical keywords (it's
+    notification-only now), but invoice_agent + proposal_agent still do via
+    vertical_loader. This test verifies the loader returns the expected
+    structure when mocked.
+    """
+    from execution.vertical_loader import load_vertical
 
     mock_config = {
         "sms_keywords": {
@@ -56,16 +61,18 @@ def test_sms_router_uses_vertical_keywords():
         }
     }
 
-    with patch("execution.sms_router.load_vertical", return_value=mock_config):
-        result = _invoice_keywords("landscaping")
-        assert "mowed" in result
-        assert "baffle" not in result
+    with patch("execution.vertical_loader.load_vertical", return_value=mock_config):
+        result = load_vertical("landscaping")
+        invoice_kws = result.get("sms_keywords", {}).get("invoice", [])
+        assert "mowed" in invoice_kws
+        assert "baffle" not in invoice_kws
 
 
-def test_sewer_drain_keywords_still_work():
-    """Verify real sewer_drain config loads without mocking."""
-    from execution.sms_router import _invoice_keywords
+def test_sewer_drain_invoice_keywords_still_load_from_real_config():
+    """The on-disk sewer_drain config still ships invoice keywords for the agents."""
+    from execution.vertical_loader import load_vertical
 
-    result = _invoice_keywords("sewer_drain")
-    assert "pump" in result, f"'pump' not found in sewer_drain invoice keywords: {result}"
-    assert "baffle" in result, f"'baffle' not found in sewer_drain invoice keywords: {result}"
+    config = load_vertical("sewer_drain")
+    invoice_kws = config.get("sms_keywords", {}).get("invoice", [])
+    assert "pump" in invoice_kws, f"'pump' not in sewer_drain invoice keywords: {invoice_kws}"
+    assert "baffle" in invoice_kws, f"'baffle' not in sewer_drain invoice keywords: {invoice_kws}"
