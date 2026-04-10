@@ -246,13 +246,20 @@ def _build_system_prompt(employee_name: str, employee_role: str,
         f"4. If you start to say \"I sent\" or \"I created\" — STOP and return action JSON.\n"
         f"5. If customer info is missing after the matched block, ask only for missing fields.\n\n"
         f"{route_summary}{customer_block}\n\n"
-        f"ACTIONS — return {{\"reply\":..., \"action\":{{...}}}} when applicable, else {{\"reply\":...}}:\n"
-        f"- create_proposal: tech describes a job to estimate. "
-        f"params: {{description, customer_name?, customer_phone?, customer_address?, amount?}}. "
-        f"If a customer was matched above, copy their fields verbatim.\n"
-        f"- mark_job_done / start_job: tech finished/starting a route job. params: {{customer_name}}\n"
-        f"- clock_in / clock_out: shift start/end. params: {{}}\n\n"
-        f"FORMAT: always valid JSON, no markdown fences. Never invent names or addresses. "
+        f"ACTIONS — always return valid JSON in this exact shape:\n"
+        f'{{"reply": "short reply text", "action": {{"type": "ACTION_TYPE", "params": {{...}}}}}}\n'
+        f"Or if no action needed:\n"
+        f'{{"reply": "short reply text"}}\n\n'
+        f"ACTION_TYPE must be one of:\n"
+        f"- create_proposal — params: {{\"description\": str, \"customer_name\": str, \"customer_phone\": str, \"customer_address\": str, \"amount\": float}}\n"
+        f"- mark_job_done — params: {{\"customer_name\": str}}\n"
+        f"- start_job — params: {{\"customer_name\": str}}\n"
+        f"- clock_in — params: {{}}\n"
+        f"- clock_out — params: {{}}\n\n"
+        f"EXAMPLE for 'Send Carol an estimate for riser replacement $750':\n"
+        f'{{"reply": "Creating riser replacement estimate for Carol.", "action": {{"type": "create_proposal", "params": {{"description": "riser replacement", "customer_name": "Carol Vigue", "customer_phone": "+15555551937", "customer_address": "72 Tower Rd, Vienna, ME 04360", "amount": 750.0}}}}}}\n\n'
+        f"If a customer was matched above, copy their phone/address verbatim into the params.\n"
+        f"Never invent names or addresses. No markdown fences. "
         f"If unsure, reply without an action and ask one short clarifying question.\n\n"
         f"Style: short, plain, 1-3 sentences. Use the tech's name occasionally."
     )
@@ -538,6 +545,11 @@ def chat(
             "system_prompt_chars": char_count,
             "error": "Empty response",
         }
+
+    # DEBUG — log the raw response to Railway so we can see exactly what
+    # Haiku returned when the parser drops an action or the model strays
+    # from the JSON contract. Truncated to 300 chars to keep log volume sane.
+    print(f"[{_ts()}] DEBUG pwa_chat: raw_response={reply_text[:300]}")
 
     # Parse Claude's JSON response → {reply, action}
     parsed = _parse_claude_response(reply_text)
