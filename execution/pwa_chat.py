@@ -522,7 +522,7 @@ def chat(
         reply_text = call_claude(
             system_prompt=system_prompt,
             messages=claude_messages,
-            model ="sonnet",
+            model="sonnet",
             max_tokens=1000,
         )
     except Exception as e:
