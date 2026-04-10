@@ -113,8 +113,6 @@ def create_magic_link(client_id: str, phone: str, base_url: str) -> dict:
                 "token": candidate,
                 "client_id": client_id,
                 "tech_id": employee.get("id"),
-                "employee_phone": normalized,
-                "purpose": "pwa_login",
                 "expires_at": expires_at,
             }).execute()
 
@@ -201,7 +199,7 @@ def consume_magic_link(token: str, request_ip: str = None, user_agent: str = Non
     # Look up the employee record by ID, or fall back to phone (owner_mobile path)
     employee = None
     employee_id = row.get("tech_id")
-    employee_phone = row.get("employee_phone", "")
+    employee_phone = employee.get("phone", "") if employee else ""
     client_id = row.get("client_id")
 
     if employee_id:
