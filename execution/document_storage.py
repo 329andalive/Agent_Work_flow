@@ -65,7 +65,7 @@ def upload_document_html(
         client.storage.from_("documents").upload(
             path=file_path,
             file=html_content.encode("utf-8"),
-            file_options={"contentType": "text/html; charset=utf-8"},
+            file_options={"content-type": "text/html; charset=utf-8"},
         )
 
         # Build the public URL
