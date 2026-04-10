@@ -17,14 +17,12 @@ Public API:
 
 import os
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timezone, date
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from execution.db_connection import get_client as get_supabase
 from execution.dispatch_chain import (
-    get_todays_route,
-    get_current_job,
     advance_to_next_job,
     _start_job,
     _end_job,
@@ -51,13 +49,88 @@ def _ts():
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
+def _get_worker_route(client_id: str, worker_id: str) -> list:
+    """
+    Direct Supabase query for one worker's dispatched jobs today.
+
+    Reads route_assignments filtered by (client_id, worker_id, dispatch_date),
+    then loads the matching jobs + customer rows. Returns dicts with the
+    field names the PWA route screen expects (job_id, customer_name, etc.)
+    so this is a drop-in replacement for the buggy dispatch_chain helper
+    that was filtering by jobs.scheduled_date instead of route_assignments.
+
+    Multi-tenant safe — both queries filter by client_id and the
+    assignments query also filters by worker_id, so a forged worker_id
+    from another tenant returns nothing.
+    """
+    today = date.today().isoformat()
+    sb = get_supabase()
+
+    try:
+        ra = sb.table("route_assignments").select(
+            "job_id, sort_order"
+        ).eq("client_id", client_id).eq(
+            "worker_id", worker_id
+        ).eq("dispatch_date", today).order("sort_order").execute()
+    except Exception as e:
+        print(f"[{_ts()}] ERROR pwa_jobs: route_assignments lookup failed — {e}")
+        return []
+
+    if not ra.data:
+        return []
+
+    job_ids = [r["job_id"] for r in ra.data]
+    sort_map = {r["job_id"]: r.get("sort_order", 0) for r in ra.data}
+
+    try:
+        jobs = sb.table("jobs").select(
+            "id, job_type, job_description, status, dispatch_status, "
+            "estimated_amount, scheduled_date, customer_id, "
+            "job_start, job_end"
+        ).eq("client_id", client_id).in_("id", job_ids).execute()
+    except Exception as e:
+        print(f"[{_ts()}] ERROR pwa_jobs: jobs lookup failed — {e}")
+        return []
+
+    customer_ids = list({j.get("customer_id") for j in (jobs.data or []) if j.get("customer_id")})
+    cust_map = {}
+    if customer_ids:
+        try:
+            custs = sb.table("customers").select(
+                "id, customer_name, customer_address, customer_phone"
+            ).in_("id", customer_ids).execute()
+            cust_map = {c["id"]: c for c in (custs.data or [])}
+        except Exception as e:
+            print(f"[{_ts()}] WARN pwa_jobs: customer enrich failed — {e}")
+
+    route = []
+    for job in (jobs.data or []):
+        cust = cust_map.get(job.get("customer_id"), {})
+        route.append({
+            "job_id": job["id"],
+            "sort_order": sort_map.get(job["id"], 0),
+            "job_type": job.get("job_type", ""),
+            "job_description": job.get("job_description", ""),
+            "status": job.get("status", ""),
+            "dispatch_status": job.get("dispatch_status", ""),
+            "estimated_amount": job.get("estimated_amount"),
+            "job_start": job.get("job_start"),
+            "job_end": job.get("job_end"),
+            "customer_name": cust.get("customer_name", ""),
+            "customer_address": cust.get("customer_address", ""),
+            "customer_phone": cust.get("customer_phone", ""),
+        })
+    route.sort(key=lambda j: j["sort_order"])
+    return route
+
+
 def _verify_job_belongs_to_route(client_id: str, employee_id: str, job_id: str) -> dict | None:
     """
     Confirm a job is in this employee's route_assignments today.
     Returns the matching job dict from the route, or None.
     Multi-tenant safe — only matches jobs assigned to this employee.
     """
-    route = get_todays_route(client_id, employee_id)
+    route = _get_worker_route(client_id, employee_id)
     for job in route:
         if job.get("job_id") == job_id:
             return job
@@ -83,9 +156,14 @@ def _get_open_time_entry_id(client_id: str, employee_id: str) -> str | None:
 def get_route(client_id: str, employee_id: str) -> dict:
     """
     Return today's route + current job state for the PWA route screen.
+    Uses _get_worker_route() so jobs are filtered by route_assignments
+    (worker_id + dispatch_date), NOT by jobs.scheduled_date.
     """
-    route = get_todays_route(client_id, employee_id)
-    current = get_current_job(client_id, employee_id)
+    route = _get_worker_route(client_id, employee_id)
+    current = next(
+        (j for j in route if j.get("job_start") and not j.get("job_end")),
+        None,
+    )
     completed = sum(1 for j in route if j.get("job_end"))
     return {
         "success": True,

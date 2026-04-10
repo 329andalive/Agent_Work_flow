@@ -582,7 +582,7 @@ def test_pwa_shell_links_to_route_screen(pwa_client):
 def test_pwa_jobs_start_rejects_job_not_in_route():
     """start_job should refuse if job is not in employee's route."""
     from unittest.mock import patch
-    with patch("execution.pwa_jobs.get_todays_route", return_value=[
+    with patch("execution.pwa_jobs._get_worker_route", return_value=[
         {"job_id": "other-job", "customer_name": "Alice"},
     ]):
         from execution.pwa_jobs import start_job
@@ -594,9 +594,9 @@ def test_pwa_jobs_start_rejects_job_not_in_route():
 def test_pwa_jobs_start_rejects_already_completed():
     """start_job should refuse if job already has job_end set."""
     from unittest.mock import patch
-    with patch("execution.pwa_jobs.get_todays_route", return_value=[
+    with patch("execution.pwa_jobs._get_worker_route", return_value=[
         {"job_id": "j1", "customer_name": "Alice",
-         "job_start": "2026-04-09T08:00:00", "job_end": "2026-04-09T09:00:00"},
+         "job_start": "2026-04-10T08:00:00", "job_end": "2026-04-10T09:00:00"},
     ]):
         from execution.pwa_jobs import start_job
         result = start_job("client-1", "emp-1", "j1")
