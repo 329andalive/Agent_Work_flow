@@ -61,11 +61,17 @@ def upload_document_html(
         except Exception:
             pass  # File may not exist yet — that's fine
 
-        # Upload to the 'documents' bucket
+        # Upload to the 'documents' bucket. content-type ensures the
+        # browser renders the HTML instead of showing raw source;
+        # cache-control no-cache forces a fresh fetch every time so
+        # owner edits land immediately for the customer.
         client.storage.from_("documents").upload(
             path=file_path,
             file=html_content.encode("utf-8"),
-            file_options={"content-type": "text/html; charset=utf-8"},
+            file_options={
+                "content-type": "text/html; charset=utf-8",
+                "cache-control": "no-cache",
+            },
         )
 
         # Build the public URL
