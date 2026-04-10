@@ -24,7 +24,7 @@ Return shape:
         "error":   str or None,
     }
 
-System prompt budget: under 500 input tokens, repeated every turn.
+System prompt budget: under 1000 input tokens, repeated every turn.
 """
 
 import os
