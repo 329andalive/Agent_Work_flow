@@ -36,11 +36,12 @@ from datetime import datetime
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from execution.call_claude import call_claude
+from execution.db_connection import get_client as get_supabase
 
 
 # Hard ceiling on system prompt length. The chat is going to fire on
 # every user message, so input tokens dominate cost. Stay tight.
-SYSTEM_PROMPT_TOKEN_TARGET = 500
+SYSTEM_PROMPT_TOKEN_TARGET = 1000
 SYSTEM_PROMPT_CHAR_TARGET = SYSTEM_PROMPT_TOKEN_TARGET * 4  # ~4 chars/token
 
 
@@ -87,41 +88,173 @@ def _build_route_summary(route: list) -> str:
     return "\n".join(lines)
 
 
-def _build_system_prompt(employee_name: str, employee_role: str,
-                        business_name: str, route_summary: str) -> str:
+# Words that look like names but aren't — used to filter the candidate
+# name extractor below. Keep this list small; Claude can sort out edge
+# cases on the actual prompt side.
+_NAME_BLOCKLIST = {
+    "Hey", "Hi", "Hello", "Yo", "Ok", "OK", "Okay",
+    "Yes", "No", "Yeah", "Nope", "Sure", "Fine",
+    "Today", "Tomorrow", "Yesterday", "Tonight", "Morning",
+    "Need", "Want", "Send", "Create", "Make", "Add", "New",
+    "Estimate", "Invoice", "Quote", "Bill", "Bid", "Pump", "Repair",
+    "Mark", "Done", "Start", "Finish", "Clock", "In", "Out",
+    "Bolts", "Bolts11",
+}
+
+
+def _extract_candidate_names(text: str) -> list[str]:
     """
-    Tight system prompt under the 500-token budget.
+    Pull title-cased word pairs (and singles) out of the tech's message
+    that look like person names. The regex is intentionally permissive —
+    we'd rather over-extract and let the DB lookup fail cheaply than
+    miss a real customer mention.
+
+    Examples:
+        "Send Robert Poulin an estimate" → ["Robert Poulin"]
+        "alice smith needs a pump out"   → []  (lowercase — the tech
+                                                 should at least cap names)
+        "DONE Bob Jones"                 → ["Bob Jones"]
+
+    The blocklist filters greetings and command words that happen to
+    be capitalized.
+    """
+    if not text:
+        return []
+    # Match runs of 1-3 title-cased words. Allows hyphens/apostrophes
+    # inside (e.g. "O'Brien", "Smith-Jones"). Two-word matches preferred.
+    pattern = re.compile(
+        r"\b([A-Z][a-z'\-]+(?:\s+[A-Z][a-z'\-]+){0,2})\b"
+    )
+    matches = pattern.findall(text)
+    out = []
+    seen = set()
+    for m in matches:
+        # Drop pure-blocklist runs like "Hi" or "Send Bolts11"
+        words = m.split()
+        non_block = [w for w in words if w not in _NAME_BLOCKLIST]
+        if not non_block:
+            continue
+        # Single-word matches are usually too noisy — only keep if it's
+        # the only candidate AND it's at least 4 chars (filters "Bob"
+        # but keeps "Roberts"). Two-plus-word matches always pass.
+        if len(non_block) == 1 and len(non_block[0]) < 4:
+            continue
+        candidate = " ".join(non_block)
+        key = candidate.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(candidate)
+    return out
+
+
+def _find_customer(client_id: str, name: str) -> dict | None:
+    """
+    Look up a customer by name in the tenant's customers table.
+    Returns the first match (most recently created if multiple) or None.
+
+    Multi-tenant safe: filters by client_id before the name match.
+    """
+    if not name or not name.strip():
+        return None
+    try:
+        sb = get_supabase()
+        result = sb.table("customers").select(
+            "id, customer_name, customer_phone, customer_email, customer_address"
+        ).eq("client_id", client_id).ilike(
+            "customer_name", f"%{name.strip()}%"
+        ).order("created_at", desc=True).limit(3).execute()
+        if result.data:
+            return result.data[0]
+    except Exception as e:
+        print(f"[{_ts()}] WARN pwa_chat: customer lookup failed for {name!r} — {e}")
+    return None
+
+
+def _find_customers_in_message(client_id: str, text: str) -> list[dict]:
+    """
+    Extract candidate names from the tech's message and look each one
+    up in the customers table. Returns at most 3 hits, dedup'd by id.
+    Empty list if nothing matched.
+
+    This is the "DB before prompt" piece of bug #1 — the agent gets
+    real customer info injected into the system prompt so it doesn't
+    ask for fields the codebase already has.
+    """
+    candidates = _extract_candidate_names(text)
+    if not candidates:
+        return []
+
+    found = []
+    seen_ids = set()
+    for name in candidates[:5]:  # cap candidates to avoid runaway lookups
+        cust = _find_customer(client_id, name)
+        if cust and cust.get("id") not in seen_ids:
+            seen_ids.add(cust["id"])
+            found.append(cust)
+        if len(found) >= 3:
+            break
+    return found
+
+
+def _build_customer_context(customers: list[dict]) -> str:
+    """
+    Render the matched-customer block that gets injected into the
+    system prompt. Compact format — names + the fields the agent
+    needs to skip asking for them. Keeps the prompt under budget.
+    """
+    if not customers:
+        return ""
+    lines = ["MATCHED CUSTOMERS (already in your DB — DO NOT ask for these fields):"]
+    for c in customers:
+        parts = [f"- {c.get('customer_name', 'Customer')}"]
+        if c.get("customer_phone"):
+            parts.append(f"phone {c['customer_phone']}")
+        if c.get("customer_email"):
+            parts.append(f"email {c['customer_email']}")
+        if c.get("customer_address"):
+            parts.append(f"addr {c['customer_address']}")
+        lines.append(" · ".join(parts))
+    return "\n".join(lines)
+
+
+def _build_system_prompt(employee_name: str, employee_role: str,
+                        business_name: str, route_summary: str,
+                        customer_context: str = "") -> str:
+    """
+    System prompt with hard anti-hallucination rules and optional
+    customer-context injection.
 
     Sections in order of importance:
-      1. Identity (who is this AI, who is the tech)
-      2. Today's context (route summary)
-      3. Actions (when to return one + JSON contract)
-      4. Style rules
+      1. Identity
+      2. CRITICAL RULES (anti-hallucination + action JSON contract)
+      3. Today's route summary
+      4. Matched customers (only when DB lookup found something)
+      5. Available actions + JSON response shape
+      6. Style rules
     """
     role_label = (employee_role or "field tech").replace("_", " ")
 
+    customer_block = f"\n\n{customer_context}" if customer_context else ""
+
     return (
-        f"You are the AI assistant for {business_name}. "
-        f"You are texting with {employee_name}, a {role_label} on the road.\n\n"
-        f"{route_summary}\n\n"
-        f"WHEN TO RETURN AN ACTION:\n"
-        f"If the tech clearly asks to do something below, return JSON with both "
-        f"\"reply\" and \"action\". Otherwise return JSON with just \"reply\".\n"
-        f"Available actions:\n"
+        f"AI assistant for {business_name}. Texting {employee_name}, a {role_label}.\n\n"
+        f"CRITICAL RULES:\n"
+        f"1. You CANNOT create or send anything directly.\n"
+        f"2. You MUST return action JSON when the tech requests an action.\n"
+        f"3. NEVER tell the tech you did something. Only return the action chip.\n"
+        f"4. If you start to say \"I sent\" or \"I created\" — STOP and return action JSON.\n"
+        f"5. If customer info is missing after the matched block, ask only for missing fields.\n\n"
+        f"{route_summary}{customer_block}\n\n"
+        f"ACTIONS — return {{\"reply\":..., \"action\":{{...}}}} when applicable, else {{\"reply\":...}}:\n"
         f"- create_proposal: tech describes a job to estimate. "
-        f"params: {{description, customer_name?, customer_phone?, customer_address?, amount?}}\n"
-        f"- mark_job_done: tech says they finished a job on today's route. "
-        f"params: {{customer_name}} (matched server-side)\n"
-        f"- start_job: tech says they're starting a job on today's route. "
-        f"params: {{customer_name}}\n"
-        f"- clock_in / clock_out: tech says they're starting/ending shift. params: {{}}\n\n"
-        f"RESPONSE FORMAT — always valid JSON, never markdown fences:\n"
-        f"{{\"reply\": \"text\"}}  OR  "
-        f"{{\"reply\": \"text\", \"action\": {{\"type\": \"create_proposal\", \"params\": {{...}}}}}}\n"
-        f"Never invent customer names. Never include action ids you don't have. "
-        f"If unsure, just reply without an action.\n\n"
-        f"Style: short, plain, no corporate filler. 1-3 sentences unless asked "
-        f"for details. Use the tech's name occasionally."
+        f"params: {{description, customer_name?, customer_phone?, customer_address?, amount?}}. "
+        f"If a customer was matched above, copy their fields verbatim.\n"
+        f"- mark_job_done / start_job: tech finished/starting a route job. params: {{customer_name}}\n"
+        f"- clock_in / clock_out: shift start/end. params: {{}}\n\n"
+        f"FORMAT: always valid JSON, no markdown fences. Never invent names or addresses. "
+        f"If unsure, reply without an action and ask one short clarifying question.\n\n"
+        f"Style: short, plain, 1-3 sentences. Use the tech's name occasionally."
     )
 
 
@@ -264,13 +397,21 @@ def chat(
     if not user_message or not user_message.strip():
         return {"success": False, "reply": "", "action": None, "error": "Empty message"}
 
-    # Build the system prompt with today's context
+    # Build the system prompt with today's context AND a DB-first lookup
+    # of any customer the tech mentioned by name. Bug #1: agent must
+    # consult the customers table BEFORE asking the tech for contact
+    # info, otherwise it pesters the tech for fields the system already
+    # has on file.
     route_summary = _route_summary_for_employee(client_id, employee_id)
+    matched_customers = _find_customers_in_message(client_id, user_message)
+    customer_context = _build_customer_context(matched_customers)
+
     system_prompt = _build_system_prompt(
         employee_name=employee_name or "tech",
         employee_role=employee_role or "field tech",
         business_name=business_name or "your business",
         route_summary=route_summary,
+        customer_context=customer_context,
     )
 
     # Token budget guardrail — log if we're getting too long
@@ -303,7 +444,7 @@ def chat(
             system_prompt=system_prompt,
             user_prompt=user_prompt,
             model="haiku",
-            max_tokens=500,
+            max_tokens=1000,
         )
     except Exception as e:
         print(f"[{_ts()}] ERROR pwa_chat: Claude call failed — {e}")

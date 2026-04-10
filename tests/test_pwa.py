@@ -1321,3 +1321,222 @@ def test_pwa_chat_html_renders_chip_and_voice_markup():
     # Voice input button + Web Speech wiring
     assert "mic-btn" in body
     assert "SpeechRecognition" in body
+
+
+# ---------------------------------------------------------------------------
+# Bug 1 — DB-first customer lookup
+# ---------------------------------------------------------------------------
+
+def test_pwa_chat_extract_candidate_names_filters_command_words():
+    """The name extractor should drop greetings, command words, and lowercase noise."""
+    from execution.pwa_chat import _extract_candidate_names
+    assert _extract_candidate_names("hi there") == []
+    assert _extract_candidate_names("clock me in") == []
+    assert _extract_candidate_names("what jobs do i have today") == []
+    # Plain command words alone should not register
+    assert _extract_candidate_names("DONE") == []
+    # But a real two-word name buried in command text should be extracted
+    assert "Robert Poulin" in _extract_candidate_names(
+        "Send Robert Poulin an estimate for baffle replacement"
+    )
+    assert "Bob Jones" in _extract_candidate_names("DONE Bob Jones")
+
+
+def test_pwa_chat_build_customer_context_includes_phone_email_address():
+    """The customer-context block should expose every field the agent needs."""
+    from execution.pwa_chat import _build_customer_context
+    block = _build_customer_context([{
+        "id": "cust-1",
+        "customer_name": "Robert Poulin",
+        "customer_phone": "+12075551234",
+        "customer_email": "rob@example.com",
+        "customer_address": "15 Church St., Oakland, ME 04963",
+    }])
+    assert "MATCHED CUSTOMERS" in block
+    assert "Robert Poulin" in block
+    assert "+12075551234" in block
+    assert "rob@example.com" in block
+    assert "15 Church St" in block
+    assert "DO NOT ask" in block
+
+
+def test_pwa_chat_build_customer_context_empty_when_no_matches():
+    """No customers → no block at all (don't waste prompt tokens)."""
+    from execution.pwa_chat import _build_customer_context
+    assert _build_customer_context([]) == ""
+
+
+def test_pwa_chat_chat_calls_customer_lookup_before_claude():
+    """
+    End-to-end: chat() must call _find_customers_in_message before
+    building the system prompt, and the matched customer's fields
+    must appear in the prompt the model sees.
+    """
+    from unittest.mock import patch
+    import execution.pwa_chat  # noqa: F401
+
+    fake_customers = [{
+        "id": "cust-1",
+        "customer_name": "Robert Poulin",
+        "customer_phone": "+12075551234",
+        "customer_email": "rob@example.com",
+        "customer_address": "15 Church St., Oakland, ME 04963",
+    }]
+
+    captured = {}
+    def _capture(system_prompt, user_prompt, model, max_tokens):
+        captured["system_prompt"] = system_prompt
+        return (
+            '{"reply": "Found Robert Poulin. Drafting estimate now.",'
+            ' "action": {"type": "create_proposal", "params": {'
+            ' "description": "baffle replacement", "amount": 150,'
+            ' "customer_name": "Robert Poulin",'
+            ' "customer_phone": "+12075551234",'
+            ' "customer_address": "15 Church St., Oakland, ME 04963"}}}'
+        )
+
+    with patch("execution.pwa_chat.call_claude", side_effect=_capture), \
+         patch("execution.pwa_chat._route_summary_for_employee", return_value="Today: empty."), \
+         patch("execution.pwa_chat._find_customers_in_message", return_value=fake_customers) as mock_lookup, \
+         patch("execution.pwa_chat_actions.decorate_action", return_value={
+             "type": "create_proposal",
+             "label": "Create estimate · $150",
+             "params": {"description": "baffle replacement"},
+             "endpoint": "/pwa/api/job/new",
+             "method": "POST",
+         }):
+        from execution.pwa_chat import chat
+        result = chat(
+            client_id="c1", employee_id="e1", employee_name="Jesse",
+            employee_role="field_tech", business_name="Test Trades",
+            user_message="Send Robert Poulin an estimate for baffle replacement $150",
+            history=[],
+        )
+
+    # Lookup must have been called with the original message
+    mock_lookup.assert_called_once()
+    assert mock_lookup.call_args.args[0] == "c1"
+    assert "Robert Poulin" in mock_lookup.call_args.args[1]
+
+    # The system prompt the model received must contain the customer info
+    sp = captured["system_prompt"]
+    assert "MATCHED CUSTOMERS" in sp
+    assert "Robert Poulin" in sp
+    assert "+12075551234" in sp
+    assert "15 Church St" in sp
+
+    # And the chat returned the action
+    assert result["success"] is True
+    assert result["action"] is not None
+    assert result["action"]["type"] == "create_proposal"
+
+
+def test_pwa_chat_chat_skips_lookup_when_no_candidate_names():
+    """Short greetings shouldn't fire DB lookups (cost guard)."""
+    from unittest.mock import patch
+    import execution.pwa_chat  # noqa: F401
+
+    # Use the real _find_customers_in_message but mock _find_customer
+    # so we can assert it was NEVER called for a greeting
+    with patch("execution.pwa_chat.call_claude", return_value='{"reply": "hey"}'), \
+         patch("execution.pwa_chat._route_summary_for_employee", return_value="Today: empty."), \
+         patch("execution.pwa_chat._find_customer") as mock_db:
+        from execution.pwa_chat import chat
+        chat(
+            client_id="c1", employee_id="e1", employee_name="Jesse",
+            employee_role="field_tech", business_name="Test",
+            user_message="hi", history=[],
+        )
+    mock_db.assert_not_called()
+
+
+def test_pwa_chat_find_customer_filters_by_client_id():
+    """_find_customer must filter by client_id (multi-tenant safety)."""
+    from unittest.mock import patch, MagicMock
+
+    # Build a mock supabase chain that records the .eq() call
+    eq_calls = []
+
+    class _Chain:
+        def select(self, *a, **kw):
+            return self
+        def eq(self, col, val):
+            eq_calls.append((col, val))
+            return self
+        def ilike(self, *a, **kw):
+            return self
+        def order(self, *a, **kw):
+            return self
+        def limit(self, *a, **kw):
+            return self
+        def execute(self):
+            return MagicMock(data=[{
+                "id": "cust-1",
+                "customer_name": "Robert Poulin",
+                "customer_phone": "+12075551234",
+                "customer_email": None,
+                "customer_address": "15 Church St",
+            }])
+
+    mock_sb = MagicMock()
+    mock_sb.table.return_value = _Chain()
+
+    with patch("execution.pwa_chat.get_supabase", return_value=mock_sb):
+        from execution.pwa_chat import _find_customer
+        result = _find_customer("client-abc", "Robert")
+
+    assert result is not None
+    assert result["customer_name"] == "Robert Poulin"
+    # The first .eq() call must be the client_id filter
+    assert eq_calls[0] == ("client_id", "client-abc")
+
+
+# ---------------------------------------------------------------------------
+# Bug 2 — Anti-hallucination rules in the system prompt
+# ---------------------------------------------------------------------------
+
+def test_pwa_chat_system_prompt_contains_anti_hallucination_rules():
+    """The system prompt must explicitly forbid claiming to have done things."""
+    from execution.pwa_chat import _build_system_prompt, _build_route_summary
+    summary = _build_route_summary([])
+    prompt = _build_system_prompt("Jesse", "field_tech", "Test", summary)
+
+    # The five rules from the bug fix prompt must all appear in some form
+    assert "CRITICAL RULES" in prompt
+    assert "CANNOT" in prompt  # rule 1: cannot create directly
+    assert "MUST return action JSON" in prompt  # rule 2
+    assert "NEVER tell the tech you did something" in prompt  # rule 3
+    # Rule 4: stop-and-return guard against "I sent" / "I created"
+    assert "I sent" in prompt or "I created" in prompt
+    # Rule 5: ask only for missing fields
+    assert "missing" in prompt.lower()
+
+
+def test_pwa_chat_system_prompt_still_under_token_budget_with_customer_block():
+    """
+    Even with the new CRITICAL RULES section AND a 3-customer match
+    block injected, the prompt must stay under the 500-token budget.
+    """
+    from execution.pwa_chat import (
+        _build_system_prompt, _build_route_summary, _build_customer_context,
+        SYSTEM_PROMPT_CHAR_TARGET,
+    )
+    route = [
+        {"customer_name": "Alice Smith", "job_type": "pump_out", "estimated_amount": 325, "job_start": "x", "job_end": "y"},
+        {"customer_name": "Bob Jones", "job_type": "inspection", "estimated_amount": 250, "job_start": "x", "job_end": None},
+        {"customer_name": "Carol Duggan", "job_type": "repair", "estimated_amount": 500, "job_start": None, "job_end": None},
+    ]
+    summary = _build_route_summary(route)
+    customers = _build_customer_context([
+        {"customer_name": "Robert Poulin", "customer_phone": "+12075551234",
+         "customer_email": "rob@example.com", "customer_address": "15 Church St., Oakland, ME 04963"},
+        {"customer_name": "Alice Smith", "customer_phone": "+12075559999",
+         "customer_email": None, "customer_address": "22 Elm Ave"},
+    ])
+    prompt = _build_system_prompt("Jesse", "field_tech", "B&B Septic", summary, customers)
+    char_count = len(prompt)
+    print(f"Anti-hallucination prompt: {char_count} chars (~{char_count // 4} tokens)")
+    assert char_count < SYSTEM_PROMPT_CHAR_TARGET, (
+        f"System prompt is {char_count} chars (~{char_count // 4} tokens), "
+        f"exceeds {SYSTEM_PROMPT_CHAR_TARGET}-char budget"
+    )
