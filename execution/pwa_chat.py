@@ -269,21 +269,102 @@ def _route_summary_for_employee(client_id: str, employee_id: str) -> str:
         return "Today's route: unavailable."
 
 
-def _format_history_for_claude(history: list) -> list:
+# Maximum number of historical turns we send to the model. The PWA route
+# loads more for UI display, but the model only needs the recent context
+# to track what was actually said vs. done. 10 covers a typical
+# conversation arc without paying for irrelevant ancient history.
+MAX_HISTORY_TURNS = 10
+
+
+def _strip_action_json(content: str) -> str:
     """
-    Convert pwa_chat_messages rows to Claude messages array.
-    Drops anything that isn't 'user' or 'assistant'.
+    Stored assistant messages SHOULD be plain reply text (the route only
+    persists result["reply"], not the JSON envelope) but older 6a-era
+    rows may still hold a full {"reply":..., "action":{...}} envelope.
+    Either way, we want only the reply text in the multi-turn history
+    so the model isn't confused by seeing its own old JSON in the past.
     """
-    messages = []
+    if not content:
+        return ""
+    s = content.strip()
+    if not (s.startswith("{") and s.endswith("}")):
+        return content
+    try:
+        parsed = json.loads(s)
+    except (json.JSONDecodeError, ValueError):
+        return content
+    if isinstance(parsed, dict) and isinstance(parsed.get("reply"), str):
+        return parsed["reply"]
+    return content
+
+
+def _build_messages(history: list, new_user_message: str) -> list:
+    """
+    Build a clean Anthropic-API-compatible messages array from the
+    stored chat history + the tech's new message.
+
+    Guarantees:
+      1. Strict user/assistant alternation (consecutive same-role rows
+         are merged with a blank line between them).
+      2. The array starts with a user role (any leading assistant rows
+         are dropped — Anthropic rejects assistant-first conversations).
+      3. The array ends with the new user message (merged into the
+         last user turn if one is already there).
+      4. At most MAX_HISTORY_TURNS historical rows are considered before
+         alternation/merge — we slice the most recent slice and let the
+         normalization passes do their thing.
+      5. Action JSON envelopes in old assistant rows are stripped to
+         plain reply text via _strip_action_json().
+      6. Blank/whitespace-only rows are dropped.
+
+    The system prompt is NOT in this array — call_claude() takes it as
+    a separate `system=` parameter, never injected as a fake user turn.
+    """
+    # Phase 1 — convert + clean rows, drop garbage
+    cleaned = []
     for row in history:
         role = row.get("role")
         if role not in ("user", "assistant"):
             continue
-        content = row.get("content") or ""
-        if not content.strip():
+        content = row.get("content", "") or ""
+        if role == "assistant":
+            content = _strip_action_json(content)
+        content = content.strip()
+        if not content:
             continue
-        messages.append({"role": role, "content": content})
-    return messages
+        cleaned.append({"role": role, "content": content})
+
+    # Phase 2 — keep only the most recent window
+    cleaned = cleaned[-MAX_HISTORY_TURNS:]
+
+    # Phase 3 — merge consecutive same-role messages
+    merged: list[dict] = []
+    for row in cleaned:
+        if merged and merged[-1]["role"] == row["role"]:
+            merged[-1] = {
+                "role": row["role"],
+                "content": merged[-1]["content"] + "\n\n" + row["content"],
+            }
+        else:
+            merged.append(dict(row))
+
+    # Phase 4 — drop leading assistant turns (Anthropic requires user-first)
+    while merged and merged[0]["role"] == "assistant":
+        merged.pop(0)
+
+    # Phase 5 — append the new user message, merging if last turn is user
+    new_text = (new_user_message or "").strip()
+    if not new_text:
+        return merged  # nothing to append; caller should validate upstream
+    if merged and merged[-1]["role"] == "user":
+        merged[-1] = {
+            "role": "user",
+            "content": merged[-1]["content"] + "\n\n" + new_text,
+        }
+    else:
+        merged.append({"role": "user", "content": new_text})
+
+    return merged
 
 
 # Action types we accept from the model. Anything else is dropped.
@@ -422,27 +503,18 @@ def chat(
             f"(~{char_count // 4} tokens), exceeds {SYSTEM_PROMPT_TOKEN_TARGET}-token target"
         )
 
-    # Format history (prior turns) + the new user message
-    claude_messages = _format_history_for_claude(history)
-    claude_messages.append({"role": "user", "content": user_message.strip()})
+    # Build a proper multi-turn messages array. The Anthropic API needs
+    # strict user/assistant alternation starting with user; _build_messages
+    # handles merging, deduping, and trimming to MAX_HISTORY_TURNS.
+    # IMPORTANT: the system prompt stays in the system= parameter, never
+    # injected into the messages array as a fake user turn.
+    claude_messages = _build_messages(history, user_message)
 
-    # Call Claude — Haiku for cost, the chat agent doesn't need Sonnet's reasoning
+    # Call Claude — Haiku for cost, multi-turn for correctness
     try:
-        # call_claude takes a single user_prompt string in this codebase, so
-        # we collapse history into the user_prompt and rely on the model's
-        # behavior. Better long-term: extend call_claude to accept a messages
-        # array, but that's a bigger change. For 6b we still encode recent
-        # turns as a transcript inside the user message.
-        transcript_lines = []
-        for msg in claude_messages[:-1]:
-            speaker = "Tech" if msg["role"] == "user" else "Assistant"
-            transcript_lines.append(f"{speaker}: {msg['content']}")
-        transcript_lines.append(f"Tech: {user_message.strip()}")
-        user_prompt = "\n".join(transcript_lines) + "\nAssistant:"
-
         reply_text = call_claude(
             system_prompt=system_prompt,
-            user_prompt=user_prompt,
+            messages=claude_messages,
             model="haiku",
             max_tokens=1000,
         )

@@ -50,18 +50,31 @@ def timestamp():
 
 def call_claude(
     system_prompt: str,
-    user_prompt: str,
+    user_prompt: str = None,
     model: str = "sonnet",
     max_tokens: int = DEFAULT_MAX_TOKENS,
+    messages: list = None,
 ) -> str | None:
     """
     Make a single Claude API call and return the response text.
 
     Args:
-        system_prompt: Instructions for how Claude should behave
-        user_prompt:   The actual task or content to process
-        model:         One of "haiku", "sonnet", or "opus"
-        max_tokens:    Maximum tokens in the response (default 1024)
+        system_prompt: Instructions for how Claude should behave (system role).
+        user_prompt:   Single-turn convenience — wrapped as one user message.
+                       Use this for one-shot agent calls (proposal_agent,
+                       invoice_agent, etc.). Mutually exclusive with `messages`.
+        model:         One of "haiku", "sonnet", or "opus".
+        max_tokens:    Maximum tokens in the response (default 1024).
+        messages:      Pre-built multi-turn messages array, e.g.
+                          [{"role":"user","content":"..."},
+                           {"role":"assistant","content":"..."},
+                           {"role":"user","content":"..."}]
+                       Use this for conversational agents like pwa_chat where
+                       turn structure matters. The array is sent verbatim to
+                       the Anthropic API — caller is responsible for strict
+                       user/assistant alternation starting with user.
+                       If both `messages` and `user_prompt` are passed,
+                       `messages` wins.
 
     Returns:
         Response text as a string, or None if the call fails after retries.
@@ -77,22 +90,35 @@ def call_claude(
         print(f"[{timestamp()}] ERROR call_claude: ANTHROPIC_API_KEY not set in .env")
         return None
 
+    # Decide which messages payload to send
+    if messages is not None:
+        if not isinstance(messages, list) or not messages:
+            print(f"[{timestamp()}] ERROR call_claude: messages must be a non-empty list")
+            return None
+        api_messages = messages
+    elif user_prompt is not None:
+        api_messages = [{"role": "user", "content": user_prompt}]
+    else:
+        print(f"[{timestamp()}] ERROR call_claude: must provide either user_prompt or messages")
+        return None
+
     # Initialize the client with the SDK's built-in retry logic
     client = anthropic.Anthropic(
         api_key=api_key,
         max_retries=MAX_RETRIES,
     )
 
-    print(f"[{timestamp()}] INFO call_claude: Calling {model_id} | max_tokens={max_tokens}, system_prompt={system_prompt}, user_prompt={user_prompt}")
+    print(
+        f"[{timestamp()}] INFO call_claude: Calling {model_id} | "
+        f"max_tokens={max_tokens} turns={len(api_messages)}"
+    )
 
     try:
         response = client.messages.create(
             model=model_id,
             max_tokens=max_tokens,
             system=system_prompt,
-            messages=[
-                {"role": "user", "content": user_prompt}
-            ],
+            messages=api_messages,
         )
 
         # Log token usage for cost tracking

@@ -28,6 +28,20 @@
     .topbar a{color:rgba(255,255,255,.7);text-decoration:none;font-size:14px;padding:6px 10px}
     .topbar .who{font-size:13px;color:rgba(255,255,255,.6)}
     .topbar .who strong{color:#fff;font-weight:600}
+    .topbar-right{display:flex;align-items:center;gap:10px}
+    .new-chat-btn{
+      background:rgba(245,158,11,.15);
+      border:1px solid rgba(245,158,11,.4);
+      color:#f59e0b;
+      border-radius:14px;
+      padding:7px 12px;
+      font-size:13px;font-weight:600;
+      font-family:inherit;
+      cursor:pointer;
+      transition:background .15s,transform .1s;
+    }
+    .new-chat-btn:hover{background:rgba(245,158,11,.25)}
+    .new-chat-btn:active{transform:scale(.95)}
 
     /* Chat scroll area */
     main{
@@ -210,7 +224,10 @@
 <body>
   <div class="topbar">
     <a href="/pwa/">&larr; Home</a>
-    <div class="who">Hi, <strong>{{ employee_name }}</strong></div>
+    <div class="topbar-right">
+      <div class="who">Hi, <strong>{{ employee_name }}</strong></div>
+      <button type="button" class="new-chat-btn" id="new-chat-btn" aria-label="Start a new chat">+ New</button>
+    </div>
   </div>
 
   <main id="messages">
@@ -534,6 +551,47 @@ document.getElementById('input').addEventListener('keydown', function(e){
     micBtn.setAttribute('aria-label', 'Voice input');
   };
 })();
+
+// ---------------------------------------------------------------------------
+// New Chat button — start a fresh session without dropping any history rows.
+// The backend mints a new session_id and stores it as a Flask-session
+// override, so subsequent /send + /messages calls automatically pick it up.
+// ---------------------------------------------------------------------------
+
+async function newChat(){
+  var btn = document.getElementById('new-chat-btn');
+  btn.disabled = true;
+  try{
+    var r = await fetch('/pwa/api/chat/new-session', {method: 'POST'});
+    if(r.status === 401 || r.status === 403){ window.location.href = '/pwa/login'; return }
+    var d = await r.json();
+    if(!d.success) return;
+
+    SESSION_ID = d.session_id;
+
+    // Clear the message display and restore the empty state — old messages
+    // remain in pwa_chat_messages, just no longer attached to the active session.
+    var m = document.getElementById('messages');
+    m.innerHTML =
+      '<div class="empty" id="empty-state">' +
+        '<div class="ico">&#128172;</div>' +
+        "Ask me anything about today's jobs.<br>" +
+        'I can answer questions and (soon) trigger actions.' +
+      '</div>';
+
+    // Reset the composer
+    var input = document.getElementById('input');
+    input.value = '';
+    autosizeInput();
+    input.focus();
+  }catch(e){
+    console.warn('new chat failed', e);
+  }finally{
+    btn.disabled = false;
+  }
+}
+
+document.getElementById('new-chat-btn').addEventListener('click', newChat);
 
 // Initial load
 loadHistory();

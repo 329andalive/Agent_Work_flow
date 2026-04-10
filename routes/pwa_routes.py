@@ -382,18 +382,64 @@ def pwa_chat_screen():
 
 
 # ---------------------------------------------------------------------------
+# Chat session resolution helper
+# ---------------------------------------------------------------------------
+
+def _resolve_chat_session_id(employee_id: str) -> str:
+    """
+    Return the active chat session id for this employee.
+
+    The Flask session can hold a `pwa_chat_session_id` override that
+    wins over the DB lookup — that's how the New Chat button starts a
+    fresh conversation without dropping any rows from pwa_chat_messages.
+    Once the override session has its first message saved, the DB
+    lookup also returns it on subsequent calls, so the override stays
+    consistent across page reloads.
+    """
+    override = session.get("pwa_chat_session_id")
+    if override:
+        return override
+    from execution.pwa_chat_messages import get_active_session_id
+    return get_active_session_id(employee_id)
+
+
+# ---------------------------------------------------------------------------
+# POST /pwa/api/chat/new-session — Start a fresh chat session
+# ---------------------------------------------------------------------------
+
+@pwa_bp.route("/api/chat/new-session", methods=["POST"])
+@require_pwa_auth
+def pwa_chat_new_session():
+    """
+    Mint a fresh chat session id and store it in the Flask session as
+    an override. Does NOT delete any rows from pwa_chat_messages — the
+    old session stays around for history/audit, it just stops being
+    the "active" one for this employee.
+    """
+    import uuid as _uuid
+    employee_id = session.get("employee_id")
+    if not employee_id:
+        return jsonify({"success": False, "error": "No employee in session"}), 400
+
+    new_id = str(_uuid.uuid4())
+    session["pwa_chat_session_id"] = new_id
+    print(f"[{_ts()}] INFO pwa_chat: new chat session for {employee_id[:8]} → {new_id[:8]}")
+    return jsonify({"success": True, "session_id": new_id, "messages": []})
+
+
+# ---------------------------------------------------------------------------
 # GET /pwa/api/chat/messages — Last 20 messages of current session
 # ---------------------------------------------------------------------------
 
 @pwa_bp.route("/api/chat/messages", methods=["GET"])
 @require_pwa_auth
 def pwa_chat_history():
-    from execution.pwa_chat_messages import get_active_session_id, get_history
+    from execution.pwa_chat_messages import get_history
     employee_id = session.get("employee_id")
     if not employee_id:
         return jsonify({"success": False, "error": "No employee in session"}), 400
 
-    session_id = get_active_session_id(employee_id)
+    session_id = _resolve_chat_session_id(employee_id)
     messages = get_history(session_id, employee_id, limit=20)
 
     return jsonify({
@@ -410,9 +456,7 @@ def pwa_chat_history():
 @pwa_bp.route("/api/chat/send", methods=["POST"])
 @require_pwa_auth
 def pwa_chat_send():
-    from execution.pwa_chat_messages import (
-        get_active_session_id, get_history, save_message,
-    )
+    from execution.pwa_chat_messages import get_history, save_message
     from execution.pwa_chat import chat as run_chat
 
     client_id = session.get("client_id")
@@ -427,14 +471,17 @@ def pwa_chat_send():
     if not user_message:
         return jsonify({"success": False, "error": "Empty message"}), 400
 
-    # Resolve session id (current active or new)
-    session_id = get_active_session_id(employee_id)
+    # Resolve session id — Flask override (from /new-session) wins over DB
+    session_id = _resolve_chat_session_id(employee_id)
 
     # Save the user turn first so it shows up even if Claude fails
     save_message(client_id, employee_id, session_id, "user", user_message)
 
-    # Load recent history (excluding the message we just saved)
-    history = get_history(session_id, employee_id, limit=20)
+    # Load recent history (excluding the message we just saved).
+    # The agent only needs the last 10 turns for context — the chat
+    # screen UI loads more on /pwa/api/chat/messages, but we don't pay
+    # the model to re-read ancient history every turn.
+    history = get_history(session_id, employee_id, limit=10)
 
     # Drop the message we just inserted from the history pass to the agent
     # (it's already in the user_message arg)
@@ -492,7 +539,7 @@ def pwa_chat_send():
 def pwa_logout():
     """Clear PWA-specific session keys and return to login."""
     for key in ("pwa_authed", "employee_id", "employee_name",
-                "employee_role", "employee_phone"):
+                "employee_role", "employee_phone", "pwa_chat_session_id"):
         session.pop(key, None)
     # Don't clear client_id if dashboard auth is also active
     return redirect("/pwa/login")

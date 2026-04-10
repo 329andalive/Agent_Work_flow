@@ -1384,8 +1384,9 @@ def test_pwa_chat_chat_calls_customer_lookup_before_claude():
     }]
 
     captured = {}
-    def _capture(system_prompt, user_prompt, model, max_tokens):
+    def _capture(system_prompt=None, user_prompt=None, messages=None, model=None, max_tokens=None):
         captured["system_prompt"] = system_prompt
+        captured["messages"] = messages
         return (
             '{"reply": "Found Robert Poulin. Drafting estimate now.",'
             ' "action": {"type": "create_proposal", "params": {'
@@ -1424,6 +1425,16 @@ def test_pwa_chat_chat_calls_customer_lookup_before_claude():
     assert "Robert Poulin" in sp
     assert "+12075551234" in sp
     assert "15 Church St" in sp
+
+    # The new message must arrive as a proper user-role turn in the
+    # messages array, NOT concatenated into the system prompt or a
+    # fake transcript. This is the multi-turn fix.
+    msgs = captured["messages"]
+    assert msgs is not None and len(msgs) >= 1
+    assert msgs[-1]["role"] == "user"
+    assert "Robert Poulin" in msgs[-1]["content"]
+    # And the system prompt must NOT contain the user message
+    assert "Send Robert Poulin" not in sp
 
     # And the chat returned the action
     assert result["success"] is True
@@ -1540,3 +1551,366 @@ def test_pwa_chat_system_prompt_still_under_token_budget_with_customer_block():
         f"System prompt is {char_count} chars (~{char_count // 4} tokens), "
         f"exceeds {SYSTEM_PROMPT_CHAR_TARGET}-char budget"
     )
+
+
+# ---------------------------------------------------------------------------
+# Multi-turn messages array — proper Anthropic-API turn structure
+# ---------------------------------------------------------------------------
+
+def test_pwa_chat_strip_action_json_extracts_reply_from_envelope():
+    """Old 6a-era assistant rows wrapped in {reply, action} should be unwrapped."""
+    from execution.pwa_chat import _strip_action_json
+    raw = '{"reply": "Sure thing", "action": {"type": "clock_in", "params": {}}}'
+    assert _strip_action_json(raw) == "Sure thing"
+
+
+def test_pwa_chat_strip_action_json_passes_through_plain_text():
+    """Plain text content should be returned unchanged."""
+    from execution.pwa_chat import _strip_action_json
+    assert _strip_action_json("Got it boss.") == "Got it boss."
+    assert _strip_action_json("") == ""
+
+
+def test_pwa_chat_strip_action_json_passes_through_invalid_json():
+    """Half-broken JSON should pass through, not crash."""
+    from execution.pwa_chat import _strip_action_json
+    assert _strip_action_json("{not really json") == "{not really json"
+
+
+def test_pwa_chat_build_messages_appends_new_user_to_empty_history():
+    """Empty history → array with just the new user turn."""
+    from execution.pwa_chat import _build_messages
+    msgs = _build_messages([], "hi there")
+    assert msgs == [{"role": "user", "content": "hi there"}]
+
+
+def test_pwa_chat_build_messages_strict_user_assistant_alternation():
+    """A normal user/assistant/user/assistant history must round-trip cleanly."""
+    from execution.pwa_chat import _build_messages
+    history = [
+        {"role": "user",      "content": "what's my route today"},
+        {"role": "assistant", "content": "you have 3 stops"},
+        {"role": "user",      "content": "tell me about the first one"},
+        {"role": "assistant", "content": "alice smith, pump out"},
+    ]
+    msgs = _build_messages(history, "got it, what about #2")
+    # Should be 5 turns, strictly alternating, ending with the new user
+    assert len(msgs) == 5
+    assert [m["role"] for m in msgs] == ["user", "assistant", "user", "assistant", "user"]
+    assert msgs[-1]["content"] == "got it, what about #2"
+    assert msgs[0]["content"] == "what's my route today"
+
+
+def test_pwa_chat_build_messages_merges_consecutive_same_role():
+    """Two consecutive user (or assistant) rows must be merged, not duplicated."""
+    from execution.pwa_chat import _build_messages
+    history = [
+        {"role": "user",      "content": "first thought"},
+        {"role": "user",      "content": "second thought"},  # ← consecutive user
+        {"role": "assistant", "content": "ok got both"},
+    ]
+    msgs = _build_messages(history, "now this")
+    # First two user rows merged, then assistant, then new user
+    assert len(msgs) == 3
+    assert msgs[0]["role"] == "user"
+    assert "first thought" in msgs[0]["content"]
+    assert "second thought" in msgs[0]["content"]
+    assert msgs[1]["role"] == "assistant"
+    assert msgs[2]["content"] == "now this"
+
+
+def test_pwa_chat_build_messages_drops_leading_assistant_turn():
+    """Anthropic requires user-first; leading assistant rows must be dropped."""
+    from execution.pwa_chat import _build_messages
+    history = [
+        {"role": "assistant", "content": "ghost message from a stale session"},
+        {"role": "user",      "content": "hi"},
+        {"role": "assistant", "content": "hey there"},
+    ]
+    msgs = _build_messages(history, "what's up")
+    assert msgs[0]["role"] == "user"
+    assert "ghost message" not in msgs[0]["content"]
+    # Final shape: user, assistant, user
+    assert [m["role"] for m in msgs] == ["user", "assistant", "user"]
+
+
+def test_pwa_chat_build_messages_caps_history_at_max_turns():
+    """At most MAX_HISTORY_TURNS historical rows should reach the model."""
+    from execution.pwa_chat import _build_messages, MAX_HISTORY_TURNS
+    # Build 30 alternating turns
+    history = []
+    for i in range(15):
+        history.append({"role": "user", "content": f"u{i}"})
+        history.append({"role": "assistant", "content": f"a{i}"})
+    msgs = _build_messages(history, "new")
+    # The trim happens before the new message is appended, so the
+    # final array is at most MAX_HISTORY_TURNS + 1 (the new user)
+    assert len(msgs) <= MAX_HISTORY_TURNS + 1
+    # And the OLDEST surviving turn should be from the recent window,
+    # not from the first few entries
+    assert "u0" not in msgs[0]["content"]
+
+
+def test_pwa_chat_build_messages_strips_action_json_from_old_assistant_rows():
+    """Stored assistant rows that still hold a {reply,action} envelope should be unwrapped."""
+    from execution.pwa_chat import _build_messages
+    history = [
+        {"role": "user", "content": "send Robert an estimate"},
+        {"role": "assistant",
+         "content": '{"reply": "Drafting now", "action": {"type": "create_proposal", "params": {}}}'},
+    ]
+    msgs = _build_messages(history, "what's the status")
+    # The assistant turn should now be plain text, not the JSON envelope
+    assistant_turn = next(m for m in msgs if m["role"] == "assistant")
+    assert assistant_turn["content"] == "Drafting now"
+    assert "create_proposal" not in assistant_turn["content"]
+    assert "{" not in assistant_turn["content"]
+
+
+def test_pwa_chat_build_messages_drops_blank_and_unknown_role_rows():
+    """Whitespace-only rows and weird roles must not pollute the array."""
+    from execution.pwa_chat import _build_messages
+    history = [
+        {"role": "user",      "content": "real question"},
+        {"role": "system",    "content": "should be dropped"},  # not user/assistant
+        {"role": "assistant", "content": "   "},                 # whitespace only
+        {"role": "assistant", "content": "real answer"},
+    ]
+    msgs = _build_messages(history, "follow up")
+    # 3 turns: user, assistant, user
+    assert len(msgs) == 3
+    assert "system" not in [m["role"] for m in msgs]
+    # No blank content anywhere
+    for m in msgs:
+        assert m["content"].strip() != ""
+
+
+def test_pwa_chat_build_messages_merges_new_user_into_trailing_user():
+    """If the last history row is already user (no assistant reply yet), merge."""
+    from execution.pwa_chat import _build_messages
+    history = [
+        {"role": "user", "content": "first ping"},
+    ]
+    msgs = _build_messages(history, "second ping")
+    # Single merged user turn — Anthropic forbids two user-roles in a row
+    assert len(msgs) == 1
+    assert msgs[0]["role"] == "user"
+    assert "first ping" in msgs[0]["content"]
+    assert "second ping" in msgs[0]["content"]
+
+
+def test_pwa_chat_call_claude_does_not_inject_system_into_messages():
+    """
+    Defense in depth: chat() must call call_claude with system_prompt as
+    a separate keyword arg, never as a fake user-role turn in the messages
+    array. This is the bug-2 root cause guard.
+    """
+    from unittest.mock import patch
+    import execution.pwa_chat  # noqa: F401
+
+    captured_kwargs = {}
+    def _capture(**kwargs):
+        captured_kwargs.update(kwargs)
+        return '{"reply": "ok"}'
+
+    with patch("execution.pwa_chat.call_claude", side_effect=_capture), \
+         patch("execution.pwa_chat._route_summary_for_employee", return_value="Today: empty."), \
+         patch("execution.pwa_chat._find_customers_in_message", return_value=[]):
+        from execution.pwa_chat import chat
+        chat(
+            client_id="c1", employee_id="e1", employee_name="Jesse",
+            employee_role="field_tech", business_name="Test",
+            user_message="hey", history=[],
+        )
+
+    # system MUST be a separate kwarg
+    assert "system_prompt" in captured_kwargs
+    sys_prompt = captured_kwargs["system_prompt"]
+    assert "CRITICAL RULES" in sys_prompt  # sanity: it's the real prompt
+
+    # messages MUST be present and contain the user turn — never the system text
+    assert "messages" in captured_kwargs
+    msgs = captured_kwargs["messages"]
+    assert isinstance(msgs, list) and len(msgs) >= 1
+    # No message should contain the CRITICAL RULES text — that's a sign
+    # someone shoved the system prompt into the user turn
+    for m in msgs:
+        assert "CRITICAL RULES" not in m["content"]
+    # And we should NOT be passing the legacy user_prompt path anymore
+    assert captured_kwargs.get("user_prompt") is None
+
+
+def test_call_claude_accepts_messages_array_kwarg():
+    """The shared call_claude wrapper must accept a `messages=` parameter."""
+    import inspect
+    from execution.call_claude import call_claude
+    sig = inspect.signature(call_claude)
+    assert "messages" in sig.parameters
+    # The user_prompt path must remain optional for backwards compat
+    assert sig.parameters["user_prompt"].default is None
+
+
+# ---------------------------------------------------------------------------
+# New Chat button — fresh session id, no history rows deleted
+# ---------------------------------------------------------------------------
+
+def test_pwa_chat_new_session_requires_auth(pwa_client):
+    """POST /pwa/api/chat/new-session without a session redirects to login."""
+    resp = pwa_client.post("/pwa/api/chat/new-session")
+    assert resp.status_code in (301, 302, 308)
+    assert "/pwa/login" in resp.headers.get("Location", "")
+
+
+def test_pwa_chat_new_session_returns_fresh_session_id(pwa_client):
+    """The endpoint must return a new uuid and stash it in the Flask session."""
+    _set_pwa_session(pwa_client)
+    import json as _json
+    resp = pwa_client.post("/pwa/api/chat/new-session")
+    assert resp.status_code == 200
+    data = _json.loads(resp.data)
+    assert data["success"] is True
+    assert data["session_id"]
+    assert len(data["session_id"]) >= 32  # uuid4 is 36 chars
+    assert data["messages"] == []
+
+    # The Flask session should now hold the override
+    with pwa_client.session_transaction() as sess:
+        assert sess.get("pwa_chat_session_id") == data["session_id"]
+
+
+def test_pwa_chat_new_session_does_not_delete_messages(pwa_client):
+    """
+    The endpoint must NOT touch pwa_chat_messages — old sessions stay
+    around for history/audit. We assert no DB write helpers are called.
+    """
+    _set_pwa_session(pwa_client)
+    from unittest.mock import patch
+    import execution.pwa_chat_messages  # noqa: F401
+
+    with patch("execution.pwa_chat_messages.save_message") as mock_save, \
+         patch("execution.pwa_chat_messages.get_history") as mock_history:
+        resp = pwa_client.post("/pwa/api/chat/new-session")
+
+    assert resp.status_code == 200
+    mock_save.assert_not_called()
+    mock_history.assert_not_called()
+
+
+def test_pwa_chat_send_uses_flask_session_override_after_new_session(pwa_client):
+    """
+    After /new-session sets the override, /send must use that session_id
+    instead of falling back to the DB-resolved active session.
+    """
+    _set_pwa_session(pwa_client)
+    # Pre-set the override directly so the test is hermetic
+    with pwa_client.session_transaction() as sess:
+        sess["pwa_chat_session_id"] = "fresh-override-id"
+
+    import execution.pwa_chat_messages  # noqa: F401
+    import execution.pwa_chat  # noqa: F401
+    from unittest.mock import patch, MagicMock
+    import json as _json
+
+    fake_chat_result = {
+        "success": True,
+        "reply": "Got it.",
+        "action": None,
+        "model": "haiku",
+        "system_prompt_chars": 1200,
+        "error": None,
+    }
+
+    mock_sb = MagicMock()
+    mock_table = MagicMock()
+    for m in ("select", "eq", "limit", "execute"):
+        getattr(mock_table, m).return_value = mock_table
+    mock_table.execute.return_value = MagicMock(data=[{"business_name": "Test Co"}])
+    mock_sb.table.return_value = mock_table
+
+    with patch("execution.pwa_chat_messages.get_active_session_id", return_value="OLD-DB-id") as mock_active, \
+         patch("execution.pwa_chat_messages.get_history", return_value=[]), \
+         patch("execution.pwa_chat_messages.save_message", return_value="msg-id") as mock_save, \
+         patch("execution.pwa_chat.chat", return_value=fake_chat_result), \
+         patch("execution.db_connection.get_client", return_value=mock_sb):
+        resp = pwa_client.post(
+            "/pwa/api/chat/send",
+            data=_json.dumps({"message": "hi"}),
+            content_type="application/json",
+        )
+
+    assert resp.status_code == 200
+    data = _json.loads(resp.data)
+    # The response session_id MUST be the override, not the DB value
+    assert data["session_id"] == "fresh-override-id"
+    # And get_active_session_id MUST NOT have been called — the override
+    # short-circuits the DB lookup entirely
+    mock_active.assert_not_called()
+    # The save_message calls must use the override session id, not the DB one
+    for call in mock_save.call_args_list:
+        assert call.args[2] == "fresh-override-id"
+
+
+def test_pwa_chat_messages_uses_flask_session_override(pwa_client):
+    """GET /pwa/api/chat/messages must respect the Flask session override."""
+    _set_pwa_session(pwa_client)
+    with pwa_client.session_transaction() as sess:
+        sess["pwa_chat_session_id"] = "override-sess-id"
+
+    import execution.pwa_chat_messages  # noqa: F401
+    from unittest.mock import patch
+    import json as _json
+
+    with patch("execution.pwa_chat_messages.get_active_session_id", return_value="db-old-id") as mock_active, \
+         patch("execution.pwa_chat_messages.get_history", return_value=[]) as mock_history:
+        resp = pwa_client.get("/pwa/api/chat/messages")
+
+    assert resp.status_code == 200
+    data = _json.loads(resp.data)
+    assert data["session_id"] == "override-sess-id"
+    mock_active.assert_not_called()
+    # get_history must have been called with the override id
+    assert mock_history.call_args.args[0] == "override-sess-id"
+
+
+def test_pwa_chat_messages_falls_back_to_db_when_no_override(pwa_client):
+    """Without a Flask override, /messages should still use the DB lookup."""
+    _set_pwa_session(pwa_client)
+    # Make sure no override is set
+    with pwa_client.session_transaction() as sess:
+        sess.pop("pwa_chat_session_id", None)
+
+    import execution.pwa_chat_messages  # noqa: F401
+    from unittest.mock import patch
+    import json as _json
+
+    with patch("execution.pwa_chat_messages.get_active_session_id", return_value="db-active-id"), \
+         patch("execution.pwa_chat_messages.get_history", return_value=[]):
+        resp = pwa_client.get("/pwa/api/chat/messages")
+
+    data = _json.loads(resp.data)
+    assert data["session_id"] == "db-active-id"
+
+
+def test_pwa_logout_clears_chat_session_override(pwa_client):
+    """Logging out must drop the chat session override so next login is clean."""
+    _set_pwa_session(pwa_client)
+    with pwa_client.session_transaction() as sess:
+        sess["pwa_chat_session_id"] = "should-be-cleared"
+
+    pwa_client.get("/pwa/logout")
+
+    with pwa_client.session_transaction() as sess:
+        assert sess.get("pwa_chat_session_id") is None
+
+
+def test_pwa_chat_html_has_new_chat_button():
+    """Sanity: chat template ships the New Chat button + JS handler."""
+    from pathlib import Path
+    html = Path(__file__).parent.parent / "templates" / "pwa" / "chat.html"
+    body = html.read_text()
+    # Markup
+    assert 'id="new-chat-btn"' in body
+    assert "+ New" in body
+    # JS function + endpoint
+    assert "function newChat" in body
+    assert "/pwa/api/chat/new-session" in body
