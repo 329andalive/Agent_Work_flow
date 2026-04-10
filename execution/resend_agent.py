@@ -8,11 +8,7 @@ import json
 import requests
 from datetime import datetime
 
-RESEND_API_KEY = (
-    os.environ.get("RESEND_API_KEY") or
-    os.environ.get("re_send") or
-    ""
-)
+RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "")
 RESEND_API_URL = "https://api.resend.com/emails"
 FROM_ADDRESS   = "Bolts11 <noreply@bolts11.com>"
 SUPPORT_EMAIL  = "support@bolts11.com"
