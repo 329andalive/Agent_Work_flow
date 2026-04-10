@@ -222,6 +222,63 @@ def send_onboarding_invite(
 
 # ── 5. Invoice / proposal email delivery ──────────────────────────────────────
 
+# ── 6. Dispatch route notification — workers tap into the PWA ────────────────
+
+def send_dispatch_route_email(
+    to_email: str,
+    worker_name: str,
+    business_name: str,
+    dispatch_date: str,
+    stop_count: int,
+    pwa_url: str,
+) -> dict:
+    """
+    Notify a worker that their route is ready. The body intentionally
+    does NOT include any job details — those live in the PWA. The whole
+    point of this email is to drop the worker into /pwa/ where they
+    sign in and see today's full route, clock screen, AI chat, etc.
+
+    Args:
+        to_email:      worker's email (employees.email)
+        worker_name:   worker's full name (used to greet by first name)
+        business_name: client's business name (footer signature)
+        dispatch_date: ISO date string for the route
+        stop_count:    number of stops on today's route
+        pwa_url:       absolute URL to the PWA shell (e.g. https://...railway.app/pwa/)
+    """
+    first = (worker_name or "there").split()[0]
+    stop_label = "stop" if stop_count == 1 else "stops"
+    subject = f"Your {business_name} route for {dispatch_date} — {stop_count} {stop_label}"
+
+    body = f"""
+<h1>Hey {first} — your route is ready.</h1>
+<p>Your jobs for <strong>{dispatch_date}</strong> are loaded into the Bolts11 app.</p>
+
+<div class="highlight">
+  <p><strong>{stop_count} {stop_label} scheduled.</strong> Your full route, customer details,
+  clock in/out, and AI chat are all waiting inside.</p>
+</div>
+
+<p><a href="{pwa_url}" class="btn">Open Bolts11 App &rarr;</a></p>
+
+<div class="steps">
+  <p>
+    1. Tap the button above (or paste the link into your phone browser)<br>
+    2. Sign in once with your phone number — magic link, no password<br>
+    3. You'll land on your route screen with every job for today<br>
+    4. Add to home screen so it opens like an app next time
+  </p>
+</div>
+
+<p>If the button doesn't work, copy this link:<br>
+<a href="{pwa_url}">{pwa_url}</a></p>
+
+<hr>
+<p class="small">— {business_name}</p>
+"""
+    return _send(to=[to_email], subject=subject, html=_wrap(body), reply_to=SUPPORT_EMAIL)
+
+
 def send_document_email(
     to_email: str,
     to_name: str,

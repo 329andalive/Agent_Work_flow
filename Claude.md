@@ -644,6 +644,10 @@ PWA Sprint (current):
       everything else, Telnyx outbound dead at carrier)
 - [x] dispatch_routes.py worker notifications routed through
       notify() — falls back to email when SMS kill switch is on
+- [x] dispatch email now links workers to /pwa/ instead of the
+      /r/<token> worker route page — send_dispatch_route_email()
+      in resend_agent.py, missing worker email logs
+      delivery_blocked_no_email + needs_attention card
 
 Pending (post-PWA):
 - Self-learning agent (null field prompts)

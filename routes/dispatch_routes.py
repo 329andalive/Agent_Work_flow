@@ -67,6 +67,53 @@ def _generate_route_token() -> str:
     return "".join(secrets.choice(chars) for _ in range(8))
 
 
+def _log_worker_email_blocked(
+    sb,
+    client_phone: str,
+    worker_name: str,
+    worker_phone: str,
+    dispatch_date: str,
+    stop_count: int,
+) -> None:
+    """
+    When a worker has no email on file, log delivery_blocked_no_email to
+    agent_activity and surface a needs_attention card so the owner can
+    fix it. Same pattern as Hard Rule #2 customer email logging.
+    Failures in this helper must never block the dispatch flow.
+    """
+    try:
+        sb.table("agent_activity").insert({
+            "client_phone": client_phone,
+            "agent_name": "dispatch_routes",
+            "action_taken": "delivery_blocked_no_email",
+            "input_summary": f"worker={worker_name} phone={worker_phone}",
+            "output_summary": f"{stop_count} stops for {dispatch_date} — no email on file",
+            "sms_sent": False,
+        }).execute()
+    except Exception as e:
+        print(f"[{timestamp()}] WARN dispatch: agent_activity log failed — {e}")
+
+    try:
+        sb.table("needs_attention").insert({
+            "client_phone": client_phone,
+            "card_type": "delivery_blocked_no_email",
+            "priority": "high",
+            "raw_context": (
+                f"Worker {worker_name} ({worker_phone}) has no email on "
+                f"file. Route for {dispatch_date} ({stop_count} stops) "
+                f"could not be delivered."
+            ),
+            "claude_suggestion": (
+                f"Add an email address for {worker_name} in Employees so "
+                f"dispatch routes can be sent. Without it, this worker "
+                f"will not receive their PWA link."
+            ),
+            "status": "open",
+        }).execute()
+    except Exception as e:
+        print(f"[{timestamp()}] WARN dispatch: needs_attention insert failed — {e}")
+
+
 # ---------------------------------------------------------------------------
 # POST /api/dispatch/assign — single assignment
 # ---------------------------------------------------------------------------
@@ -197,15 +244,19 @@ def dispatch_send():
             continue
 
         total_jobs += len(jobs)
-        has_waves = any(j.get("wave_id") for j in jobs)
 
-        # Look up worker from employees table
+        # Look up worker from employees table — multi-tenant filter is enforced
+        # by client_id so we never load an employee from another tenant
         worker_phone = None
+        worker_email = None
         worker_name = "Worker"
         try:
-            w = sb.table("employees").select("name, phone").eq("id", worker_id).execute()
+            w = sb.table("employees").select(
+                "name, phone, email"
+            ).eq("id", worker_id).eq("client_id", client_id).execute()
             if w.data:
                 worker_phone = w.data[0].get("phone")
+                worker_email = w.data[0].get("email")
                 worker_name = w.data[0].get("name", "Worker")
         except Exception as e:
             print(f"[{timestamp()}] WARN dispatch: employee lookup failed for {worker_id[:8]} — {e}")
@@ -270,52 +321,48 @@ def dispatch_send():
         except Exception as e:
             print(f"[{timestamp()}] WARN dispatch: route_token insert failed — {e}")
 
-        # Build the route notification body. Telnyx outbound is dead at the
-        # carrier so we route through notify(), which falls back to email
-        # (Resend) when SMS is blocked at any of the 3 permission layers.
-        route_url = f"{base_url}/r/{route_token}"
-        msg_type = "wave_assignment" if has_waves else "route"
+        # The /r/<token> route is retained as a fallback surface, but the
+        # email body never links to it. Workers land in /pwa/ where they
+        # get the full app: route, clock, chat, everything.
+        pwa_url = f"{base_url}/pwa/"
 
-        body_text = (
-            f"{business_name} jobs for {dispatch_date}:\n"
-            f"{len(jobs)} stop{'s' if len(jobs) != 1 else ''}.\n"
-            f"Your route: {route_url}"
-        )
+        # Notify the worker via email (Resend). Telnyx outbound is dead at
+        # the carrier (HARD RULE #7) so there is no SMS path in this flow.
+        workers_notified += 1
+        if not worker_email:
+            # Hard Rule: log delivery_blocked_no_email to agent_activity and
+            # surface a needs_attention card so the owner can add an email.
+            _log_worker_email_blocked(
+                sb=sb,
+                client_phone=client.get("phone", ""),
+                worker_name=worker_name,
+                worker_phone=worker_phone,
+                dispatch_date=dispatch_date,
+                stop_count=len(jobs),
+            )
+            sms_failed.append({"worker": worker_name, "error": "no email on file"})
+            print(f"[{timestamp()}] WARN dispatch: delivery_blocked_no_email for {worker_name} ({worker_id[:8]})")
+            continue
 
-        if has_waves:
-            wave_lines = []
-            for j in jobs:
-                if j.get("wave_id"):
-                    wave_lines.append(f"  Wave {j['wave_id']}: start {j.get('wave_start', 'TBD')}")
-            if wave_lines:
-                body_text += "\n" + "\n".join(wave_lines)
-
-        # Notify the worker (notify() picks SMS or email based on the
-        # 3-layer permission check; with the kill switch on it lands as email)
-        if worker_phone:
-            try:
-                from execution.notify import notify
-                subject = f"Today's route — {len(jobs)} stop{'s' if len(jobs) != 1 else ''}"
-                result = notify(
-                    client_id=client_id,
-                    to_phone=worker_phone,
-                    message=body_text,
-                    subject=subject,
-                    message_type=msg_type,
-                )
-                workers_notified += 1
-                if result.get("success"):
-                    sms_sent += 1
-                    print(f"[{timestamp()}] INFO dispatch: route delivered to {worker_name} via {result.get('channel')}")
-                else:
-                    sms_failed.append({"worker": worker_name, "error": result.get("error", "blocked")})
-                    print(f"[{timestamp()}] WARN dispatch: route delivery blocked for {worker_name} — {result.get('error')}")
-            except Exception as e:
-                sms_failed.append({"worker": worker_name, "error": str(e)})
-                print(f"[{timestamp()}] ERROR dispatch: notify exception for {worker_name} — {e}")
-        else:
-            sms_failed.append({"worker": worker_name, "error": "No phone number"})
-            print(f"[{timestamp()}] WARN dispatch: No phone for worker {worker_name}")
+        try:
+            from execution.resend_agent import send_dispatch_route_email
+            result = send_dispatch_route_email(
+                to_email=worker_email,
+                worker_name=worker_name,
+                business_name=business_name,
+                dispatch_date=dispatch_date,
+                stop_count=len(jobs),
+                pwa_url=pwa_url,
+            )
+            if result.get("success"):
+                sms_sent += 1
+                print(f"[{timestamp()}] INFO dispatch: route email delivered to {worker_name} <{worker_email}>")
+            else:
+                sms_failed.append({"worker": worker_name, "error": result.get("error", "email failed")})
+                print(f"[{timestamp()}] WARN dispatch: route email failed for {worker_name} — {result.get('error')}")
+        except Exception as e:
+            sms_failed.append({"worker": worker_name, "error": str(e)})
+            print(f"[{timestamp()}] ERROR dispatch: route email exception for {worker_name} — {e}")
 
     print(
         f"[{timestamp()}] INFO dispatch: Send complete — "
