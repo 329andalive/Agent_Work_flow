@@ -858,7 +858,12 @@ def proposal_action(proposal_id):
             sb.table("proposals").update({"status": "declined", "response_type": "declined"}).eq("id", proposal_id).execute()
             flash("Proposal marked as lost.", "info")
         elif action == "send":
-            flash("SMS sending queued. Will send when 10DLC is active.", "info")
+            # The Send action used to be a no-op flash from the pre-pivot
+            # SMS era. The dashboard's working email path lives at
+            # /api/proposals/<id>/send-email — point owners there with a
+            # JS button on proposal_view.html instead. If they end up
+            # here (e.g. an old bookmark), redirect to the working flow.
+            flash("Use the 'Email Estimate' button to send the proposal to the customer.", "info")
         else:
             flash("Unknown action.", "error")
     except Exception as e:
@@ -866,6 +871,135 @@ def proposal_action(proposal_id):
         flash("Action failed.", "error")
 
     return redirect(f"/dashboard/proposal/{proposal_id}")
+
+
+# ---------------------------------------------------------------------------
+# POST /api/proposals/<id>/save — Inline edit save from the dashboard
+# ---------------------------------------------------------------------------
+
+@dashboard_bp.route("/api/proposals/<proposal_id>/save", methods=["POST"])
+def api_save_proposal(proposal_id):
+    """
+    Save inline edits to a proposal's line items + notes from the
+    dashboard review page. Mirrors the token-based /doc/save flow but
+    uses dashboard session auth instead of an edit_token.
+
+    Body shape (JSON):
+        {
+          "line_items": [
+            {"description": "Pump out 1000 gal", "amount": 275, "taxable": false},
+            ...
+          ],
+          "notes": "Optional scope notes"
+        }
+
+    Multi-tenant safe — verifies the proposal belongs to the session
+    client_id before any write.
+    """
+    client_id = _resolve_client_id()
+    if not client_id:
+        return jsonify({"success": False, "error": "Not authenticated"}), 401
+
+    data = request.get_json(silent=True) or {}
+    raw_items = data.get("line_items") or []
+    notes = (data.get("notes") or "").strip()
+
+    if not isinstance(raw_items, list):
+        return jsonify({"success": False, "error": "line_items must be a list"}), 400
+
+    # Normalize line items: every row needs description + amount, tolerate
+    # both `amount` and `total` keys (both are used in the codebase)
+    line_items: list[dict] = []
+    for item in raw_items:
+        if not isinstance(item, dict):
+            continue
+        desc = (item.get("description") or "").strip()
+        amt_raw = item.get("amount") if item.get("amount") is not None else item.get("total")
+        try:
+            amt = float(amt_raw) if amt_raw not in (None, "") else 0.0
+        except (TypeError, ValueError):
+            amt = 0.0
+        if not desc and amt <= 0:
+            continue
+        line_items.append({
+            "description": desc or "Service",
+            "amount": amt,
+            "total": amt,  # write both keys so downstream readers stay happy
+            "taxable": bool(item.get("taxable", False)),
+        })
+
+    sb = _get_supabase()
+
+    # Verify ownership before write
+    try:
+        existing = sb.table("proposals").select(
+            "id, client_id, line_items, proposal_text, amount_estimate"
+        ).eq("id", proposal_id).eq("client_id", client_id).execute()
+        if not existing.data:
+            return jsonify({"success": False, "error": "Proposal not found"}), 404
+        original = existing.data[0]
+    except Exception as e:
+        print(f"[{_ts()}] ERROR api_save_proposal: ownership lookup failed — {e}")
+        return jsonify({"success": False, "error": "Lookup failed"}), 500
+
+    # Compute the new total from the line items
+    new_total = round(sum(li["amount"] for li in line_items), 2)
+
+    # Use the existing bottleneck so dead columns stay dropped + the
+    # learning loop sees the edit (proposal_text → notes write)
+    try:
+        from execution.db_document import update_proposal_fields, log_edit
+        update_proposal_fields(
+            proposal_id=proposal_id,
+            line_items=line_items,
+            subtotal=new_total,   # ignored — column doesn't exist
+            tax_rate=0,           # ignored — column doesn't exist
+            tax_amount=0,         # ignored — column doesn't exist
+            total=new_total,
+            notes=notes,
+        )
+    except Exception as e:
+        print(f"[{_ts()}] ERROR api_save_proposal: update_proposal_fields failed — {e}")
+        return jsonify({"success": False, "error": "Save failed"}), 500
+
+    # Log the edit so the learning loop can pick it up
+    try:
+        from execution.db_document import log_edit
+        original_items = original.get("line_items") or []
+        if isinstance(original_items, str):
+            try:
+                original_items = json.loads(original_items)
+            except Exception:
+                original_items = []
+        if str(original_items) != str(line_items):
+            log_edit(
+                document_type="proposal",
+                document_id=proposal_id,
+                client_id=client_id,
+                field_changed="line_items",
+                original_value=json.dumps(original_items) if original_items else "[]",
+                new_value=json.dumps(line_items),
+            )
+        original_notes = (original.get("proposal_text") or "").strip()
+        if original_notes != notes:
+            log_edit(
+                document_type="proposal",
+                document_id=proposal_id,
+                client_id=client_id,
+                field_changed="notes",
+                original_value=original_notes,
+                new_value=notes,
+            )
+    except Exception as e:
+        print(f"[{_ts()}] WARN api_save_proposal: edit logging failed — {e}")
+
+    print(f"[{_ts()}] INFO api_save_proposal: Saved proposal {proposal_id[:8]} total=${new_total}")
+    return jsonify({
+        "success": True,
+        "proposal_id": proposal_id,
+        "total": new_total,
+        "line_item_count": len(line_items),
+    })
 
 
 # ---------------------------------------------------------------------------

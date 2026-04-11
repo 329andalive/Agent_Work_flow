@@ -16,13 +16,32 @@
   .doc-date { font-size: 13px; color: var(--text-secondary); margin-top: 2px; }
   .doc-section { padding: 16px 24px; border-bottom: 1px solid var(--border); }
   .doc-section:last-child { border-bottom: none; }
-  .doc-section-title { font-family: 'DM Mono', monospace; font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-tertiary); margin-bottom: 8px; }
+  .doc-section-title { font-family: 'DM Mono', monospace; font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-tertiary); margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; }
   .doc-field { font-size: 14px; margin-bottom: 4px; }
   .doc-field-label { color: var(--text-secondary); font-size: 12px; }
-  .doc-line-item { display: flex; justify-content: space-between; padding: 6px 0; font-size: 14px; border-bottom: 1px solid #f3f4f6; }
+  .doc-line-item { display: flex; justify-content: space-between; padding: 6px 0; font-size: 14px; border-bottom: 1px solid #f3f4f6; gap: 8px; }
   .doc-line-item:last-child { border-bottom: none; }
-  .doc-line-desc { color: var(--text-primary); }
+  .doc-line-desc { color: var(--text-primary); flex: 1; }
   .doc-line-amount { font-weight: 600; font-family: 'DM Mono', monospace; }
+
+  /* Inline edit mode — only visible when editing */
+  .doc-line-item.editable { padding: 8px 0; }
+  .doc-line-item.editable .li-desc { flex: 1; padding: 6px 8px; border: 1px solid var(--border); border-radius: 4px; font-size: 14px; font-family: inherit; min-width: 0; }
+  .doc-line-item.editable .li-amount { width: 100px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 4px; font-size: 14px; font-family: 'DM Mono', monospace; text-align: right; }
+  .doc-line-item.editable .li-remove { background: transparent; border: none; color: #dc2626; cursor: pointer; font-size: 18px; line-height: 1; padding: 0 4px; }
+  .doc-line-item.editable .li-remove:hover { color: #991b1b; }
+  .doc-add-row { padding: 8px 0; }
+  .doc-add-row button { background: transparent; border: 1px dashed var(--border); color: var(--text-secondary); padding: 8px 14px; border-radius: 6px; font-size: 13px; cursor: pointer; width: 100%; }
+  .doc-add-row button:hover { color: var(--blue); border-color: var(--blue); }
+  .doc-notes-edit { width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; font-family: inherit; font-size: 13px; min-height: 60px; resize: vertical; box-sizing: border-box; }
+  .doc-edit-toggle { background: transparent; border: 1px solid var(--border); color: var(--text-secondary); font-family: 'DM Mono', monospace; font-size: 10px; padding: 4px 10px; border-radius: 4px; cursor: pointer; text-transform: uppercase; letter-spacing: 0.06em; }
+  .doc-edit-toggle:hover { color: var(--blue); border-color: var(--blue); }
+  .doc-edit-toggle.active { background: var(--blue); color: #fff; border-color: var(--blue); }
+  .toast { position: fixed; bottom: 24px; right: 24px; padding: 12px 18px; border-radius: 6px; font-size: 13px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); z-index: 1000; opacity: 0; transition: opacity 0.2s; pointer-events: none; }
+  .toast.show { opacity: 1; }
+  .toast.success { background: #dcfce7; color: #166534; }
+  .toast.error { background: #fee2e2; color: #991b1b; }
+
   .doc-totals { padding: 12px 0; }
   .doc-total-row { display: flex; justify-content: space-between; padding: 4px 0; font-size: 14px; color: var(--text-secondary); }
   .doc-total-row.grand { padding-top: 8px; margin-top: 4px; border-top: 2px solid var(--text-primary); font-size: 16px; font-weight: 700; color: var(--text-primary); }
@@ -40,7 +59,8 @@
   .flash-info { background: #dbeafe; color: #1e40af; }
   .flash-error { background: #fee2e2; color: #991b1b; }
   @media print {
-    .doc-actions, .doc-back, .flash-msg, #sidebar, #hamburger, #sidebar-overlay, .topbar { display: none !important; }
+    .doc-actions, .doc-back, .flash-msg, .doc-edit-toggle, .doc-add-row, .li-remove, #sidebar, #hamburger, #sidebar-overlay, .topbar { display: none !important; }
+    .doc-line-item.editable .li-desc, .doc-line-item.editable .li-amount { border: none !important; padding: 0 !important; background: transparent !important; }
     #main { margin-left: 0 !important; padding: 0 !important; }
     body { background: #fff; }
     .doc-card { box-shadow: none; border: 1px solid #ddd; }
@@ -85,22 +105,63 @@
     </div>
 
     <div class="doc-section">
-      <div class="doc-section-title">Line Items</div>
-      {% for li in line_items %}
-      <div class="doc-line-item">
-        <span class="doc-line-desc">{{ li.description or li.get('name','Item') }}</span>
-        <span class="doc-line-amount">${{ "%.2f"|format(li.total|float if li.total is defined else li.amount|float if li.amount is defined else 0) }}</span>
+      <div class="doc-section-title">
+        <span>Line Items</span>
+        {% if proposal.status != 'accepted' and proposal.status != 'declined' %}
+        <button type="button" class="doc-edit-toggle" id="edit-toggle" onclick="toggleEdit()">Edit</button>
+        {% endif %}
       </div>
-      {% endfor %}
+
+      {# View mode — read-only line items #}
+      <div id="li-view">
+        {% for li in line_items %}
+        <div class="doc-line-item">
+          <span class="doc-line-desc">{{ li.description or li.get('name','Item') }}</span>
+          <span class="doc-line-amount">${{ "%.2f"|format(li.total|float if li.total is defined else li.amount|float if li.amount is defined else 0) }}</span>
+        </div>
+        {% endfor %}
+      </div>
+
+      {# Edit mode — inline-editable inputs, hidden until Edit toggle #}
+      <div id="li-edit" style="display:none">
+        <div id="li-edit-rows">
+          {% for li in line_items %}
+          <div class="doc-line-item editable">
+            <input type="text" class="li-desc" value="{{ li.description or li.get('name','Item') }}" placeholder="Description">
+            <input type="number" class="li-amount" step="0.01" value="{{ "%.2f"|format(li.total|float if li.total is defined else li.amount|float if li.amount is defined else 0) }}" placeholder="0.00">
+            <button type="button" class="li-remove" onclick="removeRow(this)" aria-label="Remove">&times;</button>
+          </div>
+          {% endfor %}
+        </div>
+        <div class="doc-add-row">
+          <button type="button" onclick="addRow()">+ Add line item</button>
+        </div>
+      </div>
 
       <div class="doc-totals">
-        <div class="doc-total-row"><span>Subtotal</span><span>${{ "%.2f"|format(subtotal) }}</span></div>
+        <div class="doc-total-row"><span>Subtotal</span><span id="subtotal-display">${{ "%.2f"|format(subtotal) }}</span></div>
         {% if tax_amount > 0 %}
         <div class="doc-total-row"><span>Tax ({{ "%.0f"|format(tax_rate * 100) }}%)</span><span>${{ "%.2f"|format(tax_amount) }}</span></div>
         {% endif %}
-        <div class="doc-total-row grand"><span>Total</span><span>${{ "%.2f"|format(total) }}</span></div>
+        <div class="doc-total-row grand"><span>Total</span><span id="total-display">${{ "%.2f"|format(total) }}</span></div>
       </div>
     </div>
+
+    {% if proposal.proposal_text %}
+    <div class="doc-section">
+      <div class="doc-section-title">Notes</div>
+      {# View mode #}
+      <div id="notes-view" class="doc-field" style="white-space:pre-wrap;color:var(--text-secondary);font-size:13px">{{ proposal.proposal_text }}</div>
+      {# Edit mode #}
+      <textarea id="notes-edit" class="doc-notes-edit" style="display:none" placeholder="Scope notes (no prices)">{{ proposal.proposal_text }}</textarea>
+    </div>
+    {% else %}
+    <div class="doc-section" id="notes-section">
+      <div class="doc-section-title">Notes</div>
+      <div id="notes-view" class="doc-field" style="color:var(--text-tertiary);font-size:13px">No notes</div>
+      <textarea id="notes-edit" class="doc-notes-edit" style="display:none" placeholder="Scope notes (no prices)"></textarea>
+    </div>
+    {% endif %}
 
     <div class="doc-status-bar">
       <div>
@@ -119,21 +180,20 @@
       </div>
       <div class="doc-actions">
         {% if proposal.status != 'accepted' and proposal.status != 'declined' %}
-        <form method="POST" action="/dashboard/proposal/{{ proposal.id }}/action" style="display:inline">
-          <input type="hidden" name="action" value="send">
-          <button type="submit" class="doc-btn doc-btn-primary">Send to Customer</button>
-        </form>
-        <form method="POST" action="/dashboard/proposal/{{ proposal.id }}/action" style="display:inline">
+        <button type="button" class="doc-btn doc-btn-primary" id="btn-save" style="display:none" onclick="saveEdits()">
+          Save Changes
+        </button>
+        <button type="button" class="doc-btn doc-btn-amber" id="btn-send" onclick="emailEstimate()">
+          Send to Customer
+        </button>
+        <form method="POST" action="/dashboard/proposal/{{ proposal.id }}/action" style="display:inline" id="form-accept">
           <input type="hidden" name="action" value="accepted">
           <button type="submit" class="doc-btn doc-btn-green">Mark Accepted</button>
         </form>
-        <form method="POST" action="/dashboard/proposal/{{ proposal.id }}/action" style="display:inline">
+        <form method="POST" action="/dashboard/proposal/{{ proposal.id }}/action" style="display:inline" id="form-lost">
           <input type="hidden" name="action" value="lost">
           <button type="submit" class="doc-btn doc-btn-red">Mark Lost</button>
         </form>
-        <button class="doc-btn doc-btn-amber" id="btn-email-proposal" onclick="emailEstimate()">
-          Email Estimate
-        </button>
         {% endif %}
         <button class="doc-btn doc-btn-outline" onclick="window.print()">Print</button>
       </div>
@@ -144,16 +204,174 @@
 
 {% block extra_js %}
 <script>
+var PROPOSAL_ID = '{{ proposal.id }}';
+var EDITING = false;
+
+function $(id) { return document.getElementById(id); }
+
+function showToast(msg, kind) {
+  var t = document.createElement('div');
+  t.className = 'toast ' + (kind || 'success');
+  t.textContent = msg;
+  document.body.appendChild(t);
+  // Force reflow so the transition fires
+  void t.offsetWidth;
+  t.classList.add('show');
+  setTimeout(function() {
+    t.classList.remove('show');
+    setTimeout(function() { t.remove(); }, 250);
+  }, 2400);
+}
+
+// ---------------------------------------------------------------------------
+// Edit / view toggle
+// ---------------------------------------------------------------------------
+
+function toggleEdit() {
+  EDITING = !EDITING;
+  var view = $('li-view');
+  var edit = $('li-edit');
+  var notesView = $('notes-view');
+  var notesEdit = $('notes-edit');
+  var saveBtn = $('btn-save');
+  var sendBtn = $('btn-send');
+  var toggleBtn = $('edit-toggle');
+
+  if (EDITING) {
+    view.style.display = 'none';
+    edit.style.display = 'block';
+    if (notesView) notesView.style.display = 'none';
+    if (notesEdit) notesEdit.style.display = 'block';
+    if (saveBtn) saveBtn.style.display = 'inline-block';
+    if (sendBtn) sendBtn.style.display = 'none';
+    toggleBtn.textContent = 'Cancel';
+    toggleBtn.classList.add('active');
+    recalcTotal();
+  } else {
+    view.style.display = 'block';
+    edit.style.display = 'none';
+    if (notesView) notesView.style.display = 'block';
+    if (notesEdit) notesEdit.style.display = 'none';
+    if (saveBtn) saveBtn.style.display = 'none';
+    if (sendBtn) sendBtn.style.display = 'inline-block';
+    toggleBtn.textContent = 'Edit';
+    toggleBtn.classList.remove('active');
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Line item row add / remove + live total recalc
+// ---------------------------------------------------------------------------
+
+function addRow() {
+  var rows = $('li-edit-rows');
+  var row = document.createElement('div');
+  row.className = 'doc-line-item editable';
+  row.innerHTML =
+    '<input type="text" class="li-desc" placeholder="Description">' +
+    '<input type="number" class="li-amount" step="0.01" placeholder="0.00">' +
+    '<button type="button" class="li-remove" onclick="removeRow(this)" aria-label="Remove">&times;</button>';
+  rows.appendChild(row);
+  row.querySelector('.li-desc').focus();
+  attachAmountListeners(row);
+  recalcTotal();
+}
+
+function removeRow(btn) {
+  var row = btn.closest('.doc-line-item');
+  if (row) {
+    row.remove();
+    recalcTotal();
+  }
+}
+
+function attachAmountListeners(scope) {
+  var inputs = (scope || document).querySelectorAll('#li-edit-rows .li-amount');
+  inputs.forEach(function(inp) {
+    inp.addEventListener('input', recalcTotal);
+  });
+}
+
+function recalcTotal() {
+  var rows = document.querySelectorAll('#li-edit-rows .doc-line-item');
+  var subtotal = 0;
+  rows.forEach(function(row) {
+    var amt = parseFloat(row.querySelector('.li-amount').value) || 0;
+    subtotal += amt;
+  });
+  // Notes block has no tax for proposals (proposals table has no tax columns)
+  $('subtotal-display').textContent = '$' + subtotal.toFixed(2);
+  $('total-display').textContent = '$' + subtotal.toFixed(2);
+}
+
+// ---------------------------------------------------------------------------
+// Save edits — POST to /api/proposals/<id>/save
+// ---------------------------------------------------------------------------
+
+function saveEdits() {
+  var rows = document.querySelectorAll('#li-edit-rows .doc-line-item');
+  var line_items = [];
+  rows.forEach(function(row) {
+    var desc = row.querySelector('.li-desc').value.trim();
+    var amt = parseFloat(row.querySelector('.li-amount').value) || 0;
+    if (desc || amt > 0) {
+      line_items.push({description: desc || 'Service', amount: amt});
+    }
+  });
+  var notesEl = $('notes-edit');
+  var notes = notesEl ? notesEl.value : '';
+
+  var btn = $('btn-save');
+  btn.disabled = true;
+  btn.textContent = 'Saving...';
+
+  fetch('/api/proposals/' + PROPOSAL_ID + '/save', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({line_items: line_items, notes: notes})
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    btn.disabled = false;
+    btn.textContent = 'Save Changes';
+    if (data.success) {
+      showToast('Saved \u2713', 'success');
+      // Refresh the page so the read-only view picks up the new data
+      setTimeout(function() { window.location.reload(); }, 600);
+    } else {
+      showToast('Save failed: ' + (data.error || 'unknown'), 'error');
+    }
+  })
+  .catch(function(e) {
+    btn.disabled = false;
+    btn.textContent = 'Save Changes';
+    showToast('Network error — save failed', 'error');
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Send to Customer — calls the existing /api/proposals/<id>/send-email
+// endpoint, which mints a /p/<token> URL and emails it via Resend.
+// Same path the old "Email Estimate" button used; consolidated into a
+// single send action.
+// ---------------------------------------------------------------------------
+
 function emailEstimate() {
+  if (EDITING) {
+    showToast('Save your edits first', 'error');
+    return;
+  }
   var to = '{{ customer.customer_email or "" }}';
   if (!to) {
     to = prompt('Enter customer email address:');
     if (!to) return;
   }
-  var btn = document.getElementById('btn-email-proposal');
+  var btn = $('btn-send');
+  var label = btn.textContent;
   btn.disabled = true;
   btn.textContent = 'Sending...';
-  fetch('/api/proposals/{{ proposal.id }}/send-email', {
+
+  fetch('/api/proposals/' + PROPOSAL_ID + '/send-email', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({email: to})
@@ -162,27 +380,45 @@ function emailEstimate() {
   .then(function(data) {
     if (data.success) {
       btn.textContent = 'Sent \u2713';
-      setTimeout(function() { btn.textContent = 'Email Estimate'; btn.disabled = false; }, 3000);
+      showToast('Estimate sent to ' + (data.email || to), 'success');
+      setTimeout(function() { btn.textContent = label; btn.disabled = false; window.location.reload(); }, 1500);
     } else if (data.error === 'no_email') {
       var email = prompt('No email on file. Enter customer email:');
       if (email) {
         btn.textContent = 'Sending...';
-        fetch('/api/proposals/{{ proposal.id }}/send-email', {
+        fetch('/api/proposals/' + PROPOSAL_ID + '/send-email', {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
           body: JSON.stringify({email: email})
         }).then(function(r) { return r.json(); })
         .then(function(d2) {
-          if (d2.success) { btn.textContent = 'Sent \u2713'; setTimeout(function() { btn.textContent = 'Email Estimate'; btn.disabled = false; }, 3000); }
-          else { alert('Failed: ' + (d2.error || d2.message || 'Unknown error')); btn.textContent = 'Email Estimate'; btn.disabled = false; }
-        }).catch(function() { alert('Network error'); btn.textContent = 'Email Estimate'; btn.disabled = false; });
-      } else { btn.textContent = 'Email Estimate'; btn.disabled = false; }
+          if (d2.success) {
+            btn.textContent = 'Sent \u2713';
+            showToast('Estimate sent to ' + (d2.email || email), 'success');
+            setTimeout(function() { btn.textContent = label; btn.disabled = false; window.location.reload(); }, 1500);
+          } else {
+            showToast('Failed: ' + (d2.error || d2.message || 'unknown'), 'error');
+            btn.textContent = label; btn.disabled = false;
+          }
+        }).catch(function() {
+          showToast('Network error', 'error');
+          btn.textContent = label; btn.disabled = false;
+        });
+      } else {
+        btn.textContent = label; btn.disabled = false;
+      }
     } else {
-      alert('Failed: ' + (data.error || data.message || 'Unknown error'));
-      btn.textContent = 'Email Estimate'; btn.disabled = false;
+      showToast('Failed: ' + (data.error || data.message || 'unknown'), 'error');
+      btn.textContent = label; btn.disabled = false;
     }
   })
-  .catch(function() { alert('Network error — could not send email.'); btn.textContent = 'Email Estimate'; btn.disabled = false; });
+  .catch(function() {
+    showToast('Network error — could not send email.', 'error');
+    btn.textContent = label; btn.disabled = false;
+  });
 }
+
+// Wire up amount input listeners on initial load
+attachAmountListeners();
 </script>
 {% endblock %}

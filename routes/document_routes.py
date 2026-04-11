@@ -665,9 +665,31 @@ def send_document():
 
         # Step 4: SMS the customer
         base_url = request.host_url.rstrip("/")
+        proposal_view_url = None  # set in the proposal branch below
 
         if doc_type == "proposal":
             total = float(document.get("amount_estimate") or 0)
+
+            # Mint a public token and route the customer to the Flask
+            # /p/<token> view route. That route renders proposal.html
+            # server-side, which guarantees correct content-type and
+            # gives us a real web page (not raw HTML rendered from a
+            # Storage URL whose content-type header may have been
+            # dropped). Mirrors the /i/<token> path used for invoices.
+            try:
+                from execution.token_generator import generate_token
+                proposal_token = generate_token(
+                    job_id=document.get("job_id") or doc_id,
+                    client_phone=client_phone,
+                    link_type="proposal",
+                )
+                if proposal_token:
+                    proposal_view_url = f"{base_url}/p/{proposal_token}"
+                    print(f"[{timestamp()}] INFO document_routes: Proposal view URL → {proposal_view_url}")
+                else:
+                    print(f"[{timestamp()}] WARN document_routes: proposal token mint returned None — falling back to storage URL")
+            except Exception as e:
+                print(f"[{timestamp()}] WARN document_routes: proposal token mint failed — {e} — falling back to storage URL")
         else:
             total = float(document.get("amount_due") or 0)
 
@@ -720,8 +742,21 @@ def send_document():
         # Step 4b: Deliver to customer via notify router (email or SMS based on switches)
         from execution.notify import notify_document, notify
 
-        # Determine the view URL and pay URL
-        view_url = invoice_view_url if doc_type == "invoice" else html_url or f"{base_url}/doc/edit/{edit_token}?type={doc_type}"
+        # Determine the view URL and pay URL.
+        #
+        # Proposals: prefer the freshly minted /p/<token> Flask route
+        # (server-rendered, guaranteed text/html). Fall back to the
+        # Storage URL only if token mint failed, and the owner-edit
+        # page only if both are unavailable.
+        # Invoices: same idea but /i/<token>.
+        if doc_type == "invoice":
+            view_url = invoice_view_url
+        else:
+            view_url = (
+                proposal_view_url
+                or html_url
+                or f"{base_url}/doc/edit/{edit_token}?type={doc_type}"
+            )
         pay_url = payment_link_url if doc_type == "invoice" else None
         customer_email = customer.get("customer_email", "") if customer else ""
 
