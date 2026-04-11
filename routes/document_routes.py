@@ -742,6 +742,29 @@ def send_document():
         else:
             print(f"[{timestamp()}] INFO document_routes: Delivered to customer via {delivery_result['channel']}")
 
+        # Step 4c: Schedule the 3-day estimate follow-up — proposals only,
+        # and ONLY when delivery to the customer actually succeeded.
+        # This used to fire at draft time inside proposal_agent.run(), which
+        # caused the followup cron to message customers before the owner had
+        # ever approved the draft. Moving it here ties the followup timer to
+        # the real moment the customer received the estimate.
+        if doc_type == "proposal" and delivery_result.get("success"):
+            try:
+                from execution.db_followups import schedule_followup
+                from datetime import timedelta
+                follow_up_time = (datetime.now(timezone.utc) + timedelta(days=3)).isoformat()
+                schedule_followup(
+                    client_id=client_id,
+                    customer_id=document.get("customer_id"),
+                    job_id=document.get("job_id"),
+                    proposal_id=doc_id,
+                    followup_type="estimate_followup",
+                    scheduled_for=follow_up_time,
+                )
+                print(f"[{timestamp()}] INFO document_routes: estimate_followup scheduled for {follow_up_time}")
+            except Exception as e:
+                print(f"[{timestamp()}] WARN document_routes: schedule_followup failed — {e}")
+
         # Step 5: Notify owner (internal — uses notify router too)
         doc_label = "Estimate" if doc_type == "proposal" else "Invoice"
         owner_msg = f"{doc_label} sent to {customer_name} for ${total:.2f} (via {delivery_result.get('channel', 'unknown')})"

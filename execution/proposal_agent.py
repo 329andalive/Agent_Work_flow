@@ -23,7 +23,7 @@ Usage:
 
 import os
 import sys
-from datetime import datetime, timezone, timedelta
+from datetime import datetime
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -31,9 +31,8 @@ from execution.db_client import get_client_by_phone
 from execution.db_agent_activity import log_activity
 from execution.db_customer import get_customer_by_phone, create_customer
 from execution.db_jobs import create_job, update_job_status
-from execution.db_proposals import save_proposal, update_proposal_status
+from execution.db_proposals import save_proposal
 from execution.db_messages import log_message
-from execution.db_followups import schedule_followup
 from execution.call_claude import call_claude
 from execution.sms_send import send_sms
 from execution.vertical_loader import load_vertical, get_default_job_type
@@ -614,30 +613,21 @@ def run(client_phone: str, customer_phone: str, raw_input: str) -> str | None:
         print(f"[{timestamp()}] WARN proposal_agent: Failed to log outbound message — {e}")
 
     # ------------------------------------------------------------------
-    # Step 10: Schedule a 3-day follow-up
-    # ------------------------------------------------------------------
-    try:
-        if proposal_id:
-            follow_up_time = (datetime.now(timezone.utc) + timedelta(days=3)).isoformat()
-            schedule_followup(
-                client_id=client_id,
-                customer_id=customer_id,
-                job_id=job_id,
-                proposal_id=proposal_id,
-                followup_type="estimate_followup",
-                scheduled_for=follow_up_time,
-            )
-            print(f"[{timestamp()}] INFO proposal_agent: Follow-up scheduled for {follow_up_time}")
-    except Exception as e:
-        print(f"[{timestamp()}] WARN proposal_agent: schedule_followup failed — {e}")
-
-    # ------------------------------------------------------------------
-    # Step 11: Update job status to "estimated"
+    # Step 10: Update job status to "estimated".
+    #
+    # IMPORTANT: do NOT mark the proposal as 'sent' here, and do NOT
+    # schedule the 3-day customer follow-up here. At this point the
+    # proposal is a DRAFT awaiting owner review. Marking it 'sent'
+    # would cause the followup cron in followup_agent.py to pick it up
+    # and message the customer 3 days later — before the owner has
+    # ever seen the review link.
+    #
+    # The 'sent' status flip and the schedule_followup() call live in
+    # routes/document_routes.py /doc/send, which runs only when the
+    # owner taps "Approve & Send" after reviewing the draft.
     # ------------------------------------------------------------------
     try:
         update_job_status(job_id, "estimated")
-        if proposal_id:
-            update_proposal_status(proposal_id, "sent")
     except Exception as e:
         print(f"[{timestamp()}] WARN proposal_agent: Status update failed — {e}")
 

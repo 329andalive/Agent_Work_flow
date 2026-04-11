@@ -170,6 +170,12 @@ def get_latest_sent_proposal_for_customer(client_id: str, customer_id: str) -> d
     Find the most recent sent proposal for a specific client/customer pair.
     Used by followup_agent when a customer texts in a response.
 
+    Belt-and-suspenders: requires sent_at IS NOT NULL so any row that
+    accidentally got status='sent' without a real send timestamp can't
+    surface here. The legit /doc/send path always writes both fields
+    together, so this filter is invisible to correct callers but blocks
+    the failure mode that caused customers to receive draft estimates.
+
     Returns:
         Proposal dict, or None if not found / on error.
     """
@@ -181,6 +187,7 @@ def get_latest_sent_proposal_for_customer(client_id: str, customer_id: str) -> d
             .eq("client_id", client_id)
             .eq("customer_id", customer_id)
             .eq("status", "sent")
+            .not_.is_("sent_at", "null")
             .order("created_at", desc=True)
             .limit(1)
             .execute()

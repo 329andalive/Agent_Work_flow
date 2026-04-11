@@ -597,7 +597,10 @@ def handle_lost_report(
 
     client_id = client["id"]
 
-    # Find the most recent sent proposal for this client (any customer)
+    # Find the most recent sent proposal for this client (any customer).
+    # sent_at IS NOT NULL is a belt-and-suspenders guard against any
+    # write path that flips status='sent' without setting sent_at —
+    # the legit /doc/send route writes both together.
     try:
         supabase = get_supabase()
         result = (
@@ -605,6 +608,7 @@ def handle_lost_report(
             .select("*")
             .eq("client_id", client_id)
             .eq("status", "sent")
+            .not_.is_("sent_at", "null")
             .is_("response_type", "null")
             .order("created_at", desc=True)
             .limit(1)
