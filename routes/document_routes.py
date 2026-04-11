@@ -820,8 +820,8 @@ def send_document():
             pass
 
      # Step 6: Write pricing history — proposals only, after successful delivery.
-        # This is the data source for the "last 3 averaged $X" reference in the
-        # guided estimate flow. Non-fatal — send still succeeds if this fails.
+        # Powers the "last 3 averaged $X" reference in the guided estimate flow.
+        # Non-fatal — send still succeeds if this fails.
         if doc_type == "proposal" and delivery_result.get("success"):
             try:
                 from execution.db_pricing_history import record_sent_proposal
@@ -843,7 +843,8 @@ def send_document():
             except Exception as _e:
                 print(f"[{timestamp()}] WARN document_routes: pricing history write failed — {_e}")
 
-
+        print(f"[{timestamp()}] INFO document_routes: Sent {doc_type} {doc_id} to {customer_phone}")
+        return jsonify({"success": True})
 
     except Exception as e:
         print(f"[{timestamp()}] ERROR document_routes: send_document failed — {e}")

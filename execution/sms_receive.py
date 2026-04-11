@@ -744,20 +744,34 @@ def accept_proposal(token):
         }
         sb.table("jobs").insert(wo_row).execute()
 
-        # Notify owner via email
+       # Notify owner via the proper notify router.
+        # send_access_request_alert is for the bolts11.com early access form only —
+        # using it here sent a "New access request" email to support@bolts11.com
+        # on every proposal acceptance. Fixed to use notify() instead.
         try:
-            from execution.resend_agent import send_access_request_alert
+            from execution.notify import notify
             client_record = sb.table("clients").select(
-                "business_name, owner_mobile"
+                "id, owner_mobile, phone"
             ).eq("id", proposal["client_id"]).execute()
             if client_record.data:
                 c = client_record.data[0]
                 amt = float(proposal.get("amount_estimate") or 0)
-                send_access_request_alert(
-                    name=f"Proposal #{proposal_id[:8].upper()} Accepted",
-                    email="support@bolts11.com",
-                    phone=c.get("owner_mobile", ""),
-                    business_type=f"${amt:,.2f} — work order added to Planner backlog",
+                cust_result = sb.table("customers").select(
+                    "customer_name"
+                ).eq("id", proposal.get("customer_id", "")).execute()
+                cust_name = (
+                    cust_result.data[0].get("customer_name", "Customer")
+                    if cust_result.data else "Customer"
+                )
+                notify(
+                    client_id=c["id"],
+                    to_phone=c.get("owner_mobile") or c.get("phone", ""),
+                    message=(
+                        f"Proposal #{proposal_id[:8].upper()} accepted by {cust_name}! "
+                        f"${amt:,.0f} — work order added to Planner backlog."
+                    ),
+                    subject=f"Proposal accepted — {cust_name} (${amt:,.0f})",
+                    message_type="proposal_accepted",
                 )
         except Exception as notify_err:
             print(f"[{timestamp()}] WARN accept_proposal: notification failed — {notify_err}")
