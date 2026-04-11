@@ -133,10 +133,23 @@ def build_document_html(
     remove_col_css = "table .remove-cell { width: 40px; text-align: center; }" if edit_mode else ""
 
     # Notes section
+    #
+    # HARD RULE: the customer-facing notes block is scope/job description
+    # only — never prices, totals, or line item amounts. Line items and
+    # totals render in their own document sections. Owners still see the
+    # full stored text in edit mode so they can curate; the view-mode
+    # filter drops any line that contains a '$' before rendering to the
+    # customer. This is a render-time guard that keeps the DB content
+    # untouched — no migration, no agent rewrites. A proper schema split
+    # is tracked as a follow-up.
     if edit_mode:
         notes_html = f'<textarea id="notes" class="notes-edit" placeholder="Add notes for the customer...">{_esc(notes)}</textarea>'
     else:
-        notes_paragraphs = "".join(f"<p>{_esc(line)}</p>" for line in notes.split("\n") if line.strip())
+        notes_paragraphs = "".join(
+            f"<p>{_esc(line)}</p>"
+            for line in notes.split("\n")
+            if line.strip() and "$" not in line
+        )
         notes_html = f'<div class="notes-view">{notes_paragraphs}</div>' if notes_paragraphs else ""
 
     # Bottom bar
