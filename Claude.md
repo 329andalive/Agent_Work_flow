@@ -273,11 +273,76 @@ they describe the job — to the PWA or via SMS — and the agent drafts it.
 
 ---
 
+## Guided Estimate Flow
+
+The guided estimate flow replaces free-form AI pricing with a
+deterministic state machine. The AI never invents a price. Every
+dollar amount comes from the tech.
+
+**Entry point:** Tech types "create estimate" (or similar) in `/pwa/chat`.
+
+**How it works:**
+```
+pwa_chat.py detects intent
+  → guided_estimate.start() creates estimate_session
+  → handle_input() routes each message to the right state handler
+  → state machine walks: customer → job type → price → line items → review
+  → final chip fires /pwa/api/job/new with explicit_amount
+  → proposal_agent bypasses Claude pricing entirely
+  → /doc/send writes a row to job_pricing_history
+```
+
+**State machine (execution/guided_estimate.py):**
+
+| Step | State | What happens |
+|---|---|---|
+| 1 | `ask_customer` | Fuzzy DB lookup, shows match or list |
+| 2 | `confirm_customer` | Tech confirms yes/no |
+| 3 | `ask_job_type` | Keyword classification, shows history reference |
+| 4 | `ask_price` | Tech enters price — never pre-filled |
+| 5 | `ask_line_items` | Additional items loop until "done" |
+| 6 | `ask_notes` | Optional notes |
+| 7 | Review chip | `create_proposal` action with full amount |
+
+**Pricing history reference (not pre-fill):**
+When the tech reaches the price step, the state machine queries
+`job_pricing_history` and surfaces text like:
+  "Last 3 pump outs for this customer averaged $285."
+This is display text only. The price field is always blank.
+The tech types their own number.
+
+**Files:**
+- `execution/guided_estimate.py` — state machine, no Claude pricing calls
+- `execution/db_pricing_history.py` — writes sent prices to history
+- `execution/schema.py` — `EstimateSessions`, `JobPricingHistory` classes
+- `sql/guided_estimate_tables.sql` — DB migration (already run)
+
+**Hard rules for this flow:**
+- The AI never generates or suggests a price. Ever.
+- Pricing history is reference text only — never pre-filled.
+- All state lives in `estimate_sessions` table — not in memory.
+- The flow returns the same `{reply, action}` shape as pwa_chat.py.
+- If the guided flow errors, pwa_chat.py falls through to Claude
+  for regular chat — the chat never breaks.
+
+**Claude calls in this flow:** exactly one — Haiku for job type
+classification when keyword matching fails. Zero Claude calls for
+pricing.
+
+**What NOT to do in this flow:**
+- Do NOT add a "suggested price" field — even greyed out.
+- Do NOT pre-fill the price from the pricebook or history.
+- Do NOT call Claude to generate line item amounts.
+- Do NOT skip the customer confirmation step.
+
+---
+
 ## File Organization
 
 ```
 /
 ├── CLAUDE.md                          # This file
+├── CONVENTIONS.md                     # Naming rules + DO NOT list
 ├── HANDOFF.md                         # Session log — read for current status
 ├── .env                               # All API keys — never commit
 ├── .python-version                    # Pins Python 3.12.9 — DO NOT DELETE
@@ -288,72 +353,25 @@ they describe the job — to the PWA or via SMS — and the agent drafts it.
 │   ├── icon-192.png                   # PWA icon (lightning bolt, 192x192)
 │   └── icon-512.png                   # PWA icon (lightning bolt, 512x512)
 ├── execution/                         # Python scripts (deterministic)
-│   ├── sms_receive.py                 # Flask app entry point + blueprint registration
-│   ├── sms_send.py                    # Outbound SMS via Telnyx (notifications only)
-│   ├── sms_router.py                  # SMS routing (clock in/out + PWA redirect)
-│   ├── call_claude.py                 # Claude API wrapper (Haiku/Sonnet/Opus)
-│   ├── context_loader.py             # Stateful context assembly for commands
+│   ├── schema.py                      # SINGLE SOURCE OF TRUTH for all column names
+│   ├── guided_estimate.py             # Guided estimate state machine (NEW)
+│   ├── db_pricing_history.py          # job_pricing_history write helper (NEW)
 │   ├── proposal_agent.py             # Draft-first estimates — always returns review link
 │   ├── invoice_agent.py              # Draft-first invoices — always returns review link
-│   ├── self_learning_agent.py        # NULL field prompts, confidence scoring (NEW)
-│   ├── geocode.py                    # Google Maps geocoding + zone clustering
-│   ├── db_scheduling.py             # Scheduling DB helpers (multi-tenant)
-│   ├── dispatch_suggestion.py       # AI dispatch suggestions
-│   ├── scheduled_sms.py            # Nudges, reminders, no-show marking
-│   ├── token_generator.py           # Signed token URLs + mark_invoice_paid() fallback
-│   ├── square_agent.py              # Square Payment Links API
-│   ├── job_cost_agent.py            # Job cost tracking
-│   ├── clarification_agent.py       # Claude-powered intent classification
-│   ├── db_clarification.py          # DB ops for clarifications + approvals
-│   ├── db_customer.py               # Customer table queries
-│   ├── db_client.py                 # Client table queries
-│   ├── db_jobs.py                   # Job table queries
-│   ├── db_proposals.py              # Proposal table queries
-│   ├── db_messages.py               # Message logging
-│   ├── document_html.py             # Build edit/view HTML for documents
-│   ├── db_document.py               # DB ops for edit/learn system
-│   ├── db_pricing.py                # Pricing benchmarks + adjustment logging
-│   └── resend_agent.py              # Email delivery via Resend (primary outbound)
-├── routes/                            # Flask Blueprints
-│   ├── pwa_routes.py                 # /pwa/* — Tech PWA shell + screens (NEW)
-│   ├── dashboard_routes.py           # All dashboard pages (read-only, owner/office)
-│   ├── dispatch_routes.py           # /api/dispatch/* + /r/<token> worker route
-│   ├── booking_routes.py            # /book/<token> + /api/book/* + /api/slots/*
-│   ├── command_routes.py            # /api/command + context loader wiring
-│   ├── auth_routes.py               # /login, /logout, /set-pin + super admin
-│   ├── invoice_routes.py            # /webhooks/square payment webhook
-│   ├── document_routes.py           # /doc/edit, /doc/save, /doc/send
-│   ├── onboarding_routes.py         # /api/onboarding/*, /onboard/<token>
-│   └── routes_debug.py              # /debug (dev-only)
-├── templates/
-│   ├── pwa/                           # PWA tech-facing screens (NEW)
-│   │   ├── shell.html                 # PWA shell (manifest + SW registration)
-│   │   ├── dashboard.html             # Job dashboard (today's jobs, status)
-│   │   ├── clock.html                 # Clock in/out screen
-│   │   ├── job_input.html             # New job description input
-│   │   └── chat.html                  # AI chat window
-│   ├── base.html                      # Shared sidebar + layout (navy/amber)
-│   ├── book.html                      # Public booking page (mobile-first)
-│   ├── worker_route.html             # Worker route page (mobile, no login)
-│   ├── proposal.html                  # Mobile-first proposal view
-│   ├── invoice.html                   # Mobile-first invoice view (PAY NOW)
-│   ├── error.html                     # Branded error/expired pages
-│   └── dashboard/                     # Dashboard templates (owner/office only)
-│       ├── control.html              # Control Board
-│       ├── dispatch.html             # Dispatch board (drag-drop)
-│       ├── schedule.html             # Appointment timeline
-│       └── ... (read-only reporting pages)
-├── sql/                               # SQL migrations
-│   ├── draft_corrections.sql          # NEW: Training loop table
-│   ├── job_photos.sql                 # NEW: MMS photo storage
-│   ├── invoice_drafts.sql             # NEW: Multi-day job partials
-│   ├── job_extended_data.sql          # NEW: Trade-specific fields
-│   ├── square_payment_writeback.sql
-│   └── scheduling_migration.sql
-├── directives/                        # SOPs and context docs
-│   ├── agents/proposal_agent.md
-│   └── clients/personality.md
+│   ├── pwa_chat.py                   # Chat router — intercepts estimate intent (UPDATED)
+│   ├── pwa_chat_actions.py           # Action chip decorator — amount flows through (UPDATED)
+│   ├── db_pricebook.py               # Pricebook CRUD — standard price only to Claude (UPDATED)
+│   └── ... (other execution scripts)
+├── routes/
+│   ├── pwa_routes.py                 # Passes session_id to chat() (UPDATED)
+│   ├── document_routes.py            # Writes pricing history on /doc/send (UPDATED)
+│   └── ... (other blueprints)
+├── sql/
+│   ├── guided_estimate_tables.sql     # estimate_sessions + job_pricing_history (NEW)
+│   └── ... (other migrations)
 └── tests/
+    ├── test_guided_estimate.py        # State machine + pricing history tests (NEW)
+    └── ... (other test files)
 ```
 
 ---
@@ -421,6 +439,15 @@ Save the raw inbound webhook payload to the database BEFORE any
 processing begins. No exceptions. If downstream processing fails,
 the raw data must still exist for recovery.
 
+**HARD RULE #8 — The AI never generates a price**
+Every dollar amount on every estimate comes from one of:
+(a) the tech typed it, (b) a pricebook standard price used as fallback,
+(c) a historical average shown as reference text only.
+Claude never invents, suggests, or pre-fills a price. If you see
+Claude outputting a price the tech didn't enter, that is a bug.
+The fix is in db_pricebook.get_pricebook_for_prompt() — standard
+price only, never the range.
+
 ---
 
 ## Claude API Call Structure
@@ -456,7 +483,41 @@ Input: {raw_user_input}
 
 *(Existing tables unchanged — see previous schema entries below)*
 
-**draft_corrections (NEW — training loop)**
+**estimate_sessions (NEW — guided estimate flow)**
+```
+id                  uuid PRIMARY KEY
+client_id           uuid REFERENCES clients(id) NOT NULL
+employee_id         uuid REFERENCES employees(id) NOT NULL
+session_id          uuid NOT NULL  -- links to pwa_chat_messages.session_id
+status              text DEFAULT 'gathering'
+customer_id         uuid REFERENCES customers(id)
+customer_confirmed  boolean DEFAULT false
+job_type            text
+job_type_confirmed  boolean DEFAULT false
+primary_price       numeric(10,2)  -- tech-entered, NEVER AI-generated
+line_items          jsonb DEFAULT '[]'
+notes               text
+current_step        text
+created_at          timestamptz DEFAULT now()
+updated_at          timestamptz DEFAULT now()
+```
+
+**job_pricing_history (NEW — guided estimate "last 3" reference)**
+```
+id              uuid PRIMARY KEY
+client_id       uuid REFERENCES clients(id) NOT NULL
+customer_id     uuid REFERENCES customers(id)
+job_id          uuid REFERENCES jobs(id)
+proposal_id     uuid REFERENCES proposals(id)
+job_type        text NOT NULL
+description     text
+amount          numeric(10,2) NOT NULL  -- tech-entered, NEVER AI-generated
+employee_id     uuid REFERENCES employees(id)
+completed_at    timestamptz DEFAULT now()
+```
+Written by /doc/send ONLY. Never by an agent.
+
+**draft_corrections (training loop)**
 ```
 id              uuid PRIMARY KEY
 job_id          uuid REFERENCES jobs(id)
@@ -468,113 +529,6 @@ corrected_value text
 correction_type text NOT NULL  -- edit | add_item | remove_item | reject
 tech_id         uuid
 created_at      timestamptz DEFAULT now()
-```
-
-**job_photos (NEW — MMS ingestion)**
-```
-id              uuid PRIMARY KEY
-job_id          uuid REFERENCES jobs(id)
-client_id       uuid REFERENCES clients(id) NOT NULL
-storage_path    text NOT NULL
-thumbnail_path  text
-caption         text
-sort_order      integer DEFAULT 0
-source          text DEFAULT 'tech_mms'  -- tech_mms | review_ui | owner_upload
-created_at      timestamptz DEFAULT now()
-```
-
-**invoice_drafts (NEW — multi-day jobs)**
-```
-id                  uuid PRIMARY KEY
-job_id              uuid REFERENCES jobs(id)
-client_id           uuid REFERENCES clients(id) NOT NULL
-customer_id         uuid REFERENCES customers(id)
-draft_date          date NOT NULL
-status              text DEFAULT 'draft'  -- draft | saved | compiled | sent
-line_items          jsonb DEFAULT '[]'
-labor_hours         numeric(5,2)
-material_entries    jsonb DEFAULT '[]'
-photos              jsonb DEFAULT '[]'
-tech_id             uuid
-corrections_applied boolean DEFAULT false
-compiled_into       uuid  -- FK to invoices.id when compiled
-created_at          timestamptz DEFAULT now()
-```
-
-**job_extended_data (NEW — trade-specific fields)**
-```
-id          uuid PRIMARY KEY
-job_id      uuid REFERENCES jobs(id) NOT NULL
-client_id   uuid REFERENCES clients(id) NOT NULL
-field_name  text NOT NULL
-field_value text
-field_type  text DEFAULT 'text'  -- number | text | boolean
-source      text DEFAULT 'tech_pwa'  -- tech_pwa | tech_sms | ai_inferred | manual
-confidence  numeric(3,2) DEFAULT 0.0
-created_at  timestamptz DEFAULT now()
-```
-
-**needs_attention table**
-```
-id                uuid (auto)
-client_phone      text
-card_type         text
-priority          text  -- low | medium | high
-related_record    text
-raw_context       text
-claude_suggestion text
-status            text  -- open | resolved | dismissed
-created_at        timestamp (auto)
-resolved_by       text
-resolved_at       timestamp
-```
-
-**agent_activity log**
-```
-id              uuid (auto)
-client_phone    text
-agent_name      text
-action_taken    text
-input_summary   text
-output_summary  text
-sms_sent        boolean
-created_at      timestamp (auto)
-```
-
-**clients table**
-```
-id            uuid (auto)
-business_name text
-owner_name    text
-phone         text (lookup key)
-personality   text (full personality layer doc)
-created_at    timestamp (auto)
-```
-
-**customers table**
-```
-id              uuid (auto)
-client_phone    text
-customer_phone  text NOT NULL (HARD RULE #1)
-customer_name   text
-address         text
-notes           text
-sms_consent     boolean NOT NULL DEFAULT false
-sms_consent_at  timestamptz
-sms_consent_src text
-last_contact    timestamp
-created_at      timestamp (auto)
-```
-
-**proposals / invoices tables (updated columns)**
-```
-+ line_items    jsonb
-+ edit_token    uuid DEFAULT gen_random_uuid()
-+ html_url      text
-+ subtotal      numeric
-+ tax_rate      numeric
-+ tax_amount    numeric
-+ status        text DEFAULT 'draft'
 ```
 
 ---
@@ -627,57 +581,53 @@ documents go through email via Resend.
 - Never make output sound generic — that defeats the purpose
 - Never create dashboard forms for estimates or invoices
 - Never design a two-way SMS AI conversation flow — that's a PWA screen
+- Never let Claude generate a price — see HARD RULE #8
 
 ---
 
 ## Current Build Status
 
-**Phase 1 — PWA Foundation (Active Sprint)**
+**Phase 1 — PWA Foundation (Complete)**
 
-Completed (pre-pivot):
-- Inbound SMS webhook routing (brand number)
-- Role-based permissions (owner, foreman, field_tech, office)
-- Proposal + invoice generation via Claude → styled HTML → email
-- Proposal follow-up tracking (accepted/declined/lost)
-- Clock in/out stub
-- Scheduling agent
-- Email delivery via Resend
-- Dashboard (20+ pages, dispatch board, planner, control board)
-- Square payment links (sandbox)
-- Document edit + diff tracking (/doc/edit/<token>)
+- [x] Inbound SMS webhook routing (brand number)
+- [x] Role-based permissions (owner, foreman, field_tech, office)
+- [x] Proposal + invoice generation via Claude → styled HTML → email
+- [x] Proposal follow-up tracking (accepted/declined/lost)
+- [x] Clock in/out
+- [x] Scheduling agent
+- [x] Email delivery via Resend
+- [x] Dashboard (20+ pages, dispatch board, planner, control board)
+- [x] Square payment links (sandbox)
+- [x] Document edit + diff tracking (/doc/edit/<token>)
+- [x] static/manifest.json + sw.js
+- [x] /pwa/ shell, login, auth, clock, route, job, chat
+- [x] SMS router stripped to inbound-webhook-only
 
-PWA Sprint (current):
-- [x] static/manifest.json
-- [x] static/sw.js
-- [x] PWA manifest link in /doc/edit/<token> template
-- [x] /pwa/ shell route + template
-- [x] /pwa/login — magic link auth (phone entry + email/SMS delivery)
-- [x] /pwa/auth/<token> — token verification + session creation
-- [x] @require_pwa_auth decorator — protects all /pwa/ routes
-- [x] pwa_tokens table — single-use, 15-min expiry, audit trail
-- [x] /pwa/clock — clock in/out screen with live elapsed timer,
-- [x] /pwa/route — today's route, per-job actions, auto-advance on done
-- [x] /pwa/job — new job input, customer resolver, proposal_agent
-      pipeline, deep link to review screen on success
-- [x] /pwa/chat — conversational AI, action chips, voice input,
-      persistent history, fuzzy job matching, 6a+6b complete
-- [x] SMS router stripped to inbound-webhook-only — 74 lines,
-      no send_sms import, 1-step flow (opt-in/out only; PWA owns
-      everything else, Telnyx outbound dead at carrier)
-- [x] dispatch_routes.py worker notifications routed through
-      notify() — falls back to email when SMS kill switch is on
-- [x] dispatch email now links workers to /pwa/ instead of the
-      /r/<token> worker route page — send_dispatch_route_email()
-      in resend_agent.py, missing worker email logs
-      delivery_blocked_no_email + needs_attention card
+**Pricing fixes (April 2026):**
+- [x] db_pricebook: standard price only shown to Claude, never range
+- [x] proposal_agent: summarize_job strips prices from notes field
+- [x] proposal_agent: no-pricebook fallback uses 0, not hardcoded low prices
+- [x] pwa_chat_actions: amount flows through chip params to explicit_amount
 
-Pending (post-PWA):
+**Guided estimate flow (April 2026):**
+- [x] sql/guided_estimate_tables.sql — run in Supabase
+- [x] execution/schema.py — EstimateSessions + JobPricingHistory
+- [x] execution/guided_estimate.py — state machine, zero Claude pricing
+- [x] execution/db_pricing_history.py — records sent prices
+- [x] execution/pwa_chat.py — intercepts estimate intent before Claude
+- [x] routes/pwa_routes.py — passes session_id to chat()
+- [x] routes/document_routes.py — writes pricing history on /doc/send
+- [x] tests/test_guided_estimate.py
+
+**Pending (next sprints):**
 - Self-learning agent (null field prompts)
 - MMS photo ingestion
 - Multi-day invoice drafts (Save & Add)
 - Square production credentials
 - Customer email collection workflow
 - 10DLC — deferred indefinitely
+- Guided estimate: voice price input ("three twenty five" → 325)
+- Guided estimate: new customer creation sub-flow (S4)
+- Guided estimate: outlier price warning (>±50% of history)
 
-Do not suggest features beyond the PWA sprint
-until explicitly asked.
+Do not suggest features beyond what is explicitly requested.

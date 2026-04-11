@@ -30,7 +30,7 @@ Usage (from pwa_chat.py):
     session = get_active_session(client_id, employee_id, chat_session_id)
     if session:
         return handle_input(session, user_message, client_id, employee_id)
-    elif _is_estimate_intent(user_message):
+    elif is_estimate_intent(user_message):
         return start(client_id, employee_id, chat_session_id)
 """
 
@@ -38,11 +38,12 @@ import os
 import re
 import sys
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from execution.db_connection import get_client as get_supabase
+from execution.call_claude import call_claude          # imported at module level for testability
 from execution.schema import (
     EstimateSessions as ES,
     JobPricingHistory as JPH,
@@ -60,7 +61,8 @@ def _ts():
 # ---------------------------------------------------------------------------
 
 _ESTIMATE_TRIGGERS = re.compile(
-    r'\b(create|new|start|make|write|draft)\s+(estimate|quote|bid|proposal)\b'
+    # "create/new/start/make/write/draft [optional filler word] estimate/quote/bid/proposal"
+    r'\b(create|new|start|make|write|draft)\s+(?:\w+\s+)?(estimate|quote|bid|proposal)\b'
     r'|^estimate\b'
     r'|\bestimate\s+for\b',
     re.IGNORECASE,
@@ -121,12 +123,12 @@ def _create_session(client_id: str, employee_id: str, session_id: str) -> dict |
     try:
         sb = get_supabase()
         result = sb.table(ES.TABLE).insert({
-            ES.CLIENT_ID:   client_id,
-            ES.EMPLOYEE_ID: employee_id,
-            ES.SESSION_ID:  session_id,
-            ES.STATUS:      "gathering",
+            ES.CLIENT_ID:    client_id,
+            ES.EMPLOYEE_ID:  employee_id,
+            ES.SESSION_ID:   session_id,
+            ES.STATUS:       "gathering",
             ES.CURRENT_STEP: "ask_customer",
-            ES.LINE_ITEMS:  [],
+            ES.LINE_ITEMS:   [],
         }).execute()
         return result.data[0] if result.data else None
     except Exception as e:
@@ -138,7 +140,7 @@ def _update_session(session_id_pk: str, updates: dict) -> bool:
     """Update estimate session by primary key id."""
     try:
         sb = get_supabase()
-        updates[ES.UPDATED_AT] = datetime.utcnow().isoformat()
+        updates[ES.UPDATED_AT] = datetime.now(timezone.utc).isoformat()
         sb.table(ES.TABLE).update(updates).eq(ES.ID, session_id_pk).execute()
         return True
     except Exception as e:
@@ -164,13 +166,7 @@ def get_pricing_reference(client_id: str, job_type: str,
       2. Last 5 shop-wide jobs for this job type
       3. None (no history yet)
 
-    Returns a string like:
-      "Last 3 pump outs for this customer averaged $285 (range $275–$300)."
-      "Your shop's last 5 pump outs averaged $310."
-    Or None if no history exists.
-
-    IMPORTANT: This is reference text only. It is never pre-filled as a
-    price. The tech reads it and types their own number.
+    IMPORTANT: This is reference text only. Never pre-filled as a price.
     """
     try:
         sb = get_supabase()
@@ -224,10 +220,7 @@ def get_pricing_reference(client_id: str, job_type: str,
 # ---------------------------------------------------------------------------
 
 def _find_customers(client_id: str, query: str) -> list[dict]:
-    """
-    Fuzzy search customers by name. Returns up to 5 matches.
-    Multi-tenant safe.
-    """
+    """Fuzzy search customers by name. Returns up to 5 matches. Multi-tenant safe."""
     if not query or not query.strip():
         return []
     try:
@@ -244,10 +237,9 @@ def _find_customers(client_id: str, query: str) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
-# Job type classification — one Haiku call, keyword-first
+# Job type classification — keyword-first, one Haiku call as fallback
 # ---------------------------------------------------------------------------
 
-# Keyword map for sewer_drain vertical — deterministic, no LLM needed
 _JOB_TYPE_KEYWORDS = {
     "pump_out":           ["pump", "pumping", "pump out", "empty", "emptied"],
     "baffle_replacement": ["baffle", "baffler"],
@@ -265,10 +257,12 @@ def _classify_job_type(text: str, vertical_key: str = "sewer_drain") -> str | No
     """
     Classify job type from tech input. Keyword-first, Haiku fallback.
     Returns a job_type key like "pump_out" or None if unrecognised.
+
+    call_claude is imported at module level so tests can patch
+    execution.guided_estimate.call_claude cleanly.
     """
     text_lower = text.lower()
 
-    # Keyword match — deterministic, free
     for job_type, keywords in _JOB_TYPE_KEYWORDS.items():
         for kw in keywords:
             if kw in text_lower:
@@ -276,7 +270,6 @@ def _classify_job_type(text: str, vertical_key: str = "sewer_drain") -> str | No
 
     # Haiku fallback — only if keywords didn't match
     try:
-        from execution.call_claude import call_claude
         valid = list(_JOB_TYPE_KEYWORDS.keys()) + ["other"]
         response = call_claude(
             system_prompt=(
@@ -299,16 +292,15 @@ def _classify_job_type(text: str, vertical_key: str = "sewer_drain") -> str | No
 
 
 # ---------------------------------------------------------------------------
-# Response builder — keeps the return shape consistent with pwa_chat.py
+# Response builder
 # ---------------------------------------------------------------------------
 
 def _reply(text: str, action: dict | None = None) -> dict:
-    """Build a guided_estimate response in the same shape pwa_chat.chat() returns."""
     return {
         "success": True,
         "reply": text,
         "action": action,
-        "model": "guided_flow",   # signals to the UI this came from the state machine
+        "model": "guided_flow",
         "system_prompt_chars": 0,
         "error": None,
     }
@@ -324,60 +316,42 @@ def _error(text: str) -> dict:
 # ---------------------------------------------------------------------------
 
 def start(client_id: str, employee_id: str, session_id: str) -> dict:
-    """
-    Create a new estimate session and return the first prompt.
-    Called by pwa_chat.chat() when it detects estimate intent.
-    """
+    """Create a new estimate session and return the first prompt."""
     session = _create_session(client_id, employee_id, session_id)
     if not session:
         return _error("Couldn't start the estimate flow. Try again.")
-
     return _reply("Who's the customer?")
 
 
 # ---------------------------------------------------------------------------
-# Main dispatcher — routes each turn to the right handler
+# Main dispatcher
 # ---------------------------------------------------------------------------
 
 def handle_input(session: dict, user_message: str,
                  client_id: str, employee_id: str) -> dict:
-    """
-    Route the tech's message to the correct state handler based on
-    the session's current_step. Global commands (cancel, done) are
-    intercepted before reaching state-specific logic.
-    """
+    """Route the tech's message to the correct state handler."""
     session_pk   = session[ES.ID]
     current_step = session.get(ES.CURRENT_STEP, "ask_customer")
-    status       = session.get(ES.STATUS, "gathering")
 
-    # Global: cancel from any state
     if _is_cancel(user_message):
         _cancel_session(session_pk)
         return _reply("Estimate cancelled. Start a new one anytime.")
 
-    # Route by current step
     if current_step == "ask_customer":
         return _handle_customer_input(session, user_message, client_id)
-
     if current_step == "confirm_customer":
         return _handle_customer_confirm(session, user_message, client_id)
-
     if current_step == "disambiguate_customer":
         return _handle_customer_disambiguate(session, user_message, client_id)
-
     if current_step == "ask_job_type":
         return _handle_job_type_input(session, user_message, client_id)
-
     if current_step == "ask_price":
         return _handle_price_input(session, user_message, client_id)
-
     if current_step == "ask_line_items":
         return _handle_line_item_input(session, user_message, client_id, employee_id)
-
     if current_step == "ask_notes":
         return _handle_notes_input(session, user_message, client_id, employee_id)
 
-    # Shouldn't reach here — reset to customer ask
     _update_session(session_pk, {ES.CURRENT_STEP: "ask_customer"})
     return _reply("Let's start over. Who's the customer?")
 
@@ -387,14 +361,11 @@ def handle_input(session: dict, user_message: str,
 # ---------------------------------------------------------------------------
 
 def _handle_customer_input(session: dict, text: str, client_id: str) -> dict:
-    """S1: Tech typed a customer name. Search the DB."""
     session_pk = session[ES.ID]
     matches = _find_customers(client_id, text)
 
     if not matches:
-        _update_session(session_pk, {
-            ES.CURRENT_STEP: "ask_customer",
-        })
+        _update_session(session_pk, {ES.CURRENT_STEP: "ask_customer"})
         return _reply(
             f"I don't have a customer matching '{text}'. "
             "Try a different name, or type 'new' to add them."
@@ -408,12 +379,10 @@ def _handle_customer_input(session: dict, text: str, client_id: str) -> dict:
         _update_session(session_pk, {
             ES.CURRENT_STEP: "confirm_customer",
             ES.STATUS: "confirming_customer",
-            # Store candidate in notes field temporarily
-            "notes": json.dumps({"candidate": cust}),
+            ES.NOTES: json.dumps({"candidate": cust}),
         })
         return _reply(f"Found {name}{addr_part}. Correct?")
 
-    # Multiple matches — show numbered list
     lines = ["I found a few matches:"]
     for i, c in enumerate(matches[:5], 1):
         addr = c.get(C.CUSTOMER_ADDRESS, "")
@@ -423,16 +392,14 @@ def _handle_customer_input(session: dict, text: str, client_id: str) -> dict:
     _update_session(session_pk, {
         ES.CURRENT_STEP: "disambiguate_customer",
         ES.STATUS: "gathering",
-        "notes": json.dumps({"candidates": matches[:5]}),
+        ES.NOTES: json.dumps({"candidates": matches[:5]}),
     })
     return _reply("\n".join(lines))
 
 
 def _handle_customer_confirm(session: dict, text: str, client_id: str) -> dict:
-    """S2: Tech said yes/no to a customer match."""
     session_pk = session[ES.ID]
     text_lower = text.strip().lower()
-
     yes = text_lower in ("yes", "y", "yep", "yeah", "correct", "right", "yup", "sure")
     no  = text_lower in ("no", "n", "nope", "wrong", "incorrect")
 
@@ -440,12 +407,11 @@ def _handle_customer_confirm(session: dict, text: str, client_id: str) -> dict:
         _update_session(session_pk, {
             ES.CURRENT_STEP: "ask_customer",
             ES.STATUS: "gathering",
-            "notes": None,
+            ES.NOTES: None,
         })
         return _reply("Who's the customer?")
 
     if yes:
-        # Pull candidate from notes
         try:
             notes_raw = session.get(ES.NOTES) or "{}"
             stored = json.loads(notes_raw) if isinstance(notes_raw, str) else notes_raw
@@ -458,25 +424,21 @@ def _handle_customer_confirm(session: dict, text: str, client_id: str) -> dict:
             ES.CUSTOMER_CONFIRMED: True,
             ES.CURRENT_STEP: "ask_job_type",
             ES.STATUS: "gathering",
-            "notes": None,
+            ES.NOTES: None,
         })
         return _reply("What type of job?")
 
-    # Ambiguous — re-ask
     return _reply("Is that the right customer? (yes or no)")
 
 
 def _handle_customer_disambiguate(session: dict, text: str, client_id: str) -> dict:
-    """S3: Tech picked from a numbered list of customer matches."""
     session_pk = session[ES.ID]
-
     try:
         stored = json.loads(session.get(ES.NOTES) or "{}")
         candidates = stored.get("candidates", [])
     except Exception:
         candidates = []
 
-    # Try number pick
     pick = None
     stripped = text.strip()
     if stripped.isdigit():
@@ -484,21 +446,16 @@ def _handle_customer_disambiguate(session: dict, text: str, client_id: str) -> d
         if 0 <= idx < len(candidates):
             pick = candidates[idx]
 
-    # Try "new"
     if stripped.lower() == "new":
         _update_session(session_pk, {
             ES.CURRENT_STEP: "ask_customer",
             ES.STATUS: "gathering",
-            "notes": json.dumps({"create_new": True}),
+            ES.NOTES: json.dumps({"create_new": True}),
         })
-        return _reply(
-            "New customer — what's their name?"
-        )
+        return _reply("New customer — what's their name?")
 
     if not pick:
-        return _reply(
-            f"Pick a number (1–{len(candidates)}) or type 'new'."
-        )
+        return _reply(f"Pick a number (1–{len(candidates)}) or type 'new'.")
 
     name = pick.get(C.CUSTOMER_NAME, "")
     addr = pick.get(C.CUSTOMER_ADDRESS, "")
@@ -507,17 +464,15 @@ def _handle_customer_disambiguate(session: dict, text: str, client_id: str) -> d
     _update_session(session_pk, {
         ES.CURRENT_STEP: "confirm_customer",
         ES.STATUS: "confirming_customer",
-        "notes": json.dumps({"candidate": pick}),
+        ES.NOTES: json.dumps({"candidate": pick}),
     })
     return _reply(f"Found {name}{addr_part}. Correct?")
 
 
 def _handle_job_type_input(session: dict, text: str, client_id: str) -> dict:
-    """S6: Tech typed a job type. Classify, load history, ask for price."""
     session_pk  = session[ES.ID]
     customer_id = session.get(ES.CUSTOMER_ID)
 
-    # Load vertical key from client record
     vertical_key = "sewer_drain"
     try:
         sb = get_supabase()
@@ -537,7 +492,6 @@ def _handle_job_type_input(session: dict, text: str, client_id: str) -> dict:
             "Try something like: pump out, baffle replacement, inspection, riser installation."
         )
 
-    # Get pricing reference — reference text only, never pre-filled
     price_ref = get_pricing_reference(client_id, job_type, customer_id)
 
     _update_session(session_pk, {
@@ -554,18 +508,13 @@ def _handle_job_type_input(session: dict, text: str, client_id: str) -> dict:
 
 
 def _handle_price_input(session: dict, text: str, client_id: str) -> dict:
-    """S7a: Tech entered a price. Parse and confirm."""
     session_pk = session[ES.ID]
-
-    # Parse dollar amount — accepts "$325", "325", "three twenty five" (voice)
     amount = _parse_dollar_amount(text)
 
     if amount is None:
         return _reply("I didn't catch a price. Enter a dollar amount, like 325.")
-
     if amount <= 0:
         return _reply("Price needs to be greater than $0. What's your price?")
-
     if amount > 100_000:
         return _reply(f"${amount:,.0f} looks high — double-check and re-enter.")
 
@@ -574,7 +523,6 @@ def _handle_price_input(session: dict, text: str, client_id: str) -> dict:
         ES.CURRENT_STEP: "ask_line_items",
         ES.STATUS: "awaiting_line_items",
     })
-
     return _reply(
         f"Got it — ${amount:,.0f}. "
         "Any additional line items? (e.g. 'disposal fee $45') "
@@ -584,15 +532,12 @@ def _handle_price_input(session: dict, text: str, client_id: str) -> dict:
 
 def _handle_line_item_input(session: dict, text: str,
                              client_id: str, employee_id: str) -> dict:
-    """S8: Tech adding line items or saying done."""
     session_pk = session[ES.ID]
 
     if _is_done(text):
-        # Skip to notes
         _update_session(session_pk, {ES.CURRENT_STEP: "ask_notes"})
         return _reply("Any notes to add? Or say 'done'.")
 
-    # Try to parse "description $amount"
     parsed = _parse_line_item(text)
     if not parsed:
         return _reply(
@@ -601,8 +546,6 @@ def _handle_line_item_input(session: dict, text: str,
         )
 
     desc, amount = parsed
-
-    # Append to line_items
     try:
         existing = session.get(ES.LINE_ITEMS) or []
         if isinstance(existing, str):
@@ -620,41 +563,36 @@ def _handle_line_item_input(session: dict, text: str,
 
 def _handle_notes_input(session: dict, text: str,
                          client_id: str, employee_id: str) -> dict:
-    """S9: Optional notes, then build the review chip."""
     session_pk = session[ES.ID]
-
     if not _is_done(text):
         _update_session(session_pk, {ES.NOTES: text.strip()})
-
-    # Build review chip
     return _build_review_chip(session_pk, client_id, employee_id)
 
 
 def _build_review_chip(session_pk: str, client_id: str, employee_id: str) -> dict:
     """
     S10: Compile all collected data and return a create_proposal chip.
-    The chip fires the existing /pwa/api/job/new endpoint with
-    explicit_amount so Claude never re-prices.
+    Reloads the session from DB to get the latest state after all updates.
     """
     try:
         sb = get_supabase()
-        result = sb.table(ES.TABLE).select("*").eq(ES.ID, session_pk).single().execute()
-        session = result.data
+        result = sb.table(ES.TABLE).select("*").eq(ES.ID, session_pk).limit(1).execute()
+        rows = result.data or []
+        session = rows[0] if rows else None
     except Exception as e:
         return _error(f"Couldn't load estimate data — {e}")
 
     if not session:
         return _error("Estimate session not found.")
 
-    customer_id  = session.get(ES.CUSTOMER_ID)
-    job_type     = session.get(ES.JOB_TYPE, "service")
+    customer_id   = session.get(ES.CUSTOMER_ID)
+    job_type      = session.get(ES.JOB_TYPE, "service")
     primary_price = float(session.get(ES.PRIMARY_PRICE) or 0)
-    line_items   = session.get(ES.LINE_ITEMS) or []
+    line_items    = session.get(ES.LINE_ITEMS) or []
     if isinstance(line_items, str):
         line_items = json.loads(line_items)
-    notes        = session.get(ES.NOTES, "")
+    notes = session.get(ES.NOTES, "")
 
-    # Look up customer details for the chip
     customer_name = ""
     customer_phone = ""
     customer_address = ""
@@ -662,24 +600,21 @@ def _build_review_chip(session_pk: str, client_id: str, employee_id: str) -> dic
         try:
             cr = sb.table(C.TABLE).select(
                 f"{C.CUSTOMER_NAME}, {C.CUSTOMER_PHONE}, {C.CUSTOMER_ADDRESS}"
-            ).eq(C.ID, customer_id).single().execute()
+            ).eq(C.ID, customer_id).limit(1).execute()
             if cr.data:
-                customer_name    = cr.data.get(C.CUSTOMER_NAME, "")
-                customer_phone   = cr.data.get(C.CUSTOMER_PHONE, "")
-                customer_address = cr.data.get(C.CUSTOMER_ADDRESS, "")
+                customer_name    = cr.data[0].get(C.CUSTOMER_NAME, "")
+                customer_phone   = cr.data[0].get(C.CUSTOMER_PHONE, "")
+                customer_address = cr.data[0].get(C.CUSTOMER_ADDRESS, "")
         except Exception:
             pass
 
-    # Build description from job type + line items
-    job_label = job_type.replace("_", " ").title()
+    job_label  = job_type.replace("_", " ").title()
     line_desc  = "; ".join(f"{li['description']} ${li['amount']:.0f}" for li in line_items)
-    description = f"{job_label}" + (f" + {line_desc}" if line_desc else "")
+    description = job_label + (f" + {line_desc}" if line_desc else "")
 
-    # Total = primary price + all line items
     line_total = sum(float(li.get("amount", 0)) for li in line_items)
     total      = primary_price + line_total
 
-    # Build the review summary
     lines = [
         f"Customer:  {customer_name or 'Unknown'}",
         f"Job:       {job_label} — ${primary_price:,.0f}",
@@ -689,20 +624,18 @@ def _build_review_chip(session_pk: str, client_id: str, employee_id: str) -> dic
     lines.append(f"Total:     ${total:,.0f}")
     summary = "\n".join(lines)
 
-    # Mark session done
     _update_session(session_pk, {ES.STATUS: "done"})
 
     action = {
         "type":  "create_proposal",
         "label": f"Send estimate · ${int(total)}",
         "params": {
-            "description":       description + (f"\n\nNotes: {notes}" if notes else ""),
-            "customer_name":     customer_name,
-            "customer_phone":    customer_phone,
-            "customer_address":  customer_address,
-            "amount":            total,
-            # Pass line items so proposal_agent can build structured line items
-            "line_items":        json.dumps([
+            "description":      description + (f"\n\nNotes: {notes}" if notes else ""),
+            "customer_name":    customer_name,
+            "customer_phone":   customer_phone,
+            "customer_address": customer_address,
+            "amount":           total,
+            "line_items":       json.dumps([
                 {"description": job_label, "amount": primary_price},
                 *line_items,
             ]),
@@ -722,17 +655,9 @@ def _build_review_chip(session_pk: str, client_id: str, employee_id: str) -> dic
 # ---------------------------------------------------------------------------
 
 def _parse_dollar_amount(text: str) -> float | None:
-    """
-    Parse a dollar amount from tech input.
-    Handles: "$325", "325", "325.00", "1,250"
-    Does NOT handle voice-to-text word numbers ("three twenty five") —
-    that's a Phase 2 enhancement.
-    """
     if not text:
         return None
-    # Strip common noise
     cleaned = text.strip().replace(",", "").replace("$", "")
-    # Match the first numeric value
     match = re.search(r'\b(\d+(?:\.\d{1,2})?)\b', cleaned)
     if match:
         try:
@@ -743,39 +668,21 @@ def _parse_dollar_amount(text: str) -> float | None:
 
 
 def _parse_line_item(text: str) -> tuple[str, float] | None:
-    """
-    Parse a line item from tech input.
-    Expects format: "description $amount" or "description amount"
-
-    Examples:
-      "disposal fee $45"    → ("disposal fee", 45.0)
-      "travel charge 75"    → ("travel charge", 75.0)
-      "baffle"              → None (no amount)
-
-    Returns (description, amount) tuple or None if no amount found.
-    """
     if not text or not text.strip():
         return None
-
-    # Match a dollar amount anywhere in the string
     amount_match = re.search(r'\$?(\d+(?:\.\d{1,2})?)', text)
     if not amount_match:
         return None
-
     try:
         amount = float(amount_match.group(1))
     except ValueError:
         return None
 
-    # Description = everything before the amount match, stripped
     desc = text[:amount_match.start()].strip().rstrip("- ").strip()
     if not desc:
-        # Description = everything after the amount
         desc = text[amount_match.end():].strip()
     if not desc:
         return None
 
-    # Capitalise first letter
     desc = desc[0].upper() + desc[1:] if desc else desc
-
     return (desc, amount)
