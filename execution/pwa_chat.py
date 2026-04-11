@@ -8,18 +8,26 @@ The chip's tap handler hits the existing PWA endpoint (e.g.
 /pwa/api/job/new) that owns the actual write. The chat agent
 itself never calls proposal_agent.run() or any other write path.
 
+Guided estimate intercept (added):
+    Before calling Claude, chat() checks whether:
+      (a) there is an active estimate_session for this chat session, OR
+      (b) the tech's message matches an estimate intent trigger
+    If either is true, the message is routed to guided_estimate.handle_input()
+    or guided_estimate.start() instead of Claude. The guided flow returns
+    the same {reply, action} shape so the chat UI is unaffected.
+
 Return shape:
     {
         "success": True,
         "reply":   "I can draft that estimate for Alice — $325.",
         "action":  {
-            "type":     "create_proposal",   # or mark_job_done / start_job / clock_in / clock_out
+            "type":     "create_proposal",
             "label":    "Create estimate · $325",
             "params":   { ... endpoint-specific args ... },
             "endpoint": "/pwa/api/job/new",
             "method":   "POST",
         } or None,
-        "model":   "haiku",
+        "model":   "haiku" | "guided_flow",
         "system_prompt_chars": int,
         "error":   str or None,
     }
@@ -88,9 +96,6 @@ def _build_route_summary(route: list) -> str:
     return "\n".join(lines)
 
 
-# Words that look like names but aren't — used to filter the candidate
-# name extractor below. Keep this list small; Claude can sort out edge
-# cases on the actual prompt side.
 _NAME_BLOCKLIST = {
     "Hey", "Hi", "Hello", "Yo", "Ok", "OK", "Okay",
     "Yes", "No", "Yeah", "Nope", "Sure", "Fine",
@@ -103,25 +108,8 @@ _NAME_BLOCKLIST = {
 
 
 def _extract_candidate_names(text: str) -> list[str]:
-    """
-    Pull title-cased word pairs (and singles) out of the tech's message
-    that look like person names. The regex is intentionally permissive —
-    we'd rather over-extract and let the DB lookup fail cheaply than
-    miss a real customer mention.
-
-    Examples:
-        "Send Robert Poulin an estimate" → ["Robert Poulin"]
-        "alice smith needs a pump out"   → []  (lowercase — the tech
-                                                 should at least cap names)
-        "DONE Bob Jones"                 → ["Bob Jones"]
-
-    The blocklist filters greetings and command words that happen to
-    be capitalized.
-    """
     if not text:
         return []
-    # Match runs of 1-3 title-cased words. Allows hyphens/apostrophes
-    # inside (e.g. "O'Brien", "Smith-Jones"). Two-word matches preferred.
     pattern = re.compile(
         r"\b([A-Z][a-z'\-]+(?:\s+[A-Z][a-z'\-]+){0,2})\b"
     )
@@ -129,14 +117,10 @@ def _extract_candidate_names(text: str) -> list[str]:
     out = []
     seen = set()
     for m in matches:
-        # Drop pure-blocklist runs like "Hi" or "Send Bolts11"
         words = m.split()
         non_block = [w for w in words if w not in _NAME_BLOCKLIST]
         if not non_block:
             continue
-        # Single-word matches are usually too noisy — only keep if it's
-        # the only candidate AND it's at least 4 chars (filters "Bob"
-        # but keeps "Roberts"). Two-plus-word matches always pass.
         if len(non_block) == 1 and len(non_block[0]) < 4:
             continue
         candidate = " ".join(non_block)
@@ -149,12 +133,6 @@ def _extract_candidate_names(text: str) -> list[str]:
 
 
 def _find_customer(client_id: str, name: str) -> dict | None:
-    """
-    Look up a customer by name in the tenant's customers table.
-    Returns the first match (most recently created if multiple) or None.
-
-    Multi-tenant safe: filters by client_id before the name match.
-    """
     if not name or not name.strip():
         return None
     try:
@@ -172,22 +150,12 @@ def _find_customer(client_id: str, name: str) -> dict | None:
 
 
 def _find_customers_in_message(client_id: str, text: str) -> list[dict]:
-    """
-    Extract candidate names from the tech's message and look each one
-    up in the customers table. Returns at most 3 hits, dedup'd by id.
-    Empty list if nothing matched.
-
-    This is the "DB before prompt" piece of bug #1 — the agent gets
-    real customer info injected into the system prompt so it doesn't
-    ask for fields the codebase already has.
-    """
     candidates = _extract_candidate_names(text)
     if not candidates:
         return []
-
     found = []
     seen_ids = set()
-    for name in candidates[:5]:  # cap candidates to avoid runaway lookups
+    for name in candidates[:5]:
         cust = _find_customer(client_id, name)
         if cust and cust.get("id") not in seen_ids:
             seen_ids.add(cust["id"])
@@ -198,11 +166,6 @@ def _find_customers_in_message(client_id: str, text: str) -> list[dict]:
 
 
 def _build_customer_context(customers: list[dict]) -> str:
-    """
-    Render the matched-customer block that gets injected into the
-    system prompt. Compact format — names + the fields the agent
-    needs to skip asking for them. Keeps the prompt under budget.
-    """
     if not customers:
         return ""
     lines = ["MATCHED CUSTOMERS (already in your DB — DO NOT ask for these fields):"]
@@ -221,20 +184,7 @@ def _build_customer_context(customers: list[dict]) -> str:
 def _build_system_prompt(employee_name: str, employee_role: str,
                         business_name: str, route_summary: str,
                         customer_context: str = "") -> str:
-    """
-    System prompt with hard anti-hallucination rules and optional
-    customer-context injection.
-
-    Sections in order of importance:
-      1. Identity
-      2. CRITICAL RULES (anti-hallucination + action JSON contract)
-      3. Today's route summary
-      4. Matched customers (only when DB lookup found something)
-      5. Available actions + JSON response shape
-      6. Style rules
-    """
     role_label = (employee_role or "field tech").replace("_", " ")
-
     customer_block = f"\n\n{customer_context}" if customer_context else ""
 
     return (
@@ -266,7 +216,6 @@ def _build_system_prompt(employee_name: str, employee_role: str,
 
 
 def _route_summary_for_employee(client_id: str, employee_id: str) -> str:
-    """Pull today's dispatched jobs for the prompt context."""
     try:
         from execution.dispatch_chain import get_todays_route
         route = get_todays_route(client_id, employee_id)
@@ -276,21 +225,10 @@ def _route_summary_for_employee(client_id: str, employee_id: str) -> str:
         return "Today's route: unavailable."
 
 
-# Maximum number of historical turns we send to the model. The PWA route
-# loads more for UI display, but the model only needs the recent context
-# to track what was actually said vs. done. 10 covers a typical
-# conversation arc without paying for irrelevant ancient history.
 MAX_HISTORY_TURNS = 10
 
 
 def _strip_action_json(content: str) -> str:
-    """
-    Stored assistant messages SHOULD be plain reply text (the route only
-    persists result["reply"], not the JSON envelope) but older 6a-era
-    rows may still hold a full {"reply":..., "action":{...}} envelope.
-    Either way, we want only the reply text in the multi-turn history
-    so the model isn't confused by seeing its own old JSON in the past.
-    """
     if not content:
         return ""
     s = content.strip()
@@ -306,28 +244,6 @@ def _strip_action_json(content: str) -> str:
 
 
 def _build_messages(history: list, new_user_message: str) -> list:
-    """
-    Build a clean Anthropic-API-compatible messages array from the
-    stored chat history + the tech's new message.
-
-    Guarantees:
-      1. Strict user/assistant alternation (consecutive same-role rows
-         are merged with a blank line between them).
-      2. The array starts with a user role (any leading assistant rows
-         are dropped — Anthropic rejects assistant-first conversations).
-      3. The array ends with the new user message (merged into the
-         last user turn if one is already there).
-      4. At most MAX_HISTORY_TURNS historical rows are considered before
-         alternation/merge — we slice the most recent slice and let the
-         normalization passes do their thing.
-      5. Action JSON envelopes in old assistant rows are stripped to
-         plain reply text via _strip_action_json().
-      6. Blank/whitespace-only rows are dropped.
-
-    The system prompt is NOT in this array — call_claude() takes it as
-    a separate `system=` parameter, never injected as a fake user turn.
-    """
-    # Phase 1 — convert + clean rows, drop garbage
     cleaned = []
     for row in history:
         role = row.get("role")
@@ -341,10 +257,8 @@ def _build_messages(history: list, new_user_message: str) -> list:
             continue
         cleaned.append({"role": role, "content": content})
 
-    # Phase 2 — keep only the most recent window
     cleaned = cleaned[-MAX_HISTORY_TURNS:]
 
-    # Phase 3 — merge consecutive same-role messages
     merged: list[dict] = []
     for row in cleaned:
         if merged and merged[-1]["role"] == row["role"]:
@@ -355,14 +269,12 @@ def _build_messages(history: list, new_user_message: str) -> list:
         else:
             merged.append(dict(row))
 
-    # Phase 4 — drop leading assistant turns (Anthropic requires user-first)
     while merged and merged[0]["role"] == "assistant":
         merged.pop(0)
 
-    # Phase 5 — append the new user message, merging if last turn is user
     new_text = (new_user_message or "").strip()
     if not new_text:
-        return merged  # nothing to append; caller should validate upstream
+        return merged
     if merged and merged[-1]["role"] == "user":
         merged[-1] = {
             "role": "user",
@@ -374,7 +286,6 @@ def _build_messages(history: list, new_user_message: str) -> list:
     return merged
 
 
-# Action types we accept from the model. Anything else is dropped.
 _ALLOWED_ACTIONS = {
     "create_proposal",
     "mark_job_done",
@@ -385,47 +296,25 @@ _ALLOWED_ACTIONS = {
 
 
 def _strip_json_fences(text: str) -> str:
-    """
-    Strip ```json ... ``` or ``` ... ``` fences if Claude wraps its
-    response despite being told not to. Be permissive — model behavior
-    drifts and we don't want a fenced response to break the chat.
-    """
     s = text.strip()
     if s.startswith("```"):
-        # Drop the opening fence (with optional language tag) and closing fence
         s = re.sub(r"^```(?:json)?\s*", "", s)
         s = re.sub(r"\s*```\s*$", "", s)
     return s.strip()
 
 
 def _parse_claude_response(raw: str) -> dict:
-    """
-    Parse Claude's response into {reply, action}.
-
-    The model is instructed to always return JSON. Reality:
-      - Sometimes it wraps the JSON in markdown fences. Strip them.
-      - Sometimes it returns plain text instead of JSON. Treat the
-        whole thing as the reply with no action.
-      - Sometimes it returns valid JSON with an unknown action type.
-        Drop the action, keep the reply.
-
-    Returns:
-        {"reply": str, "action": dict or None}
-    """
     if not raw:
         return {"reply": "", "action": None}
 
     cleaned = _strip_json_fences(raw)
 
-    # Strip a leading "Assistant:" prefix the model occasionally echoes.
     if cleaned.lower().startswith("assistant:"):
         cleaned = cleaned.split(":", 1)[1].strip()
 
-    # Try JSON first
     try:
         parsed = json.loads(cleaned)
     except (json.JSONDecodeError, ValueError):
-        # Not JSON — treat the whole response as the reply text
         return {"reply": cleaned, "action": None}
 
     if not isinstance(parsed, dict):
@@ -442,7 +331,6 @@ def _parse_claude_response(raw: str) -> dict:
 
     action_type = action.get("type")
     if action_type not in _ALLOWED_ACTIONS:
-        # Unknown action — drop it, keep the reply
         return {"reply": reply, "action": None}
 
     params = action.get("params") or {}
@@ -466,30 +354,59 @@ def chat(
     business_name: str,
     user_message: str,
     history: list,
+    session_id: str = "",
 ) -> dict:
     """
-    Main entry point. Send a user message + history to Claude Haiku,
-    parse the JSON response, validate any embedded action, and return
-    the assistant's reply + an optional decorated action chip.
+    Main entry point. Routes to guided_estimate state machine when an
+    estimate flow is active or triggered, otherwise calls Claude Haiku.
 
-    Returns:
-        {
-            "success": bool,
-            "reply": str,
-            "action": dict or None,  # see _decorate_action() for shape
-            "model": str,
-            "system_prompt_chars": int,
-            "error": str or None,
-        }
+    Args:
+        session_id: The pwa_chat_messages session UUID. Required for the
+                    guided estimate flow to find/create the right session.
+                    Defaults to empty string for backwards compatibility
+                    with existing callers that don't pass it yet.
     """
     if not user_message or not user_message.strip():
         return {"success": False, "reply": "", "action": None, "error": "Empty message"}
 
-    # Build the system prompt with today's context AND a DB-first lookup
-    # of any customer the tech mentioned by name. Bug #1: agent must
-    # consult the customers table BEFORE asking the tech for contact
-    # info, otherwise it pesters the tech for fields the system already
-    # has on file.
+    # ------------------------------------------------------------------
+    # Guided estimate intercept — runs BEFORE any Claude call.
+    #
+    # If there is an active estimate session for this chat session, all
+    # input goes to the state machine. If the message triggers an
+    # estimate intent and no session exists yet, start one.
+    #
+    # The guided flow returns the same {reply, action, success, ...}
+    # shape as the Claude path so the caller (pwa_routes.py) is
+    # unaffected.
+    # ------------------------------------------------------------------
+    if session_id:
+        try:
+            from execution.guided_estimate import (
+                get_active_session,
+                handle_input,
+                start,
+                is_estimate_intent,
+            )
+
+            active_session = get_active_session(client_id, employee_id, session_id)
+
+            if active_session:
+                print(f"[{_ts()}] INFO pwa_chat: routing to guided_estimate (session active)")
+                return handle_input(active_session, user_message, client_id, employee_id)
+
+            if is_estimate_intent(user_message):
+                print(f"[{_ts()}] INFO pwa_chat: estimate intent detected — starting guided flow")
+                return start(client_id, employee_id, session_id)
+
+        except Exception as e:
+            # If the guided flow errors, fall through to Claude rather
+            # than breaking the chat entirely. Log it prominently.
+            print(f"[{_ts()}] ERROR pwa_chat: guided_estimate intercept failed — {e}")
+
+    # ------------------------------------------------------------------
+    # Standard Claude path — free-form chat for everything else
+    # ------------------------------------------------------------------
     route_summary = _route_summary_for_employee(client_id, employee_id)
     matched_customers = _find_customers_in_message(client_id, user_message)
     customer_context = _build_customer_context(matched_customers)
@@ -502,7 +419,6 @@ def chat(
         customer_context=customer_context,
     )
 
-    # Token budget guardrail — log if we're getting too long
     char_count = len(system_prompt)
     if char_count > SYSTEM_PROMPT_CHAR_TARGET:
         print(
@@ -510,14 +426,8 @@ def chat(
             f"(~{char_count // 4} tokens), exceeds {SYSTEM_PROMPT_TOKEN_TARGET}-token target"
         )
 
-    # Build a proper multi-turn messages array. The Anthropic API needs
-    # strict user/assistant alternation starting with user; _build_messages
-    # handles merging, deduping, and trimming to MAX_HISTORY_TURNS.
-    # IMPORTANT: the system prompt stays in the system= parameter, never
-    # injected into the messages array as a fake user turn.
     claude_messages = _build_messages(history, user_message)
 
-    # Call Claude — Haiku for cost, multi-turn for correctness
     try:
         reply_text = call_claude(
             system_prompt=system_prompt,
@@ -546,18 +456,12 @@ def chat(
             "error": "Empty response",
         }
 
-    # DEBUG — log the raw response to Railway so we can see exactly what
-    # Haiku returned when the parser drops an action or the model strays
-    # from the JSON contract. Truncated to 300 chars to keep log volume sane.
     print(f"[{_ts()}] DEBUG pwa_chat: raw_response={reply_text[:300]}")
 
-    # Parse Claude's JSON response → {reply, action}
     parsed = _parse_claude_response(reply_text)
     reply = parsed["reply"] or "Got it."
     raw_action = parsed["action"]
 
-    # Validate + decorate the action server-side (resolves customer
-    # name to job_id, builds the chip label, attaches the endpoint).
     decorated_action = None
     if raw_action:
         try:

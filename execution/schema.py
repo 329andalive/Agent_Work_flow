@@ -445,3 +445,54 @@ class ClientPromptOverrides:
     ESTIMATE_STYLE_NOTES = "estimate_style_notes"
     INVOICE_STYLE_NOTES  = "invoice_style_notes"
     UPDATED_AT           = "updated_at"
+
+
+# ---------------------------------------------------------------------------
+# estimate_sessions — in-progress guided estimate conversations.
+# One row per active estimate. Status drives the state machine in
+# execution/guided_estimate.py.
+#
+# GOTCHA: session_id here is the pwa_chat_messages.session_id UUID that
+# links this estimate to the chat conversation. It is NOT this table's
+# primary key (id). Don't confuse them.
+# ---------------------------------------------------------------------------
+
+class EstimateSessions:
+    TABLE = "estimate_sessions"
+
+    ID                 = "id"
+    CLIENT_ID          = "client_id"
+    EMPLOYEE_ID        = "employee_id"
+    SESSION_ID         = "session_id"         # links to pwa_chat_messages.session_id
+    STATUS             = "status"             # gathering | confirming_customer | awaiting_price | awaiting_line_items | review | done | cancelled
+    CUSTOMER_ID        = "customer_id"
+    CUSTOMER_CONFIRMED = "customer_confirmed"
+    JOB_TYPE           = "job_type"
+    JOB_TYPE_CONFIRMED = "job_type_confirmed"
+    PRIMARY_PRICE      = "primary_price"      # tech-entered — NEVER AI-generated
+    LINE_ITEMS         = "line_items"         # jsonb [{description, amount}]
+    NOTES              = "notes"
+    CURRENT_STEP       = "current_step"       # last question asked — used to resume mid-flow
+    CREATED_AT         = "created_at"
+    UPDATED_AT         = "updated_at"
+
+
+# ---------------------------------------------------------------------------
+# job_pricing_history — one row per sent proposal. Powers the "last 3
+# averaged $X" reference shown to the tech during guided estimate flow.
+# Written by /doc/send ONLY — never by an AI agent.
+# ---------------------------------------------------------------------------
+
+class JobPricingHistory:
+    TABLE = "job_pricing_history"
+
+    ID           = "id"
+    CLIENT_ID    = "client_id"
+    CUSTOMER_ID  = "customer_id"
+    JOB_ID       = "job_id"
+    PROPOSAL_ID  = "proposal_id"
+    JOB_TYPE     = "job_type"
+    DESCRIPTION  = "description"
+    AMOUNT       = "amount"       # tech-entered final price — never AI-generated
+    EMPLOYEE_ID  = "employee_id"
+    COMPLETED_AT = "completed_at"
