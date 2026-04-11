@@ -9,6 +9,28 @@ would a 55-year-old rural tradesman actually use this?
 
 ---
 
+## Read these before writing any database code
+
+Two short files at the repo root encode the rules we keep re-learning
+the hard way. Read both before touching DB code, agents, or routes:
+
+- **[CONVENTIONS.md](CONVENTIONS.md)** — naming rules, the "DO NOT"
+  list of patterns we've shipped fixes for at least once, and the
+  table-to-helper-file map for the lite repository pattern.
+- **[execution/schema.py](execution/schema.py)** — single source of
+  truth for every Supabase table + column name. Every new query
+  should `from execution.schema import <Table> as T` and use
+  `T.COLUMN_NAME` instead of magic strings. Typos become
+  `AttributeError` at import time instead of PostgREST errors in
+  production logs.
+
+If you're about to write `sb.table("...")` with literal column
+strings, stop and check if `schema.py` already has a class for that
+table. If it does, use it. If it doesn't, add one and document any
+gotchas in a comment next to the new constants.
+
+---
+
 ## Architecture Overview — PWA Pivot (April 2026)
 
 **The core communication pivot:**
