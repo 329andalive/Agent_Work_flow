@@ -82,20 +82,34 @@ def _decorate_create_proposal(client_id: str, employee_id: str, params: dict) ->
     create_proposal needs at least a description. Customer name/phone/etc
     are optional — the existing /pwa/api/job/new endpoint will create
     or look up the customer based on what we pass.
+
+    HARD RULE: amount must pass through to the endpoint so Claude never
+    re-prices what the tech already stated. Previously this field was
+    stripped here, causing Claude to reprice every job sent via the chat.
     """
     description = (params.get("description") or "").strip()
     if not description:
         return None
 
-    customer_name = (params.get("customer_name") or "").strip()
-    customer_phone = (params.get("customer_phone") or "").strip()
+    customer_name    = (params.get("customer_name") or "").strip()
+    customer_phone   = (params.get("customer_phone") or "").strip()
     customer_address = (params.get("customer_address") or "").strip()
-    customer_email = (params.get("customer_email") or "").strip()
-    amount = params.get("amount")
+    customer_email   = (params.get("customer_email") or "").strip()
+    amount           = params.get("amount")
 
-    # Build a tight chip label. Prefer "$NNN" if the model gave us an amount.
-    if amount and isinstance(amount, (int, float)) and amount > 0:
-        label = f"Create estimate · ${int(amount)}"
+    # Coerce amount to a clean float or None
+    clean_amount = None
+    if amount is not None:
+        try:
+            v = float(amount)
+            if v > 0:
+                clean_amount = v
+        except (TypeError, ValueError):
+            pass
+
+    # Build chip label
+    if clean_amount:
+        label = f"Create estimate · ${int(clean_amount)}"
     elif customer_name:
         label = f"Create estimate for {_truncate(customer_name, 24)}"
     else:
@@ -105,11 +119,15 @@ def _decorate_create_proposal(client_id: str, employee_id: str, params: dict) ->
         "type": "create_proposal",
         "label": label,
         "params": {
-            "description": description,
-            "customer_name": customer_name,
+            "description":    description,
+            "customer_name":  customer_name,
             "customer_phone": customer_phone,
             "customer_address": customer_address,
             "customer_email": customer_email,
+            # amount flows through to pwa_new_job → proposal_agent as
+            # explicit_amount, which bypasses Claude pricing entirely.
+            # None means "tech didn't state a price — use pricebook standard."
+            "amount": clean_amount,
         },
         "endpoint": "/pwa/api/job/new",
         "method": "POST",
@@ -188,10 +206,10 @@ def _decorate_clock_out(client_id: str, employee_id: str, params: dict) -> dict:
 
 _DISPATCH = {
     "create_proposal": _decorate_create_proposal,
-    "mark_job_done": _decorate_mark_job_done,
-    "start_job": _decorate_start_job,
-    "clock_in": _decorate_clock_in,
-    "clock_out": _decorate_clock_out,
+    "mark_job_done":   _decorate_mark_job_done,
+    "start_job":       _decorate_start_job,
+    "clock_in":        _decorate_clock_in,
+    "clock_out":       _decorate_clock_out,
 }
 
 
@@ -200,25 +218,8 @@ def decorate_action(client_id: str, employee_id: str,
     """
     Validate + decorate a raw action proposal from the chat agent.
 
-    Args:
-        client_id:   tenant identifier (from session)
-        employee_id: who is asking (from session)
-        action_type: one of _ALLOWED, otherwise dropped
-        params:      raw params dict from the model
-
-    Returns:
-        A decorated chip dict ready for the PWA, or None if the action
-        can't be validated (unknown type, no description, name didn't
-        match a job, etc.). None means "no chip — just show the reply".
-
-    Shape returned:
-        {
-            "type":     str,           # action_type
-            "label":    str,           # short button text
-            "params":   dict,          # cleaned params for the endpoint
-            "endpoint": str,           # absolute PWA path
-            "method":   "GET" | "POST",
-        }
+    Returns a decorated chip dict ready for the PWA, or None if the action
+    can't be validated. None means "no chip — just show the reply text".
     """
     if action_type not in _ALLOWED:
         return None

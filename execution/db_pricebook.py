@@ -79,14 +79,17 @@ def get_pricebook_by_job_type(client_id: str, job_type: str) -> dict | None:
 def get_pricebook_for_prompt(client_id: str) -> str:
     """
     Build a pricing context string for injection into Claude prompts.
-    Returns a formatted string of all active pricebook items with
-    their 3-tier pricing, ready to paste into a system prompt.
+
+    CRITICAL: Only the standard (mid) price is shown — never the range.
+    Showing low/mid/high causes Claude to anchor on the lowest number,
+    which is the root cause of the repricing bug. Claude's only job is
+    to use the standard price as a fallback when the tech didn't state
+    one. The tech always has final say on price.
 
     Returns:
         Formatted string like:
-            "Pump-out (1000 gal): $275 / $325 / $375 (low/mid/high)
-             Septic Inspection: $150 / $250 / $400
-             ..."
+            "- Pump-out (1000 gal): $325 per job
+             - Baffle replacement: $200 per job"
         Empty string if no pricebook items.
     """
     items = get_pricebook(client_id)
@@ -96,14 +99,12 @@ def get_pricebook_for_prompt(client_id: str) -> str:
     lines = []
     for item in items:
         name = item.get("job_name", "Service")
-        low = item.get("price_low") or item.get("price_mid") or 0
-        mid = item.get("price_mid") or 0
-        high = item.get("price_high") or mid
+        # Standard price only — never expose the range to Claude
+        standard = item.get("price_mid") or item.get("price_low") or 0
+        if not standard:
+            continue
         unit = item.get("unit_of_measure", "per job")
-        line = f"- {name}: ${low:.0f} / ${mid:.0f} / ${high:.0f} (low/standard/premium) {unit}"
-        if item.get("description"):
-            line += f" — {item['description']}"
-        lines.append(line)
+        lines.append(f"- {name}: ${standard:.0f} {unit}")
 
     return "\n".join(lines)
 
