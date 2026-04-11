@@ -118,7 +118,13 @@ Rules:
 - name: extract any person's name mentioned. Lowercase is fine — capitalize it. "john smith" → "John Smith". If no name found, return empty string.
 - address: extract any location — street address, road name, route number, town name. "12 school st" → "12 School St". Empty string if none found.
 - job_type: pick the closest match from the list above.
-- price: number only, no $ sign. null if not mentioned.
+- price: extract the dollar amount IF mentioned anywhere in the message.
+  Number only, no $ sign, no commas. null only if no amount is present.
+  Examples:
+    "pump out Brian $300"          → price: 300
+    "needs riser replaced for 750" → price: 750
+    "$1,250 for the install"       → price: 1250
+    "estimate Bob a baffle job"    → price: null
 - notes: everything else useful about the job."""
 
     try:
@@ -251,19 +257,32 @@ FALLBACK_MESSAGE = (
 )
 
 
-def run(client_phone: str, customer_phone: str, raw_input: str) -> str | None:
+def run(
+    client_phone: str,
+    customer_phone: str,
+    raw_input: str,
+    explicit_amount: float | None = None,
+) -> str | None:
     """
     Main entry point for the proposal agent.
 
     Args:
-        client_phone:   The business owner's Telnyx number (e.g. "+15555550200")
-        customer_phone: The end customer's phone number (e.g. "+15555550100")
-        raw_input:      The raw SMS text describing the job
+        client_phone:    The business owner's Telnyx number (e.g. "+15555550200")
+        customer_phone:  The end customer's phone number (e.g. "+15555550100")
+        raw_input:       The raw SMS text describing the job
+        explicit_amount: HARD RULE — when the tech provided an exact dollar
+                         amount (chat action chip, SMS body, owner override),
+                         this is the price. We do NOT call Claude to reprice.
+                         Pass None to let Claude generate line items.
 
     Returns:
         The generated proposal text, or None on failure.
     """
-    print(f"[{timestamp()}] INFO proposal_agent: Starting run | client={client_phone} customer={customer_phone}")
+    print(
+        f"[{timestamp()}] INFO proposal_agent: Starting run | "
+        f"client={client_phone} customer={customer_phone} "
+        f"explicit_amount={explicit_amount}"
+    )
 
     # ------------------------------------------------------------------
     # Step 1: Load client record — who is the business owner?
@@ -441,73 +460,110 @@ def run(client_phone: str, customer_phone: str, raw_input: str) -> str | None:
         return None
 
     # ------------------------------------------------------------------
-    # Step 6: Build structured prompt and call Claude for JSON line items
-    # ------------------------------------------------------------------
-    system_prompt, user_prompt = build_structured_prompt(
-        client, customer_name, customer_address, job_type, raw_input,
-    )
-
-    # Inject style overrides from owner's past edits if available
-    try:
-        from execution.db_document import get_prompt_override
-        override = get_prompt_override(client_id)
-        if override and override.get("estimate_style_notes"):
-            style_guidance = override["estimate_style_notes"]
-            system_prompt = (
-                f"Style guidance from owner's past edits: {style_guidance}\n\n"
-                + system_prompt
-            )
-            print(f"[{timestamp()}] INFO proposal_agent: Injected estimate style override")
-    except Exception as e:
-        print(f"[{timestamp()}] WARN proposal_agent: Could not load prompt override — {e}")
-
-    print(f"[{timestamp()}] INFO proposal_agent: Calling Claude (sonnet) for structured proposal...")
-    raw_response = call_claude(system_prompt, user_prompt, model="sonnet")
-
-    if not raw_response:
-        print(f"[{timestamp()}] ERROR proposal_agent: Claude returned no text — sending fallback")
-        send_sms(to_number=client_phone, message_body=FALLBACK_MESSAGE)
-        update_job_status(job_id, "new")
-        return None
-
-    print(f"[{timestamp()}] INFO proposal_agent: Raw response ({len(raw_response)} chars)")
-
-    # ------------------------------------------------------------------
-    # Step 6b: Parse structured JSON response
+    # Step 6: Determine the effective price.
+    #
+    # HARD RULE — explicit amount is never overridden:
+    # Resolution order is (1) explicit_amount kwarg from the caller
+    # (chat action chip, owner override, etc.), then (2) price_hint
+    # parsed out of the raw input by Haiku ("$300" in the message).
+    # If either is present we BYPASS the Claude pricing call entirely
+    # and build a single line item at that price. The tech said $300,
+    # the customer gets $300 — no exceptions.
+    #
+    # Only when both are absent do we call Claude to generate
+    # suggested line items.
     # ------------------------------------------------------------------
     import json as _json
     import re
 
-    line_items = []
+    def _coerce_amount(raw) -> float | None:
+        if raw is None:
+            return None
+        try:
+            v = float(raw)
+            return v if v > 0 else None
+        except (TypeError, ValueError):
+            return None
+
+    effective_amount = _coerce_amount(explicit_amount)
+    if effective_amount is None:
+        effective_amount = _coerce_amount(price_hint)
+
+    line_items: list[dict] = []
     amount = 0.00
-    proposal_text = raw_response  # fallback
+    proposal_text = ""
 
-    try:
-        # Strip markdown code fences if Claude wrapped the JSON
-        cleaned = re.sub(r'^```(?:json)?\s*', '', raw_response.strip())
-        cleaned = re.sub(r'\s*```$', '', cleaned)
-        parsed = _json.loads(cleaned)
+    if effective_amount is not None:
+        # ── Bypass path — tech-priced ──────────────────────────────
+        print(
+            f"[{timestamp()}] INFO proposal_agent: BYPASSING Claude pricing — "
+            f"using explicit amount=${effective_amount:.2f} "
+            f"(source={'kwarg' if explicit_amount else 'parsed_hint'})"
+        )
+        line_items = [{
+            "description": job_summary or "Service",
+            "amount": effective_amount,
+        }]
+        amount = effective_amount
+        proposal_text = f"{job_summary}\n\n{job_summary or 'Service'} — ${amount:.2f}\n\nTotal: ${amount:.2f}"
+    else:
+        # ── Suggestion path — Claude prices it ─────────────────────
+        system_prompt, user_prompt = build_structured_prompt(
+            client, customer_name, customer_address, job_type, raw_input,
+        )
 
-        if isinstance(parsed, dict) and "line_items" in parsed:
-            line_items = parsed["line_items"]
-            amount = sum(float(li.get("amount", 0)) for li in line_items)
-            # Use parsed job_summary if available
-            if parsed.get("job_summary"):
-                job_summary = parsed["job_summary"]
-            # Build clean proposal text from line items for SMS/display
-            lines = [f"{li['description']} — ${float(li['amount']):.2f}" for li in line_items]
-            proposal_text = f"{job_summary}\n\n" + "\n".join(lines) + f"\n\nTotal: ${amount:.2f}"
-            if parsed.get("notes"):
-                proposal_text += f"\n\n{parsed['notes']}"
-            print(f"[{timestamp()}] INFO proposal_agent: Parsed {len(line_items)} line items, total=${amount:.2f}")
-        else:
-            print(f"[{timestamp()}] WARN proposal_agent: Claude returned JSON but no line_items key — using as text")
-    except (_json.JSONDecodeError, ValueError) as e:
-        print(f"[{timestamp()}] WARN proposal_agent: JSON parse failed — {e}. Using raw text fallback.")
-        # Fallback: extract dollar amount from raw text
-        price_match = re.search(r"\$(\d{2,5})", raw_response)
-        if price_match:
-            amount = float(price_match.group(1))
+        # Inject style overrides from owner's past edits if available
+        try:
+            from execution.db_document import get_prompt_override
+            override = get_prompt_override(client_id)
+            if override and override.get("estimate_style_notes"):
+                style_guidance = override["estimate_style_notes"]
+                system_prompt = (
+                    f"Style guidance from owner's past edits: {style_guidance}\n\n"
+                    + system_prompt
+                )
+                print(f"[{timestamp()}] INFO proposal_agent: Injected estimate style override")
+        except Exception as e:
+            print(f"[{timestamp()}] WARN proposal_agent: Could not load prompt override — {e}")
+
+        print(f"[{timestamp()}] INFO proposal_agent: Calling Claude (sonnet) for structured proposal...")
+        raw_response = call_claude(system_prompt, user_prompt, model="sonnet")
+
+        if not raw_response:
+            print(f"[{timestamp()}] ERROR proposal_agent: Claude returned no text — sending fallback")
+            send_sms(to_number=client_phone, message_body=FALLBACK_MESSAGE)
+            update_job_status(job_id, "new")
+            return None
+
+        print(f"[{timestamp()}] INFO proposal_agent: Raw response ({len(raw_response)} chars)")
+        proposal_text = raw_response  # fallback if JSON parse fails
+
+        try:
+            # Strip markdown code fences if Claude wrapped the JSON
+            cleaned = re.sub(r'^```(?:json)?\s*', '', raw_response.strip())
+            cleaned = re.sub(r'\s*```$', '', cleaned)
+            parsed = _json.loads(cleaned)
+
+            if isinstance(parsed, dict) and "line_items" in parsed:
+                line_items = parsed["line_items"]
+                amount = sum(float(li.get("amount", 0)) for li in line_items)
+                # Use parsed job_summary if available
+                if parsed.get("job_summary"):
+                    job_summary = parsed["job_summary"]
+                # Build clean proposal text from line items for SMS/display
+                lines = [f"{li['description']} — ${float(li['amount']):.2f}" for li in line_items]
+                proposal_text = f"{job_summary}\n\n" + "\n".join(lines) + f"\n\nTotal: ${amount:.2f}"
+                if parsed.get("notes"):
+                    proposal_text += f"\n\n{parsed['notes']}"
+                print(f"[{timestamp()}] INFO proposal_agent: Parsed {len(line_items)} line items, total=${amount:.2f}")
+            else:
+                print(f"[{timestamp()}] WARN proposal_agent: Claude returned JSON but no line_items key — using as text")
+        except (_json.JSONDecodeError, ValueError) as e:
+            print(f"[{timestamp()}] WARN proposal_agent: JSON parse failed — {e}. Using raw text fallback.")
+            # Fallback: extract dollar amount from raw text
+            price_match = re.search(r"\$(\d{2,5})", raw_response)
+            if price_match:
+                amount = float(price_match.group(1))
 
     # ------------------------------------------------------------------
     # Step 6b: Track pricebook usage for each line item

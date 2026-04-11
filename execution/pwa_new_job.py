@@ -174,6 +174,7 @@ def create_proposal_from_pwa(
     customer_phone: str = "",
     customer_address: str = "",
     customer_email: str = "",
+    amount: float | None = None,
 ) -> dict:
     """
     Main entry point. Called from POST /pwa/api/job/new.
@@ -186,6 +187,10 @@ def create_proposal_from_pwa(
         customer_phone:   Optional — required if creating a new customer
         customer_address: Optional
         customer_email:   Optional
+        amount:           HARD RULE — when the chat agent's create_proposal
+                          chip carries an explicit amount, that's the price.
+                          Threaded straight through to proposal_agent.run() as
+                          explicit_amount so Claude is never called to reprice.
 
     Returns:
         {
@@ -226,13 +231,16 @@ def create_proposal_from_pwa(
     customer_phone_normalized = cust_result["customer_phone"]
 
     # 3. Call the proposal agent — it does customer lookup again internally,
-    #    but it's idempotent: it'll find the customer we just resolved/created
+    #    but it's idempotent: it'll find the customer we just resolved/created.
+    #    Pass `amount` as `explicit_amount` so the agent skips Claude pricing
+    #    when the tech (or chat action chip) provided an exact dollar figure.
     try:
         from execution.proposal_agent import run as proposal_run
         proposal_text = proposal_run(
             client_phone=client_phone,
             customer_phone=customer_phone_normalized,
             raw_input=raw_input.strip(),
+            explicit_amount=amount,
         )
     except Exception as e:
         print(f"[{_ts()}] ERROR pwa_new_job: proposal_agent.run() failed — {e}")

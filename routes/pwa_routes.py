@@ -352,6 +352,20 @@ def pwa_new_job_create():
     customer_address = (data.get("customer_address") or "").strip()
     customer_email = (data.get("customer_email") or "").strip()
 
+    # HARD RULE — explicit amount is never overridden. The chat agent's
+    # create_proposal action chip carries `amount` in its params; coerce
+    # it to float and pass through. If absent or non-numeric, leave None
+    # so the proposal agent falls back to its parsing/Claude logic.
+    amount_raw = data.get("amount")
+    amount = None
+    if amount_raw not in (None, ""):
+        try:
+            v = float(amount_raw)
+            if v > 0:
+                amount = v
+        except (TypeError, ValueError):
+            pass
+
     if not raw_input:
         return jsonify({"success": False, "error": "Job description is required"}), 400
 
@@ -363,6 +377,7 @@ def pwa_new_job_create():
         customer_phone=customer_phone,
         customer_address=customer_address,
         customer_email=customer_email,
+        amount=amount,
     )
     return jsonify(result), (200 if result.get("success") else 400)
 

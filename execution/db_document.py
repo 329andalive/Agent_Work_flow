@@ -89,15 +89,22 @@ def update_proposal_fields(
     notes: str,
     html_url: str = None,
 ) -> bool:
-    """Update proposal with structured line items and computed totals."""
+    """Update proposal with structured line items and the computed total.
+
+    The proposals table has only one money column (amount_estimate). The
+    subtotal/tax_rate/tax_amount params are kept on the signature for
+    backwards compatibility with existing callers but are NOT written to
+    the DB — those columns don't exist on the proposals table.
+    """
+    # Touch the unused params explicitly so linters don't flag them and
+    # so it's obvious to readers that they're intentionally dropped.
+    _ = (subtotal, tax_rate, tax_amount)
+
     try:
         supabase = get_supabase()
         update = {
             "amount_estimate": total,
             "line_items": line_items,
-            "subtotal": subtotal,
-            "tax_rate": tax_rate,
-            "tax_amount": tax_amount,
             "proposal_text": notes,
         }
         if html_url:
