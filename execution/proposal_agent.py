@@ -137,40 +137,79 @@ Rules:
     return {"name": "", "address": "", "job_type": "service", "price": None, "notes": raw_input}
 
 
-def summarize_job(raw_input: str) -> str:
+def summarize_job(raw_input: str, job_type: str = "", vertical_key: str = "sewer_drain") -> str:
     """
-    Use Claude Haiku to summarize raw owner input into a clean 1-line
-    job description for the proposal document.
+    Return a clean 1-line job description for the proposal document.
 
-    HARD RULE: The summary must NEVER contain a dollar amount or price.
-    Prices in the notes/summary field cause double-pricing on the document
-    when the tech's explicit price also appears in the line items. This
-    is the root cause of the "two prices on one estimate" bug.
+    Resolution order — deterministic first, Claude only as last resort:
+      1. Vertical config job_descriptions map keyed by job_type.
+         Zero API calls. Zero hallucination risk.
+         "baffle_replacement" → "Septic baffle replacement" — always right.
+      2. Claude Haiku — ONLY for custom/one-off job types not in the config.
+         Vertical context is injected explicitly so Claude knows the domain.
+
+    HARD RULE: Result must NEVER contain a dollar amount or price.
+
+    Why not Claude for step 1:
+      Claude's training data has no way to know that "baffle" in this
+      vertical means a septic outlet baffle, not a chimney baffle or
+      acoustic baffle. The config knows. Claude doesn't.
     """
     import re
+
+    # Step 1: Deterministic lookup — check vertical config first.
+    if job_type:
+        try:
+            config = load_vertical(vertical_key)
+            descriptions = config.get("job_descriptions", {})
+            # Strip "custom_" prefix for custom job types before lookup
+            lookup_key = job_type[len("custom_"):] if job_type.startswith("custom_") else job_type
+            template = descriptions.get(lookup_key) or descriptions.get(job_type)
+            if template:
+                print(f"[{timestamp()}] INFO proposal_agent: Job summary from config → '{template}'")
+                return template
+        except Exception as e:
+            print(f"[{timestamp()}] WARN proposal_agent: Config template lookup failed — {e}")
+
+    # Step 2: Claude Haiku — only for genuinely unknown job types.
+    # Inject vertical context so Claude can't guess wrong domain.
+    vertical_label = "septic and sewer"
     try:
+        config = load_vertical(vertical_key)
+        vertical_label = config.get("vertical_label", vertical_label).lower()
+    except Exception:
+        pass
+
+    try:
+        readable_type = job_type.replace("custom_", "").replace("_", " ") if job_type else ""
         summary = call_claude(
-            "You summarize trade job descriptions in one clean sentence.",
             (
-                "Summarize this job description in one clean sentence of 15 words or fewer.\n"
-                "Use plain trade language. Include: job type, property type if mentioned, key scope items.\n"
-                "CRITICAL: Do NOT include any dollar amounts, prices, or cost references whatsoever.\n"
-                "Do not include customer names or conversational filler.\n"
-                f"Input: {raw_input}"
+                f"You write job descriptions for a {vertical_label} trade business. "
+                f"You know this trade well — septic systems, drain lines, tanks, and related work. "
+                "Summarize the job in one plain sentence of 15 words or fewer. "
+                "Use trade language specific to this industry. "
+                "NEVER include dollar amounts, prices, or customer names."
+            ),
+            (
+                f"Write a one-line job description (15 words max) for this {vertical_label} job.\n"
+                f"Job type: {readable_type}\n"
+                f"Tech's notes: {raw_input}"
             ),
             model="haiku",
         )
         if summary and len(summary.strip()) > 5:
-            # Belt-and-suspenders: strip any dollar amounts that slipped through
             clean = re.sub(r'\$[\d,]+(\.\d{1,2})?', '', summary).strip()
-            clean = re.sub(r'\b\d{3,5}\b', '', clean).strip()  # bare numbers like "325"
+            clean = re.sub(r'\b\d{3,5}\b', '', clean).strip()
             clean = re.sub(r'\s+', ' ', clean).strip()
             if len(clean) > 5:
+                print(f"[{timestamp()}] INFO proposal_agent: Job summary from Claude (custom) → '{clean}'")
                 return clean
     except Exception as e:
         print(f"[{timestamp()}] WARN proposal_agent: Job summarization failed — {e}")
-    # Fallback: use job type detection — never includes a price
-    return detect_job_type(raw_input).replace("_", " ").title() + " service"
+
+    # Step 3: Pure fallback — readable label, no API call, no price
+    label = job_type.replace("custom_", "").replace("_", " ").title() if job_type else "Service"
+    return label
 
 
 def build_structured_prompt(client: dict, customer_name: str, customer_address: str,
@@ -208,9 +247,6 @@ def build_structured_prompt(client: dict, customer_name: str, customer_address: 
             f"- Never produce a $0.00 line item when a pricebook match exists.\n"
         )
     else:
-        # No pricebook configured — do NOT fall back to hardcoded prices.
-        # Claude inventing prices is the exact bug this system exists to prevent.
-        # Return 0 so the review screen prompts the tech to enter the price.
         pricing_rules = (
             f"PRICING RULES:\n"
             f"- No price book is configured for this business yet.\n"
@@ -405,8 +441,10 @@ def run(
         send_sms(to_number=client_phone, message_body=FALLBACK_MESSAGE)
         return None
 
-    # Step 5: Summarize raw input — description only, NO prices
-    job_summary = summarize_job(raw_input)
+    # Step 5: Summarize raw input — description only, NO prices.
+    # Passes job_type and vertical_key so we hit the config template first.
+    # Claude is only called for custom/unknown job types — never for seeded types.
+    job_summary = summarize_job(raw_input, job_type=job_type, vertical_key=vertical_key)
     print(f"[{timestamp()}] INFO proposal_agent: Job summary → {job_summary}")
 
     # Step 5b: Create a new job record
@@ -431,8 +469,7 @@ def run(
     # (1) explicit_amount kwarg — from chat chip or PWA input
     # (2) price_hint — dollar amount parsed from the raw message text
     # (3) Neither present — Claude generates line items using pricebook
-    #     standard prices only. If no pricebook, amounts default to 0
-    #     and the tech enters prices on the review screen.
+    #     standard prices only. If no pricebook, amounts default to 0.
     # ------------------------------------------------------------------
     import json as _json
     import re
@@ -507,7 +544,6 @@ def run(
                 line_items = parsed_resp["line_items"]
                 amount = sum(float(li.get("amount", 0)) for li in line_items)
                 if parsed_resp.get("job_summary"):
-                    # Strip prices from Claude's job_summary too — belt and suspenders
                     raw_js = parsed_resp["job_summary"]
                     clean_js = re.sub(r'\$[\d,]+(\.\d{1,2})?', '', raw_js).strip()
                     job_summary = clean_js if len(clean_js) > 5 else job_summary
@@ -612,8 +648,6 @@ def run(
         print(f"[{timestamp()}] WARN proposal_agent: Failed to log outbound message — {e}")
 
     # Step 10: Update job status
-    # Do NOT mark as 'sent' here — that happens only in /doc/send
-    # after the tech/owner reviews and approves the draft.
     try:
         update_job_status(job_id, "estimated")
     except Exception as e:

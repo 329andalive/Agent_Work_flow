@@ -11,6 +11,25 @@
     "pump", "inspect", "repair", "install", "emergency",
     "camera", "locate", "jetting", "baffle", "riser"
   ],
+  "job_descriptions": {
+    "pump":              "Septic tank pump-out",
+    "pump_out":          "Septic tank pump-out",
+    "baffle":            "Septic baffle replacement",
+    "baffle_replacement":"Septic baffle replacement",
+    "riser":             "Septic riser installation",
+    "riser_installation":"Septic riser installation",
+    "inspect":           "Septic system inspection",
+    "inspection":        "Septic system inspection",
+    "locate":            "Septic tank locate and mark",
+    "camera":            "Sewer line camera inspection",
+    "jetting":           "Hydro-jetting — drain line cleaning",
+    "hydro_jetting":     "Hydro-jetting — drain line cleaning",
+    "drain_cleaning":    "Drain line cleaning",
+    "repair":            "Septic system repair",
+    "line_repair":       "Sewer line repair",
+    "install":           "Septic system installation",
+    "emergency":         "Emergency septic service"
+  },
   "sms_keywords": {
     "invoice": [
       "a bill for", "bill for", "i pumped", "i ran", "i did",
