@@ -7,6 +7,7 @@ Tests cover:
   - Dollar amount parsing (_parse_dollar_amount)
   - Pricing reference text generation (get_pricing_reference)
   - Full state machine happy path via handle_input()
+  - Custom job type path (never dead-ends on unrecognised job)
   - Edge cases: no customer match, cancel, done with no line items, bad price
 
 All DB calls are mocked — no Supabase connection required.
@@ -152,6 +153,36 @@ class TestParseLineItem:
         from execution.guided_estimate import _parse_line_item
         desc, amt = _parse_line_item("filter $12.50")
         assert amt == 12.50
+
+
+# ---------------------------------------------------------------------------
+# Custom job type slugification
+# ---------------------------------------------------------------------------
+
+class TestSlugifyJobType:
+
+    def test_basic_slug(self):
+        from execution.guided_estimate import _slugify_job_type
+        assert _slugify_job_type("grease trap cleaning") == "custom_grease_trap_cleaning"
+
+    def test_strips_special_chars(self):
+        from execution.guided_estimate import _slugify_job_type
+        result = _slugify_job_type("pump-out / inspection")
+        assert result.startswith("custom_")
+        assert "/" not in result
+        assert "-" not in result
+
+    def test_empty_falls_back(self):
+        from execution.guided_estimate import _slugify_job_type
+        result = _slugify_job_type("")
+        assert result == "custom_job"
+
+    def test_caps_length(self):
+        from execution.guided_estimate import _slugify_job_type
+        long_input = "a" * 200
+        result = _slugify_job_type(long_input)
+        # "custom_" (7) + up to 60 chars
+        assert len(result) <= 68
 
 
 # ---------------------------------------------------------------------------
@@ -334,16 +365,43 @@ class TestHandleInput:
         assert result["success"] is True
         assert "price" in result["reply"].lower()
 
-    def test_unrecognised_job_type(self):
+    def test_unrecognised_job_type_uses_as_custom(self):
+        """
+        Unknown job types must NEVER dead-end the flow.
+        The tech's text is stored as a custom job type and the flow
+        advances to ask_price — same as any known type.
+        """
         from execution.guided_estimate import handle_input
         session = _make_session(current_step="ask_job_type", customer_id=TEST_CUSTOMER_ID)
-        sb = self._mock_sb({"clients": [{"trade_vertical": "sewer_drain"}]})
+        sb = self._mock_sb({
+            "clients":             [{"trade_vertical": "sewer_drain"}],
+            "job_pricing_history": [],
+        })
         with patch("execution.guided_estimate.get_supabase", return_value=sb):
-            # Patch at module level — call_claude is imported at top of guided_estimate
             with patch("execution.guided_estimate.call_claude", return_value="other"):
-                result = handle_input(session, "xyzzy job", TEST_CLIENT_ID, TEST_EMPLOYEE_ID)
-        assert result["action"] is None
-        assert "recognis" in result["reply"].lower() or "don't" in result["reply"].lower()
+                result = handle_input(session, "grease trap cleaning", TEST_CLIENT_ID, TEST_EMPLOYEE_ID)
+        # Flow must advance to price step — not error out
+        assert result["success"] is True
+        assert "price" in result["reply"].lower()
+        assert result["action"] is None  # chip comes at review, not here
+
+    def test_custom_job_type_label_uses_raw_text(self):
+        """
+        The display label in the reply should use the tech's original
+        text (readable), not the internal custom_ slug.
+        """
+        from execution.guided_estimate import handle_input
+        session = _make_session(current_step="ask_job_type", customer_id=TEST_CUSTOMER_ID)
+        sb = self._mock_sb({
+            "clients":             [{"trade_vertical": "sewer_drain"}],
+            "job_pricing_history": [],
+        })
+        with patch("execution.guided_estimate.get_supabase", return_value=sb):
+            with patch("execution.guided_estimate.call_claude", return_value="other"):
+                result = handle_input(session, "grease trap cleaning", TEST_CLIENT_ID, TEST_EMPLOYEE_ID)
+        # "custom_grease_trap_cleaning" must NOT appear in the reply
+        assert "custom_" not in result["reply"].lower()
+        assert "grease trap" in result["reply"].lower()
 
     def test_pricing_reference_shown_when_history_exists(self):
         from execution.guided_estimate import handle_input
@@ -455,7 +513,6 @@ class TestHandleInput:
     def test_done_at_notes_produces_chip(self):
         from execution.guided_estimate import handle_input
 
-        # The session row that _build_review_chip will reload from DB
         full_session_row = {
             "id":              "sess-pk-0001",
             "client_id":       TEST_CLIENT_ID,
@@ -474,8 +531,6 @@ class TestHandleInput:
             "customer_phone":   "+12075551234",
             "customer_address": "140 Granite Hill Rd",
         }
-
-        # Use a flat session dict (same as above) as the in-memory session arg
         session = _make_session(
             current_step="ask_notes",
             customer_id=TEST_CUSTOMER_ID,
@@ -483,14 +538,10 @@ class TestHandleInput:
             primary_price=325.0,
             line_items=[{"description": "Disposal fee", "amount": 45.0}],
         )
-
-        # Wire the mock so table("estimate_sessions") returns [full_session_row]
-        # and table("customers") returns [customer_row]
         sb = self._mock_sb({
             "estimate_sessions": [full_session_row],
             "customers":         [customer_row],
         })
-
         with patch("execution.guided_estimate.get_supabase", return_value=sb):
             result = handle_input(session, "done", TEST_CLIENT_ID, TEST_EMPLOYEE_ID)
 
@@ -498,9 +549,54 @@ class TestHandleInput:
         action = result["action"]
         assert action is not None
         assert action["type"] == "create_proposal"
-        # Total: 325 + 45 = 370
         assert action["params"]["amount"] == 370.0
         assert action["endpoint"] == "/pwa/api/job/new"
+
+    def test_custom_job_type_chip_strips_prefix(self):
+        """
+        Review chip for a custom job type should show clean label,
+        not the internal custom_ slug.
+        """
+        from execution.guided_estimate import handle_input
+
+        full_session_row = {
+            "id":              "sess-pk-0001",
+            "client_id":       TEST_CLIENT_ID,
+            "employee_id":     TEST_EMPLOYEE_ID,
+            "session_id":      TEST_SESSION_ID,
+            "status":          "awaiting_line_items",
+            "customer_id":     TEST_CUSTOMER_ID,
+            "job_type":        "custom_grease_trap_cleaning",
+            "primary_price":   400.0,
+            "line_items":      [],
+            "notes":           None,
+            "current_step":    "ask_notes",
+        }
+        customer_row = {
+            "customer_name":    "Alice Smith",
+            "customer_phone":   "+12075559999",
+            "customer_address": "10 Elm St",
+        }
+        session = _make_session(
+            current_step="ask_notes",
+            customer_id=TEST_CUSTOMER_ID,
+            job_type="custom_grease_trap_cleaning",
+            primary_price=400.0,
+            line_items=[],
+        )
+        sb = self._mock_sb({
+            "estimate_sessions": [full_session_row],
+            "customers":         [customer_row],
+        })
+        with patch("execution.guided_estimate.get_supabase", return_value=sb):
+            result = handle_input(session, "done", TEST_CLIENT_ID, TEST_EMPLOYEE_ID)
+
+        assert result["success"] is True
+        action = result["action"]
+        assert action is not None
+        # The description sent to proposal_agent must not expose the slug
+        assert "custom_" not in action["params"]["description"].lower()
+        assert "grease trap" in action["params"]["description"].lower()
 
 
 # ---------------------------------------------------------------------------

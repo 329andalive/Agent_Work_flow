@@ -237,7 +237,8 @@ def _find_customers(client_id: str, query: str) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
-# Job type classification — keyword-first, one Haiku call as fallback
+# Job type classification — keyword-first, one Haiku call as fallback,
+# then use-as-typed for custom/one-off job types.
 # ---------------------------------------------------------------------------
 
 _JOB_TYPE_KEYWORDS = {
@@ -253,13 +254,27 @@ _JOB_TYPE_KEYWORDS = {
 }
 
 
+def _slugify_job_type(text: str) -> str:
+    """
+    Convert free-form tech input to a clean job_type key.
+    "Grease trap cleaning" → "grease_trap_cleaning"
+    Prefix with "custom_" so one-off types are distinguishable from
+    seeded vertical types in the DB and in job_pricing_history.
+    """
+    slug = re.sub(r"[^a-z0-9]+", "_", text.lower().strip()).strip("_")
+    slug = re.sub(r"_+", "_", slug)[:60]   # cap at 60 chars
+    return f"custom_{slug}" if slug else "custom_job"
+
+
 def _classify_job_type(text: str, vertical_key: str = "sewer_drain") -> str | None:
     """
     Classify job type from tech input. Keyword-first, Haiku fallback.
-    Returns a job_type key like "pump_out" or None if unrecognised.
+    Returns a job_type key like "pump_out", or None if completely empty.
 
-    call_claude is imported at module level so tests can patch
-    execution.guided_estimate.call_claude cleanly.
+    NOTE: this function no longer returns "other" — callers should
+    treat a non-None return as a valid job type key, even if it's a
+    custom slug. The "use as typed" path is handled in
+    _handle_job_type_input, not here.
     """
     text_lower = text.lower()
 
@@ -285,10 +300,11 @@ def _classify_job_type(text: str, vertical_key: str = "sewer_drain") -> str | No
             candidate = response.strip().lower().replace(" ", "_")
             if candidate in _JOB_TYPE_KEYWORDS:
                 return candidate
+            # Haiku said "other" — fall through to custom slug below
     except Exception as e:
         print(f"[{_ts()}] WARN guided_estimate: Haiku job type classification failed — {e}")
 
-    return None
+    return None   # caller will use the raw text as a custom job type
 
 
 # ---------------------------------------------------------------------------
@@ -470,6 +486,19 @@ def _handle_customer_disambiguate(session: dict, text: str, client_id: str) -> d
 
 
 def _handle_job_type_input(session: dict, text: str, client_id: str) -> dict:
+    """
+    S6: Tech typed a job type.
+
+    Resolution order:
+      1. Keyword match against known types (free, instant)
+      2. Haiku classification fallback (one API call)
+      3. Use the tech's exact text as a custom one-off job type
+
+    Rule: the flow never dead-ends on an unrecognised job type.
+    Techs do work that isn't in the seed vertical — that's normal.
+    A custom job type is stored with a "custom_" prefix so it's
+    distinguishable from seeded types in the DB and history queries.
+    """
     session_pk  = session[ES.ID]
     customer_id = session.get(ES.CUSTOMER_ID)
 
@@ -486,12 +515,19 @@ def _handle_job_type_input(session: dict, text: str, client_id: str) -> dict:
 
     job_type = _classify_job_type(text, vertical_key)
 
+    # If classification returned nothing (unrecognised + Haiku said "other"),
+    # use the tech's text directly as a custom job type.
+    # This is the "never dead-end" path — techs know their own work.
+    is_custom = False
     if not job_type or job_type == "other":
-        return _reply(
-            f"I don't recognise '{text}' as a job type. "
-            "Try something like: pump out, baffle replacement, inspection, riser installation."
-        )
+        raw = text.strip()
+        if not raw:
+            return _reply("What type of job is this?")
+        job_type = _slugify_job_type(raw)
+        is_custom = True
+        print(f"[{_ts()}] INFO guided_estimate: custom job type — '{raw}' → '{job_type}'")
 
+    # Look up pricing history — may exist for repeat custom jobs too
     price_ref = get_pricing_reference(client_id, job_type, customer_id)
 
     _update_session(session_pk, {
@@ -501,7 +537,9 @@ def _handle_job_type_input(session: dict, text: str, client_id: str) -> dict:
         ES.STATUS: "awaiting_price",
     })
 
-    job_label = job_type.replace("_", " ").title()
+    # Use the original text as the display label for custom types
+    job_label = text.strip().title() if is_custom else job_type.replace("_", " ").title()
+
     if price_ref:
         return _reply(f"{price_ref}\nWhat's your price for the {job_label}?")
     return _reply(f"What's your price for the {job_label}?")
@@ -608,8 +646,11 @@ def _build_review_chip(session_pk: str, client_id: str, employee_id: str) -> dic
         except Exception:
             pass
 
-    job_label  = job_type.replace("_", " ").title()
-    line_desc  = "; ".join(f"{li['description']} ${li['amount']:.0f}" for li in line_items)
+    # Display label: strip the "custom_" prefix for customer-facing output
+    raw_job_type = job_type.replace("custom_", "", 1) if job_type.startswith("custom_") else job_type
+    job_label = raw_job_type.replace("_", " ").title()
+
+    line_desc   = "; ".join(f"{li['description']} ${li['amount']:.0f}" for li in line_items)
     description = job_label + (f" + {line_desc}" if line_desc else "")
 
     line_total = sum(float(li.get("amount", 0)) for li in line_items)
