@@ -52,7 +52,6 @@ def get_pricebook_by_job_type(client_id: str, job_type: str) -> dict | None:
     """
     try:
         sb = get_supabase()
-        # Exact match on category or job_name
         result = sb.table("pricebook_items").select("*").eq(
             "client_id", client_id
         ).eq("is_active", True).ilike(
@@ -61,7 +60,6 @@ def get_pricebook_by_job_type(client_id: str, job_type: str) -> dict | None:
         if result.data:
             return result.data[0]
 
-        # Try category match
         result = sb.table("pricebook_items").select("*").eq(
             "client_id", client_id
         ).eq("is_active", True).ilike(
@@ -99,7 +97,6 @@ def get_pricebook_for_prompt(client_id: str) -> str:
     lines = []
     for item in items:
         name = item.get("job_name", "Service")
-        # Standard price only — never expose the range to Claude
         standard = item.get("price_mid") or item.get("price_low") or 0
         if not standard:
             continue
@@ -107,6 +104,80 @@ def get_pricebook_for_prompt(client_id: str) -> str:
         lines.append(f"- {name}: ${standard:.0f} {unit}")
 
     return "\n".join(lines)
+
+
+def add_job_type(
+    client_id: str,
+    job_name: str,
+    description: str,
+    price_mid: float,
+    unit_of_measure: str = "per job",
+) -> dict | None:
+    """
+    Add a new job type to the client's pricebook during a chat session.
+
+    Called by the guided estimate 'add_job_type' sub-flow when a tech
+    encounters a job type the system doesn't recognise and wants to
+    add it to their pricebook on the fly.
+
+    Args:
+        client_id:       UUID of the client (multi-tenant safe)
+        job_name:        Human-readable name: "12 inch culvert replacement"
+        description:     One-line scope description: "Install/replace 12\" culvert"
+        price_mid:       Standard price — always tech-entered, never AI-generated
+        unit_of_measure: "per job" | "per foot" | "per hour" | etc.
+
+    Returns:
+        The new pricebook_items row dict, or None on failure.
+    """
+    if not client_id or not job_name or not job_name.strip():
+        print(f"[{timestamp()}] WARN db_pricebook: add_job_type called with missing args")
+        return None
+
+    try:
+        sb = get_supabase()
+
+        # Check for an existing item with this name to avoid duplicates
+        existing = sb.table("pricebook_items").select("id, job_name").eq(
+            "client_id", client_id
+        ).ilike("job_name", job_name.strip()).limit(1).execute()
+
+        if existing.data:
+            print(f"[{timestamp()}] INFO db_pricebook: job type '{job_name}' already exists — skipping insert")
+            return existing.data[0]
+
+        # Get current max sort_order so the new item lands at the bottom
+        order_result = sb.table("pricebook_items").select("sort_order").eq(
+            "client_id", client_id
+        ).eq("is_active", True).order("sort_order", desc=True).limit(1).execute()
+        next_order = (order_result.data[0]["sort_order"] + 1) if order_result.data else 0
+
+        row = {
+            "client_id":       client_id,
+            "job_name":        job_name.strip(),
+            "description":     description.strip() if description else "",
+            "price_mid":       float(price_mid),
+            "unit_of_measure": unit_of_measure.strip() if unit_of_measure else "per job",
+            "source":          "tech_chat",   # distinguishes from onboarding/template entries
+            "sort_order":      next_order,
+            "is_active":       True,
+        }
+
+        result = sb.table("pricebook_items").insert(row).execute()
+        if result.data:
+            new_item = result.data[0]
+            print(
+                f"[{timestamp()}] INFO db_pricebook: Added job type '{job_name}' "
+                f"${price_mid:.0f} {unit_of_measure} for client_id={client_id[:8]}"
+            )
+            return new_item
+
+        print(f"[{timestamp()}] WARN db_pricebook: add_job_type insert returned no data")
+        return None
+
+    except Exception as e:
+        print(f"[{timestamp()}] ERROR db_pricebook: add_job_type failed — {e}")
+        return None
 
 
 def seed_from_pricing_json(client_id: str, pricing_json: list,
@@ -130,7 +201,6 @@ def seed_from_pricing_json(client_id: str, pricing_json: list,
     try:
         sb = get_supabase()
 
-        # Get existing job names to avoid duplicates
         existing = sb.table("pricebook_items").select("job_name").eq(
             "client_id", client_id
         ).eq("is_active", True).execute()
@@ -148,7 +218,6 @@ def seed_from_pricing_json(client_id: str, pricing_json: list,
             mid = float(item.get("typical") or item.get("price_typical") or item.get("price_mid") or 0)
             high = float(item.get("high") or item.get("price_high") or 0)
 
-            # Auto-calculate mid if not provided
             if not mid and low and high:
                 mid = round((low + high) / 2, 2)
 
@@ -168,7 +237,6 @@ def seed_from_pricing_json(client_id: str, pricing_json: list,
                 existing_names.add(name.lower())
                 inserted += 1
             except Exception as e:
-                # Likely unique constraint violation — skip
                 print(f"[{timestamp()}] WARN db_pricebook: skipped '{name}' — {e}")
 
         print(f"[{timestamp()}] INFO db_pricebook: Seeded {inserted} pricebook items for client_id={client_id}")
@@ -182,17 +250,12 @@ def seed_from_pricing_json(client_id: str, pricing_json: list,
 def seed_from_benchmarks(client_id: str, vertical_key: str) -> int:
     """
     Seed pricebook_items from the pricing_benchmarks table (or hardcoded fallback).
-    Used when a client has no pricing_json from onboarding.
-
-    Returns:
-        Number of items inserted.
     """
     from execution.db_pricing import get_benchmarks
     benchmarks = get_benchmarks(vertical_key)
     if not benchmarks:
         return 0
 
-    # Convert benchmarks format to pricing_json format
     pricing = [
         {
             "service": b.get("service_name", ""),
@@ -209,26 +272,15 @@ def seed_from_benchmarks(client_id: str, vertical_key: str) -> int:
 def save_pricebook(client_id: str, items: list) -> int:
     """
     Replace all pricebook items for a client. Used by the Admin pricing tab.
-    Soft-deletes all existing items, then inserts the new set.
-
-    Args:
-        client_id: UUID of the client
-        items: List of dicts with keys: service, low, typical, high
-               (may also include id for existing items)
-
-    Returns:
-        Number of items inserted.
     """
     try:
         sb = get_supabase()
 
-        # Soft-delete all existing items
         sb.table("pricebook_items").update({
             "is_active": False,
             "updated_at": datetime.now(timezone.utc).isoformat(),
         }).eq("client_id", client_id).eq("is_active", True).execute()
 
-        # Insert the new set
         inserted = 0
         for i, item in enumerate(items):
             name = (item.get("service") or item.get("job_name") or "").strip()
@@ -263,7 +315,6 @@ def increment_usage(item_id: str) -> None:
     """Increment times_used and update last_used_at for a pricebook item."""
     try:
         sb = get_supabase()
-        # Fetch current count
         result = sb.table("pricebook_items").select("times_used").eq("id", item_id).execute()
         if result.data:
             current = result.data[0].get("times_used", 0) or 0
@@ -273,16 +324,14 @@ def increment_usage(item_id: str) -> None:
                 "updated_at": datetime.now(timezone.utc).isoformat(),
             }).eq("id", item_id).execute()
     except Exception:
-        pass  # Non-fatal
+        pass
 
 
 # ---------------------------------------------------------------------------
 # Self-learning: update pricebook from consistent price adjustments
 # ---------------------------------------------------------------------------
 
-# Minimum adjustments in the same direction before auto-updating
 LEARNING_THRESHOLD = 3
-# Confidence assigned after auto-update
 LEARNED_CONFIDENCE = 0.85
 
 
@@ -291,18 +340,12 @@ def learn_from_adjustments(client_id: str) -> dict:
     Read pricing_adjustments for this client, find services where the
     owner has consistently adjusted prices in the same direction 3+ times,
     and update the pricebook's price_mid to reflect the learned preference.
-
-    Also updates the confidence column on matched pricebook items.
-
-    Returns:
-        dict with keys: services_analyzed, services_updated, details[]
     """
     result = {"services_analyzed": 0, "services_updated": 0, "details": []}
 
     try:
         sb = get_supabase()
 
-        # Fetch all adjustments for this client
         adj_result = sb.table("pricing_adjustments").select(
             "service_name, original_price, adjusted_price, delta, direction, created_at"
         ).eq("client_id", client_id).order("created_at").execute()
@@ -311,7 +354,6 @@ def learn_from_adjustments(client_id: str) -> dict:
         if not adjustments:
             return result
 
-        # Group by service_name (lowercased for matching)
         from collections import defaultdict
         by_service = defaultdict(list)
         for adj in adjustments:
@@ -321,7 +363,6 @@ def learn_from_adjustments(client_id: str) -> dict:
 
         result["services_analyzed"] = len(by_service)
 
-        # Load current pricebook for matching
         pricebook = get_pricebook(client_id)
         pb_lookup = {item["job_name"].lower(): item for item in pricebook}
 
@@ -329,30 +370,25 @@ def learn_from_adjustments(client_id: str) -> dict:
             if len(adjs) < LEARNING_THRESHOLD:
                 continue
 
-            # Check if adjustments are consistently in one direction
             directions = [a.get("direction") for a in adjs]
             up_count = directions.count("up")
             down_count = directions.count("down")
             total = len(directions)
 
-            # Need 70%+ consistency in one direction
             if up_count / total >= 0.7:
                 consistent_direction = "up"
             elif down_count / total >= 0.7:
                 consistent_direction = "down"
             else:
-                continue  # Mixed signals — don't learn yet
+                continue
 
-            # Calculate the new price: average of last 3 adjusted prices
             recent = adjs[-LEARNING_THRESHOLD:]
             avg_adjusted = round(
                 sum(float(a.get("adjusted_price", 0)) for a in recent) / len(recent), 2
             )
 
-            # Find the matching pricebook item
             pb_item = pb_lookup.get(service_key)
             if not pb_item:
-                # Try fuzzy match
                 for pb_name, pb in pb_lookup.items():
                     if service_key in pb_name or pb_name in service_key:
                         pb_item = pb
@@ -363,9 +399,8 @@ def learn_from_adjustments(client_id: str) -> dict:
 
             current_mid = float(pb_item.get("price_mid") or 0)
             if abs(current_mid - avg_adjusted) < 1.0:
-                continue  # Difference too small to matter
+                continue
 
-            # Update the pricebook item
             try:
                 update = {
                     "price_mid": avg_adjusted,
@@ -373,7 +408,6 @@ def learn_from_adjustments(client_id: str) -> dict:
                     "updated_at": datetime.now(timezone.utc).isoformat(),
                 }
 
-                # Also adjust low/high proportionally
                 if current_mid > 0:
                     ratio = avg_adjusted / current_mid
                     old_low = float(pb_item.get("price_low") or 0)
@@ -400,8 +434,7 @@ def learn_from_adjustments(client_id: str) -> dict:
                 print(
                     f"[{timestamp()}] INFO db_pricebook: Learned price for "
                     f"'{detail['service']}' — ${current_mid:.2f} → ${avg_adjusted:.2f} "
-                    f"({consistent_direction}, {len(adjs)} adjustments, "
-                    f"confidence={LEARNED_CONFIDENCE})"
+                    f"({consistent_direction}, {len(adjs)} adjustments)"
                 )
 
             except Exception as e:

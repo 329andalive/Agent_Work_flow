@@ -9,11 +9,19 @@ State flow:
       → start()              creates estimate_session, asks "Who's the customer?"
     gathering
       → handle_input()       routes to the right handler based on current_step
-    confirming_customer      customer found, waiting for yes/no
-    awaiting_job_type        customer confirmed, asking job type
-    awaiting_price           job type set, showing history, asking price
-    awaiting_line_items      price set, asking for more line items or done
-    review                   all data collected, showing summary chip
+
+    Main estimate flow:
+      ask_customer           → confirm_customer → ask_job_type → ask_price
+                               → ask_line_items → ask_notes → review chip
+
+    Add-job-type sub-flow (triggered when job type is unrecognised):
+      offer_add_job_type     → tech says yes/no
+      add_jt_name            → tech confirms or renames the job
+      add_jt_description     → tech provides a 1-line scope description
+      add_jt_unit            → tech sets the pricing unit (per job / per foot / etc.)
+      add_jt_price           → tech sets the standard price (never AI-generated)
+      add_jt_confirm         → tech confirms → saved to pricebook → resumes at ask_price
+
     done / cancelled         terminal states
 
 Design rules (non-negotiable):
@@ -21,8 +29,8 @@ Design rules (non-negotiable):
     - One Haiku call: job type classification from keywords.
     - All state lives in estimate_sessions table — not in memory.
     - Tech provides every price. History is reference only, never pre-filled.
-    - Returns same {reply, action} shape as pwa_chat.py so the chat UI
-      renders it identically.
+    - New job types are saved to pricebook_items so they exist next time.
+    - Returns same {reply, action} shape as pwa_chat.py.
 
 Usage (from pwa_chat.py):
     from execution.guided_estimate import handle_input, start, get_active_session
@@ -43,7 +51,7 @@ from datetime import datetime, timezone
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from execution.db_connection import get_client as get_supabase
-from execution.call_claude import call_claude          # imported at module level for testability
+from execution.call_claude import call_claude          # module-level import for testability
 from execution.schema import (
     EstimateSessions as ES,
     JobPricingHistory as JPH,
@@ -57,11 +65,10 @@ def _ts():
 
 
 # ---------------------------------------------------------------------------
-# Intent detection — is this message trying to start an estimate?
+# Intent detection
 # ---------------------------------------------------------------------------
 
 _ESTIMATE_TRIGGERS = re.compile(
-    # "create/new/start/make/write/draft [optional filler word] estimate/quote/bid/proposal"
     r'\b(create|new|start|make|write|draft)\s+(?:\w+\s+)?(estimate|quote|bid|proposal)\b'
     r'|^estimate\b'
     r'|\bestimate\s+for\b',
@@ -70,16 +77,17 @@ _ESTIMATE_TRIGGERS = re.compile(
 
 
 def is_estimate_intent(message: str) -> bool:
-    """Return True if the tech's message is trying to start a guided estimate."""
     return bool(_ESTIMATE_TRIGGERS.search(message.strip()))
 
 
 # ---------------------------------------------------------------------------
-# Global command detection — intercepts before state-specific parsing
+# Global command detection
 # ---------------------------------------------------------------------------
 
 _CANCEL_RE = re.compile(r'\b(cancel|stop|nevermind|never mind|abort|quit)\b', re.IGNORECASE)
 _DONE_RE   = re.compile(r'^\s*(done|no|no more|that\'?s?\s*(it|all)|finish|finished)\s*$', re.IGNORECASE)
+_YES_RE    = re.compile(r'^\s*(yes|y|yep|yeah|yup|sure|ok|okay|correct|right)\s*$', re.IGNORECASE)
+_NO_RE     = re.compile(r'^\s*(no|n|nope|nah|skip)\s*$', re.IGNORECASE)
 
 
 def _is_cancel(text: str) -> bool:
@@ -90,17 +98,19 @@ def _is_done(text: str) -> bool:
     return bool(_DONE_RE.match(text))
 
 
+def _is_yes(text: str) -> bool:
+    return bool(_YES_RE.match(text.strip()))
+
+
+def _is_no(text: str) -> bool:
+    return bool(_NO_RE.match(text.strip()))
+
+
 # ---------------------------------------------------------------------------
-# DB helpers — all queries use schema constants
+# DB helpers
 # ---------------------------------------------------------------------------
 
 def get_active_session(client_id: str, employee_id: str, session_id: str) -> dict | None:
-    """
-    Return an in-progress estimate session for this employee + chat session,
-    or None if no active session exists.
-
-    Multi-tenant safe: filters by client_id first.
-    """
     try:
         sb = get_supabase()
         result = sb.table(ES.TABLE).select("*").eq(
@@ -119,7 +129,6 @@ def get_active_session(client_id: str, employee_id: str, session_id: str) -> dic
 
 
 def _create_session(client_id: str, employee_id: str, session_id: str) -> dict | None:
-    """Create a new estimate session and return the row."""
     try:
         sb = get_supabase()
         result = sb.table(ES.TABLE).insert({
@@ -137,7 +146,6 @@ def _create_session(client_id: str, employee_id: str, session_id: str) -> dict |
 
 
 def _update_session(session_id_pk: str, updates: dict) -> bool:
-    """Update estimate session by primary key id."""
     try:
         sb = get_supabase()
         updates[ES.UPDATED_AT] = datetime.now(timezone.utc).isoformat()
@@ -153,25 +161,14 @@ def _cancel_session(session_id_pk: str) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# Pricing history lookup — the "last 3 averaged $X" reference
+# Pricing history reference
 # ---------------------------------------------------------------------------
 
 def get_pricing_reference(client_id: str, job_type: str,
                           customer_id: str | None = None) -> str | None:
-    """
-    Query job_pricing_history and return a human-readable reference string.
-
-    Priority:
-      1. Last 3 jobs for this specific customer + job type
-      2. Last 5 shop-wide jobs for this job type
-      3. None (no history yet)
-
-    IMPORTANT: This is reference text only. Never pre-filled as a price.
-    """
     try:
         sb = get_supabase()
 
-        # Try customer-specific history first
         if customer_id:
             result = sb.table(JPH.TABLE).select(
                 JPH.AMOUNT
@@ -194,7 +191,6 @@ def get_pricing_reference(client_id: str, job_type: str,
                     f"averaged ${avg} (range ${lo}–${hi})."
                 )
 
-        # Fall back to shop-wide history
         result = sb.table(JPH.TABLE).select(
             JPH.AMOUNT
         ).eq(JPH.CLIENT_ID, client_id).eq(
@@ -216,11 +212,10 @@ def get_pricing_reference(client_id: str, job_type: str,
 
 
 # ---------------------------------------------------------------------------
-# Customer lookup helpers
+# Customer lookup
 # ---------------------------------------------------------------------------
 
 def _find_customers(client_id: str, query: str) -> list[dict]:
-    """Fuzzy search customers by name. Returns up to 5 matches. Multi-tenant safe."""
     if not query or not query.strip():
         return []
     try:
@@ -237,8 +232,7 @@ def _find_customers(client_id: str, query: str) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
-# Job type classification — keyword-first, one Haiku call as fallback,
-# then use-as-typed for custom/one-off job types.
+# Job type classification — keyword-first, Haiku fallback
 # ---------------------------------------------------------------------------
 
 _JOB_TYPE_KEYWORDS = {
@@ -257,24 +251,17 @@ _JOB_TYPE_KEYWORDS = {
 def _slugify_job_type(text: str) -> str:
     """
     Convert free-form tech input to a clean job_type key.
-    "Grease trap cleaning" → "grease_trap_cleaning"
-    Prefix with "custom_" so one-off types are distinguishable from
-    seeded vertical types in the DB and in job_pricing_history.
+    "Grease trap cleaning" → "custom_grease_trap_cleaning"
     """
     slug = re.sub(r"[^a-z0-9]+", "_", text.lower().strip()).strip("_")
-    slug = re.sub(r"_+", "_", slug)[:60]   # cap at 60 chars
+    slug = re.sub(r"_+", "_", slug)[:60]
     return f"custom_{slug}" if slug else "custom_job"
 
 
 def _classify_job_type(text: str, vertical_key: str = "sewer_drain") -> str | None:
     """
-    Classify job type from tech input. Keyword-first, Haiku fallback.
-    Returns a job_type key like "pump_out", or None if completely empty.
-
-    NOTE: this function no longer returns "other" — callers should
-    treat a non-None return as a valid job type key, even if it's a
-    custom slug. The "use as typed" path is handled in
-    _handle_job_type_input, not here.
+    Keyword-first, Haiku fallback.
+    Returns a known job_type key, or None if unrecognised.
     """
     text_lower = text.lower()
 
@@ -283,7 +270,9 @@ def _classify_job_type(text: str, vertical_key: str = "sewer_drain") -> str | No
             if kw in text_lower:
                 return job_type
 
-    # Haiku fallback — only if keywords didn't match
+    # Also check pricebook_items for this client — catches previously added custom types
+    # (We pass client_id through the session so we can't check here — handled in the handler)
+
     try:
         valid = list(_JOB_TYPE_KEYWORDS.keys()) + ["other"]
         response = call_claude(
@@ -300,15 +289,34 @@ def _classify_job_type(text: str, vertical_key: str = "sewer_drain") -> str | No
             candidate = response.strip().lower().replace(" ", "_")
             if candidate in _JOB_TYPE_KEYWORDS:
                 return candidate
-            # Haiku said "other" — fall through to custom slug below
     except Exception as e:
-        print(f"[{_ts()}] WARN guided_estimate: Haiku job type classification failed — {e}")
+        print(f"[{_ts()}] WARN guided_estimate: Haiku classification failed — {e}")
 
-    return None   # caller will use the raw text as a custom job type
+    return None
+
+
+def _find_in_pricebook(client_id: str, text: str) -> dict | None:
+    """
+    Check if the tech's text fuzzy-matches a job they've previously added
+    to their pricebook. This catches custom job types on repeat use.
+    Returns the pricebook item dict, or None.
+    """
+    try:
+        sb = get_supabase()
+        result = sb.table("pricebook_items").select(
+            "job_name, description, price_mid, unit_of_measure"
+        ).eq("client_id", client_id).eq("is_active", True).ilike(
+            "job_name", f"%{text.strip()}%"
+        ).limit(1).execute()
+        if result.data:
+            return result.data[0]
+    except Exception as e:
+        print(f"[{_ts()}] WARN guided_estimate: pricebook fuzzy lookup failed — {e}")
+    return None
 
 
 # ---------------------------------------------------------------------------
-# Response builder
+# Response builders
 # ---------------------------------------------------------------------------
 
 def _reply(text: str, action: dict | None = None) -> dict:
@@ -328,11 +336,10 @@ def _error(text: str) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Entry point — start a new guided estimate session
+# Entry point
 # ---------------------------------------------------------------------------
 
 def start(client_id: str, employee_id: str, session_id: str) -> dict:
-    """Create a new estimate session and return the first prompt."""
     session = _create_session(client_id, employee_id, session_id)
     if not session:
         return _error("Couldn't start the estimate flow. Try again.")
@@ -345,7 +352,6 @@ def start(client_id: str, employee_id: str, session_id: str) -> dict:
 
 def handle_input(session: dict, user_message: str,
                  client_id: str, employee_id: str) -> dict:
-    """Route the tech's message to the correct state handler."""
     session_pk   = session[ES.ID]
     current_step = session.get(ES.CURRENT_STEP, "ask_customer")
 
@@ -353,6 +359,7 @@ def handle_input(session: dict, user_message: str,
         _cancel_session(session_pk)
         return _reply("Estimate cancelled. Start a new one anytime.")
 
+    # Main estimate flow
     if current_step == "ask_customer":
         return _handle_customer_input(session, user_message, client_id)
     if current_step == "confirm_customer":
@@ -368,12 +375,26 @@ def handle_input(session: dict, user_message: str,
     if current_step == "ask_notes":
         return _handle_notes_input(session, user_message, client_id, employee_id)
 
+    # Add-job-type sub-flow
+    if current_step == "offer_add_job_type":
+        return _handle_offer_add_job_type(session, user_message, client_id)
+    if current_step == "add_jt_name":
+        return _handle_add_jt_name(session, user_message, client_id)
+    if current_step == "add_jt_description":
+        return _handle_add_jt_description(session, user_message, client_id)
+    if current_step == "add_jt_unit":
+        return _handle_add_jt_unit(session, user_message, client_id)
+    if current_step == "add_jt_price":
+        return _handle_add_jt_price(session, user_message, client_id)
+    if current_step == "add_jt_confirm":
+        return _handle_add_jt_confirm(session, user_message, client_id)
+
     _update_session(session_pk, {ES.CURRENT_STEP: "ask_customer"})
     return _reply("Let's start over. Who's the customer?")
 
 
 # ---------------------------------------------------------------------------
-# State handlers
+# Main estimate state handlers
 # ---------------------------------------------------------------------------
 
 def _handle_customer_input(session: dict, text: str, client_id: str) -> dict:
@@ -415,11 +436,7 @@ def _handle_customer_input(session: dict, text: str, client_id: str) -> dict:
 
 def _handle_customer_confirm(session: dict, text: str, client_id: str) -> dict:
     session_pk = session[ES.ID]
-    text_lower = text.strip().lower()
-    yes = text_lower in ("yes", "y", "yep", "yeah", "correct", "right", "yup", "sure")
-    no  = text_lower in ("no", "n", "nope", "wrong", "incorrect")
-
-    if no:
+    if _is_no(text):
         _update_session(session_pk, {
             ES.CURRENT_STEP: "ask_customer",
             ES.STATUS: "gathering",
@@ -427,14 +444,13 @@ def _handle_customer_confirm(session: dict, text: str, client_id: str) -> dict:
         })
         return _reply("Who's the customer?")
 
-    if yes:
+    if _is_yes(text):
         try:
             notes_raw = session.get(ES.NOTES) or "{}"
             stored = json.loads(notes_raw) if isinstance(notes_raw, str) else notes_raw
             cust = stored.get("candidate") or {}
         except Exception:
             cust = {}
-
         _update_session(session_pk, {
             ES.CUSTOMER_ID: cust.get(C.ID),
             ES.CUSTOMER_CONFIRMED: True,
@@ -455,12 +471,20 @@ def _handle_customer_disambiguate(session: dict, text: str, client_id: str) -> d
     except Exception:
         candidates = []
 
-    pick = None
     stripped = text.strip()
     if stripped.isdigit():
         idx = int(stripped) - 1
         if 0 <= idx < len(candidates):
             pick = candidates[idx]
+            name = pick.get(C.CUSTOMER_NAME, "")
+            addr = pick.get(C.CUSTOMER_ADDRESS, "")
+            addr_part = f" — {addr}" if addr else ""
+            _update_session(session_pk, {
+                ES.CURRENT_STEP: "confirm_customer",
+                ES.STATUS: "confirming_customer",
+                ES.NOTES: json.dumps({"candidate": pick}),
+            })
+            return _reply(f"Found {name}{addr_part}. Correct?")
 
     if stripped.lower() == "new":
         _update_session(session_pk, {
@@ -470,34 +494,16 @@ def _handle_customer_disambiguate(session: dict, text: str, client_id: str) -> d
         })
         return _reply("New customer — what's their name?")
 
-    if not pick:
-        return _reply(f"Pick a number (1–{len(candidates)}) or type 'new'.")
-
-    name = pick.get(C.CUSTOMER_NAME, "")
-    addr = pick.get(C.CUSTOMER_ADDRESS, "")
-    addr_part = f" — {addr}" if addr else ""
-
-    _update_session(session_pk, {
-        ES.CURRENT_STEP: "confirm_customer",
-        ES.STATUS: "confirming_customer",
-        ES.NOTES: json.dumps({"candidate": pick}),
-    })
-    return _reply(f"Found {name}{addr_part}. Correct?")
+    return _reply(f"Pick a number (1–{len(candidates)}) or type 'new'.")
 
 
 def _handle_job_type_input(session: dict, text: str, client_id: str) -> dict:
     """
-    S6: Tech typed a job type.
-
-    Resolution order:
-      1. Keyword match against known types (free, instant)
-      2. Haiku classification fallback (one API call)
-      3. Use the tech's exact text as a custom one-off job type
-
-    Rule: the flow never dead-ends on an unrecognised job type.
-    Techs do work that isn't in the seed vertical — that's normal.
-    A custom job type is stored with a "custom_" prefix so it's
-    distinguishable from seeded types in the DB and history queries.
+    Resolve the tech's job type input:
+      1. Keyword match against seeded types
+      2. Fuzzy match against this client's pricebook (catches custom types)
+      3. Haiku classification
+      4. Unrecognised → offer to add it to the pricebook
     """
     session_pk  = session[ES.ID]
     customer_id = session.get(ES.CUSTOMER_ID)
@@ -513,33 +519,55 @@ def _handle_job_type_input(session: dict, text: str, client_id: str) -> dict:
     except Exception:
         pass
 
+    # Step 1 & 3: keyword + Haiku
     job_type = _classify_job_type(text, vertical_key)
 
-    # If classification returned nothing (unrecognised + Haiku said "other"),
-    # use the tech's text directly as a custom job type.
-    # This is the "never dead-end" path — techs know their own work.
-    is_custom = False
+    # Step 2: pricebook fuzzy match (catches custom types from prior sessions)
     if not job_type or job_type == "other":
-        raw = text.strip()
-        if not raw:
+        pb_item = _find_in_pricebook(client_id, text)
+        if pb_item:
+            job_type = _slugify_job_type(pb_item["job_name"])
+            job_label = pb_item["job_name"]
+            price_ref = get_pricing_reference(client_id, job_type, customer_id)
+            _update_session(session_pk, {
+                ES.JOB_TYPE: job_type,
+                ES.JOB_TYPE_CONFIRMED: True,
+                ES.CURRENT_STEP: "ask_price",
+                ES.STATUS: "awaiting_price",
+            })
+            reply = f"{price_ref}\nWhat's your price for the {job_label}?" if price_ref else \
+                    f"What's your price for the {job_label}?"
+            # Also include standard price as a reference if set
+            if pb_item.get("price_mid"):
+                unit = pb_item.get("unit_of_measure", "per job")
+                reply = f"Standard: ${pb_item['price_mid']:.0f} {unit}.\n{reply}"
+            return _reply(reply)
+
+    # Step 4: truly unrecognised — offer to add it
+    if not job_type or job_type == "other":
+        raw_text = text.strip()
+        if not raw_text:
             return _reply("What type of job is this?")
-        job_type = _slugify_job_type(raw)
-        is_custom = True
-        print(f"[{_ts()}] INFO guided_estimate: custom job type — '{raw}' → '{job_type}'")
 
-    # Look up pricing history — may exist for repeat custom jobs too
+        # Store the raw text so the add sub-flow can use it as a starting point
+        _update_session(session_pk, {
+            ES.CURRENT_STEP: "offer_add_job_type",
+            ES.NOTES: json.dumps({"raw_job_type": raw_text}),
+        })
+        return _reply(
+            f"I don't have '{raw_text}' in your job types. "
+            f"Would you like to add it to your pricebook?"
+        )
+
+    # Known job type — proceed normally
     price_ref = get_pricing_reference(client_id, job_type, customer_id)
-
     _update_session(session_pk, {
         ES.JOB_TYPE: job_type,
         ES.JOB_TYPE_CONFIRMED: True,
         ES.CURRENT_STEP: "ask_price",
         ES.STATUS: "awaiting_price",
     })
-
-    # Use the original text as the display label for custom types
-    job_label = text.strip().title() if is_custom else job_type.replace("_", " ").title()
-
+    job_label = job_type.replace("_", " ").title()
     if price_ref:
         return _reply(f"{price_ref}\nWhat's your price for the {job_label}?")
     return _reply(f"What's your price for the {job_label}?")
@@ -593,10 +621,7 @@ def _handle_line_item_input(session: dict, text: str,
     except Exception as e:
         print(f"[{_ts()}] WARN guided_estimate: line item append failed — {e}")
 
-    return _reply(
-        f"Added '{desc}' — ${amount:,.0f}. "
-        "Anything else? Or say 'done'."
-    )
+    return _reply(f"Added '{desc}' — ${amount:,.0f}. Anything else? Or say 'done'.")
 
 
 def _handle_notes_input(session: dict, text: str,
@@ -608,10 +633,6 @@ def _handle_notes_input(session: dict, text: str,
 
 
 def _build_review_chip(session_pk: str, client_id: str, employee_id: str) -> dict:
-    """
-    S10: Compile all collected data and return a create_proposal chip.
-    Reloads the session from DB to get the latest state after all updates.
-    """
     try:
         sb = get_supabase()
         result = sb.table(ES.TABLE).select("*").eq(ES.ID, session_pk).limit(1).execute()
@@ -646,7 +667,6 @@ def _build_review_chip(session_pk: str, client_id: str, employee_id: str) -> dic
         except Exception:
             pass
 
-    # Display label: strip the "custom_" prefix for customer-facing output
     raw_job_type = job_type.replace("custom_", "", 1) if job_type.startswith("custom_") else job_type
     job_label = raw_job_type.replace("_", " ").title()
 
@@ -688,6 +708,222 @@ def _build_review_chip(session_pk: str, client_id: str, employee_id: str) -> dic
     return _reply(
         f"Here's the estimate:\n\n{summary}\n\nTap to review and send.",
         action=action,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Add-job-type sub-flow
+#
+# Triggered when the tech enters a job type the system doesn't recognise.
+# Walks them through naming it, writing a description, setting the unit,
+# and entering the standard price — then saves it to pricebook_items so
+# it exists on every future estimate.
+#
+# State stored in ES.NOTES as JSON during the sub-flow:
+#   {
+#     "raw_job_type":  "culvert replacement",       # tech's original text
+#     "jt_name":       "12 inch culvert replacement",
+#     "jt_description":"Install/replace 12\" culvert",
+#     "jt_unit":       "per foot",
+#   }
+# ---------------------------------------------------------------------------
+
+def _get_add_jt_state(session: dict) -> dict:
+    """Load the add-job-type scratchpad from session notes."""
+    try:
+        raw = session.get(ES.NOTES) or "{}"
+        return json.loads(raw) if isinstance(raw, str) else raw
+    except Exception:
+        return {}
+
+
+def _set_add_jt_state(session_pk: str, data: dict) -> None:
+    _update_session(session_pk, {ES.NOTES: json.dumps(data)})
+
+
+def _handle_offer_add_job_type(session: dict, text: str, client_id: str) -> dict:
+    """Tech said yes/no to adding the unknown job type."""
+    session_pk = session[ES.ID]
+    state = _get_add_jt_state(session)
+    raw = state.get("raw_job_type", text.strip())
+
+    if _is_no(text):
+        # Tech doesn't want to add it — fall back to custom slug and continue
+        job_type  = _slugify_job_type(raw)
+        job_label = raw.title()
+        _update_session(session_pk, {
+            ES.JOB_TYPE: job_type,
+            ES.JOB_TYPE_CONFIRMED: True,
+            ES.CURRENT_STEP: "ask_price",
+            ES.STATUS: "awaiting_price",
+            ES.NOTES: None,
+        })
+        return _reply(f"Got it. What's your price for the {job_label}?")
+
+    if _is_yes(text):
+        # Offer the raw text as the default name
+        state["jt_name"] = raw  # pre-fill with what they typed
+        _set_add_jt_state(session_pk, state)
+        _update_session(session_pk, {ES.CURRENT_STEP: "add_jt_name"})
+        return _reply(
+            f"What should we call this job?\n"
+            f"(I'll use '{raw.title()}' if you just say yes)"
+        )
+
+    return _reply(f"Add '{raw}' to your job types? (yes or no)")
+
+
+def _handle_add_jt_name(session: dict, text: str, client_id: str) -> dict:
+    """Tech confirms or renames the job type."""
+    session_pk = session[ES.ID]
+    state = _get_add_jt_state(session)
+    raw_default = state.get("jt_name") or state.get("raw_job_type", "")
+
+    if _is_yes(text):
+        # Keep the default name
+        name = raw_default.strip()
+    else:
+        name = text.strip()
+
+    if not name:
+        return _reply("What should we call this job type?")
+
+    state["jt_name"] = name
+    _set_add_jt_state(session_pk, state)
+    _update_session(session_pk, {ES.CURRENT_STEP: "add_jt_description"})
+
+    return _reply(
+        f"'{name}' — write a short description for the estimate.\n"
+        f"Example: 'Install or replace culvert at property entrance'"
+    )
+
+
+def _handle_add_jt_description(session: dict, text: str, client_id: str) -> dict:
+    """Tech provides the scope description."""
+    session_pk = session[ES.ID]
+    state = _get_add_jt_state(session)
+
+    desc = text.strip()
+    if not desc:
+        return _reply("What's a short description for this job?")
+
+    state["jt_description"] = desc
+    _set_add_jt_state(session_pk, state)
+    _update_session(session_pk, {ES.CURRENT_STEP: "add_jt_unit"})
+
+    return _reply(
+        "How do you charge for this job?\n"
+        "  1) Per job (flat rate)\n"
+        "  2) Per foot\n"
+        "  3) Per hour\n"
+        "  4) Per unit\n"
+        "Type the number or write it out."
+    )
+
+
+_UNIT_MAP = {
+    "1": "per job", "per job": "per job", "flat": "per job", "job": "per job",
+    "2": "per foot", "per foot": "per foot", "foot": "per foot", "ft": "per foot",
+    "3": "per hour", "per hour": "per hour", "hour": "per hour", "hr": "per hour",
+    "4": "per unit", "per unit": "per unit", "unit": "per unit",
+}
+
+
+def _handle_add_jt_unit(session: dict, text: str, client_id: str) -> dict:
+    """Tech sets the pricing unit."""
+    session_pk = session[ES.ID]
+    state = _get_add_jt_state(session)
+
+    raw = text.strip().lower()
+    unit = _UNIT_MAP.get(raw) or f"per {raw}" if raw else "per job"
+
+    state["jt_unit"] = unit
+    _set_add_jt_state(session_pk, state)
+    _update_session(session_pk, {ES.CURRENT_STEP: "add_jt_price"})
+
+    jt_name = state.get("jt_name", "this job")
+    return _reply(f"What's your standard price for {jt_name} ({unit})?")
+
+
+def _handle_add_jt_price(session: dict, text: str, client_id: str) -> dict:
+    """Tech enters the standard price for this job type."""
+    session_pk = session[ES.ID]
+    state = _get_add_jt_state(session)
+
+    amount = _parse_dollar_amount(text)
+    if amount is None or amount <= 0:
+        return _reply("I didn't catch a price. Enter a dollar amount, like 60.")
+
+    state["jt_price"] = amount
+    _set_add_jt_state(session_pk, state)
+    _update_session(session_pk, {ES.CURRENT_STEP: "add_jt_confirm"})
+
+    name = state.get("jt_name", "")
+    desc = state.get("jt_description", "")
+    unit = state.get("jt_unit", "per job")
+
+    return _reply(
+        f"Here's what I'll add to your pricebook:\n\n"
+        f"  Job type:    {name}\n"
+        f"  Description: {desc}\n"
+        f"  Price:       ${amount:,.0f} {unit}\n\n"
+        f"Add it?"
+    )
+
+
+def _handle_add_jt_confirm(session: dict, text: str, client_id: str) -> dict:
+    """Tech confirms the new job type — save to pricebook and resume estimate."""
+    session_pk = session[ES.ID]
+    state = _get_add_jt_state(session)
+
+    if _is_no(text):
+        # Start the sub-flow over
+        _update_session(session_pk, {ES.CURRENT_STEP: "add_jt_name"})
+        return _reply("No problem — what's the job name?")
+
+    if not _is_yes(text):
+        return _reply("Add this job type? (yes or no)")
+
+    name  = state.get("jt_name", "")
+    desc  = state.get("jt_description", "")
+    unit  = state.get("jt_unit", "per job")
+    price = float(state.get("jt_price") or 0)
+
+    if not name or not price:
+        _update_session(session_pk, {ES.CURRENT_STEP: "add_jt_name"})
+        return _reply("Something went wrong — let's try again. What's the job name?")
+
+    # Save to pricebook
+    try:
+        from execution.db_pricebook import add_job_type
+        add_job_type(
+            client_id=client_id,
+            job_name=name,
+            description=desc,
+            price_mid=price,
+            unit_of_measure=unit,
+        )
+        print(f"[{_ts()}] INFO guided_estimate: Added job type '{name}' to pricebook for client {client_id[:8]}")
+    except Exception as e:
+        print(f"[{_ts()}] WARN guided_estimate: pricebook save failed — {e}")
+        # Non-fatal — continue estimate anyway
+
+    # Slug the new job name as the job_type key for this estimate
+    job_type  = _slugify_job_type(name)
+    job_label = name  # use raw name as label — not the slug
+
+    # Resume estimate — advance to ask_price
+    _update_session(session_pk, {
+        ES.JOB_TYPE: job_type,
+        ES.JOB_TYPE_CONFIRMED: True,
+        ES.CURRENT_STEP: "ask_price",
+        ES.STATUS: "awaiting_price",
+        ES.NOTES: None,  # clear sub-flow scratchpad
+    })
+
+    return _reply(
+        f"Added. '{name}' is now in your pricebook at ${price:,.0f} {unit}.\n\n"
+        f"How much for this job?"
     )
 
 

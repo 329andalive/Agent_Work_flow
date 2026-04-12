@@ -7,7 +7,7 @@ Tests cover:
   - Dollar amount parsing (_parse_dollar_amount)
   - Pricing reference text generation (get_pricing_reference)
   - Full state machine happy path via handle_input()
-  - Custom job type path (never dead-ends on unrecognised job)
+  - Add-job-type sub-flow (tech adds unknown job to pricebook mid-estimate)
   - Edge cases: no customer match, cancel, done with no line items, bad price
 
 All DB calls are mocked — no Supabase connection required.
@@ -181,7 +181,6 @@ class TestSlugifyJobType:
         from execution.guided_estimate import _slugify_job_type
         long_input = "a" * 200
         result = _slugify_job_type(long_input)
-        # "custom_" (7) + up to 60 chars
         assert len(result) <= 68
 
 
@@ -236,7 +235,6 @@ class TestGetPricingReference:
 class TestHandleInput:
 
     def _mock_sb(self, table_data: dict = None):
-        """Mock supabase that returns configured data per table name."""
         table_data = table_data or {}
 
         def _make_table(name):
@@ -262,7 +260,7 @@ class TestHandleInput:
         sb.table.side_effect = _make_table
         return sb
 
-    # --- Global: cancel ---
+    # --- Cancel ---
 
     def test_cancel_from_any_state(self):
         from execution.guided_estimate import handle_input
@@ -282,7 +280,7 @@ class TestHandleInput:
             result = handle_input(session, "nevermind", TEST_CLIENT_ID, TEST_EMPLOYEE_ID)
         assert "cancel" in result["reply"].lower()
 
-    # --- S1: ask_customer ---
+    # --- ask_customer ---
 
     def test_customer_not_found(self):
         from execution.guided_estimate import handle_input
@@ -323,7 +321,7 @@ class TestHandleInput:
             result = handle_input(session, "Bob", TEST_CLIENT_ID, TEST_EMPLOYEE_ID)
         assert "1)" in result["reply"] or "1." in result["reply"]
 
-    # --- S2: confirm_customer ---
+    # --- confirm_customer ---
 
     def test_confirm_yes_advances_to_job_type(self):
         from execution.guided_estimate import handle_input
@@ -351,7 +349,7 @@ class TestHandleInput:
             result = handle_input(session, "no", TEST_CLIENT_ID, TEST_EMPLOYEE_ID)
         assert "customer" in result["reply"].lower()
 
-    # --- S6: ask_job_type ---
+    # --- ask_job_type ---
 
     def test_pump_out_keyword_matches(self):
         from execution.guided_estimate import handle_input
@@ -359,49 +357,50 @@ class TestHandleInput:
         sb = self._mock_sb({
             "clients":             [{"trade_vertical": "sewer_drain"}],
             "job_pricing_history": [],
+            "pricebook_items":     [],
         })
         with patch("execution.guided_estimate.get_supabase", return_value=sb):
             result = handle_input(session, "pump out", TEST_CLIENT_ID, TEST_EMPLOYEE_ID)
         assert result["success"] is True
         assert "price" in result["reply"].lower()
 
-    def test_unrecognised_job_type_uses_as_custom(self):
+    def test_unrecognised_job_type_offers_to_add(self):
         """
-        Unknown job types must NEVER dead-end the flow.
-        The tech's text is stored as a custom job type and the flow
-        advances to ask_price — same as any known type.
+        Unknown job types now trigger the add-job-type sub-flow offer,
+        not a dead-end error and not a silent custom slug.
         """
         from execution.guided_estimate import handle_input
         session = _make_session(current_step="ask_job_type", customer_id=TEST_CUSTOMER_ID)
         sb = self._mock_sb({
-            "clients":             [{"trade_vertical": "sewer_drain"}],
-            "job_pricing_history": [],
+            "clients":         [{"trade_vertical": "sewer_drain"}],
+            "pricebook_items": [],
         })
         with patch("execution.guided_estimate.get_supabase", return_value=sb):
             with patch("execution.guided_estimate.call_claude", return_value="other"):
-                result = handle_input(session, "grease trap cleaning", TEST_CLIENT_ID, TEST_EMPLOYEE_ID)
-        # Flow must advance to price step — not error out
+                result = handle_input(session, "culvert replacement", TEST_CLIENT_ID, TEST_EMPLOYEE_ID)
+        assert result["success"] is True
+        assert result["action"] is None
+        # Should ask tech if they want to add it — not dead-end
+        reply = result["reply"].lower()
+        assert "pricebook" in reply or "add" in reply or "don't have" in reply
+
+    def test_unrecognised_no_skips_to_price(self):
+        """
+        If tech says no to adding the job type, flow continues to ask_price
+        using a custom slug — no dead-end.
+        """
+        from execution.guided_estimate import handle_input
+        session = _make_session(
+            current_step="offer_add_job_type",
+            notes=json.dumps({"raw_job_type": "culvert replacement"}),
+            customer_id=TEST_CUSTOMER_ID,
+        )
+        sb = self._mock_sb()
+        with patch("execution.guided_estimate.get_supabase", return_value=sb):
+            result = handle_input(session, "no", TEST_CLIENT_ID, TEST_EMPLOYEE_ID)
         assert result["success"] is True
         assert "price" in result["reply"].lower()
-        assert result["action"] is None  # chip comes at review, not here
-
-    def test_custom_job_type_label_uses_raw_text(self):
-        """
-        The display label in the reply should use the tech's original
-        text (readable), not the internal custom_ slug.
-        """
-        from execution.guided_estimate import handle_input
-        session = _make_session(current_step="ask_job_type", customer_id=TEST_CUSTOMER_ID)
-        sb = self._mock_sb({
-            "clients":             [{"trade_vertical": "sewer_drain"}],
-            "job_pricing_history": [],
-        })
-        with patch("execution.guided_estimate.get_supabase", return_value=sb):
-            with patch("execution.guided_estimate.call_claude", return_value="other"):
-                result = handle_input(session, "grease trap cleaning", TEST_CLIENT_ID, TEST_EMPLOYEE_ID)
-        # "custom_grease_trap_cleaning" must NOT appear in the reply
-        assert "custom_" not in result["reply"].lower()
-        assert "grease trap" in result["reply"].lower()
+        assert result["action"] is None
 
     def test_pricing_reference_shown_when_history_exists(self):
         from execution.guided_estimate import handle_input
@@ -410,12 +409,13 @@ class TestHandleInput:
         sb = self._mock_sb({
             "clients":             [{"trade_vertical": "sewer_drain"}],
             "job_pricing_history": history_rows,
+            "pricebook_items":     [],
         })
         with patch("execution.guided_estimate.get_supabase", return_value=sb):
             result = handle_input(session, "pump out", TEST_CLIENT_ID, TEST_EMPLOYEE_ID)
         assert "$" in result["reply"] or "averaged" in result["reply"]
 
-    # --- S7a: ask_price ---
+    # --- ask_price ---
 
     def test_valid_price_accepted(self):
         from execution.guided_estimate import handle_input
@@ -452,7 +452,7 @@ class TestHandleInput:
         assert result["action"] is None
         assert "price" in result["reply"].lower() or "amount" in result["reply"].lower()
 
-    # --- S8: ask_line_items ---
+    # --- ask_line_items ---
 
     def test_line_item_parsed_and_added(self):
         from execution.guided_estimate import handle_input
@@ -508,7 +508,7 @@ class TestHandleInput:
             result = handle_input(session, "no", TEST_CLIENT_ID, TEST_EMPLOYEE_ID)
         assert "notes" in result["reply"].lower() or "done" in result["reply"].lower()
 
-    # --- S9: ask_notes → review chip ---
+    # --- ask_notes → review chip ---
 
     def test_done_at_notes_produces_chip(self):
         from execution.guided_estimate import handle_input
@@ -553,10 +553,6 @@ class TestHandleInput:
         assert action["endpoint"] == "/pwa/api/job/new"
 
     def test_custom_job_type_chip_strips_prefix(self):
-        """
-        Review chip for a custom job type should show clean label,
-        not the internal custom_ slug.
-        """
         from execution.guided_estimate import handle_input
 
         full_session_row = {
@@ -594,9 +590,209 @@ class TestHandleInput:
         assert result["success"] is True
         action = result["action"]
         assert action is not None
-        # The description sent to proposal_agent must not expose the slug
         assert "custom_" not in action["params"]["description"].lower()
         assert "grease trap" in action["params"]["description"].lower()
+
+
+# ---------------------------------------------------------------------------
+# Add-job-type sub-flow
+# ---------------------------------------------------------------------------
+
+class TestAddJobTypeSubFlow:
+    """
+    Tests for the conversational sub-flow that lets a tech add an unknown
+    job type to their pricebook mid-estimate.
+
+    Flow:
+      ask_job_type (unrecognised)
+        → offer_add_job_type  → yes/no
+        → add_jt_name         → confirm or rename
+        → add_jt_description  → scope description
+        → add_jt_unit         → pricing unit
+        → add_jt_price        → standard price (tech-entered)
+        → add_jt_confirm      → yes → saved to pricebook → ask_price
+    """
+
+    def _mock_sb(self, table_data: dict = None):
+        table_data = table_data or {}
+
+        def _make_table(name):
+            rows = table_data.get(name, [])
+            mock_result = MagicMock()
+            mock_result.data = rows
+            t = MagicMock()
+            for m in ("select", "insert", "update", "eq", "neq", "not_",
+                      "in_", "ilike", "order", "limit", "single"):
+                getattr(t, m).return_value = t
+            t.execute.return_value = mock_result
+            return t
+
+        sb = MagicMock()
+        sb.table.side_effect = _make_table
+        return sb
+
+    def test_offer_yes_advances_to_name(self):
+        from execution.guided_estimate import handle_input
+        session = _make_session(
+            current_step="offer_add_job_type",
+            notes=json.dumps({"raw_job_type": "culvert replacement"}),
+        )
+        sb = self._mock_sb()
+        with patch("execution.guided_estimate.get_supabase", return_value=sb):
+            result = handle_input(session, "yes", TEST_CLIENT_ID, TEST_EMPLOYEE_ID)
+        assert result["success"] is True
+        # Should ask for the name, pre-filling with the raw text
+        assert "culvert replacement" in result["reply"].lower()
+
+    def test_offer_no_skips_to_price(self):
+        from execution.guided_estimate import handle_input
+        session = _make_session(
+            current_step="offer_add_job_type",
+            notes=json.dumps({"raw_job_type": "culvert replacement"}),
+        )
+        sb = self._mock_sb()
+        with patch("execution.guided_estimate.get_supabase", return_value=sb):
+            result = handle_input(session, "no", TEST_CLIENT_ID, TEST_EMPLOYEE_ID)
+        assert result["success"] is True
+        assert "price" in result["reply"].lower()
+        assert result["action"] is None
+
+    def test_add_jt_name_yes_keeps_default(self):
+        from execution.guided_estimate import handle_input
+        session = _make_session(
+            current_step="add_jt_name",
+            notes=json.dumps({"raw_job_type": "culvert replacement", "jt_name": "culvert replacement"}),
+        )
+        sb = self._mock_sb()
+        with patch("execution.guided_estimate.get_supabase", return_value=sb):
+            result = handle_input(session, "yes", TEST_CLIENT_ID, TEST_EMPLOYEE_ID)
+        assert result["success"] is True
+        # Should advance to description
+        assert "description" in result["reply"].lower() or "example" in result["reply"].lower()
+
+    def test_add_jt_name_renames(self):
+        from execution.guided_estimate import handle_input
+        session = _make_session(
+            current_step="add_jt_name",
+            notes=json.dumps({"raw_job_type": "culvert replacement", "jt_name": "culvert replacement"}),
+        )
+        sb = self._mock_sb()
+        with patch("execution.guided_estimate.get_supabase", return_value=sb):
+            result = handle_input(session, "12 inch culvert replacement", TEST_CLIENT_ID, TEST_EMPLOYEE_ID)
+        assert result["success"] is True
+        assert "12 inch culvert" in result["reply"].lower()
+
+    def test_add_jt_description_advances(self):
+        from execution.guided_estimate import handle_input
+        session = _make_session(
+            current_step="add_jt_description",
+            notes=json.dumps({
+                "raw_job_type": "culvert replacement",
+                "jt_name": "12 inch culvert replacement",
+            }),
+        )
+        sb = self._mock_sb()
+        with patch("execution.guided_estimate.get_supabase", return_value=sb):
+            result = handle_input(
+                session,
+                "Install or replace 12 inch culvert at property entrance",
+                TEST_CLIENT_ID,
+                TEST_EMPLOYEE_ID,
+            )
+        assert result["success"] is True
+        # Should ask for pricing unit
+        assert "per" in result["reply"].lower() or "job" in result["reply"].lower()
+
+    def test_add_jt_unit_per_foot(self):
+        from execution.guided_estimate import handle_input
+        session = _make_session(
+            current_step="add_jt_unit",
+            notes=json.dumps({
+                "jt_name": "12 inch culvert replacement",
+                "jt_description": "Install or replace 12 inch culvert",
+            }),
+        )
+        sb = self._mock_sb()
+        with patch("execution.guided_estimate.get_supabase", return_value=sb):
+            result = handle_input(session, "per foot", TEST_CLIENT_ID, TEST_EMPLOYEE_ID)
+        assert result["success"] is True
+        assert "price" in result["reply"].lower()
+        assert "per foot" in result["reply"].lower()
+
+    def test_add_jt_unit_number_shortcut(self):
+        """Tech can type '2' instead of 'per foot'."""
+        from execution.guided_estimate import handle_input
+        session = _make_session(
+            current_step="add_jt_unit",
+            notes=json.dumps({"jt_name": "culvert replacement", "jt_description": "Install culvert"}),
+        )
+        sb = self._mock_sb()
+        with patch("execution.guided_estimate.get_supabase", return_value=sb):
+            result = handle_input(session, "2", TEST_CLIENT_ID, TEST_EMPLOYEE_ID)
+        assert "per foot" in result["reply"].lower()
+
+    def test_add_jt_price_advances_to_confirm(self):
+        from execution.guided_estimate import handle_input
+        session = _make_session(
+            current_step="add_jt_price",
+            notes=json.dumps({
+                "jt_name": "12 inch culvert replacement",
+                "jt_description": "Install or replace 12 inch culvert",
+                "jt_unit": "per foot",
+            }),
+        )
+        sb = self._mock_sb()
+        with patch("execution.guided_estimate.get_supabase", return_value=sb):
+            result = handle_input(session, "60", TEST_CLIENT_ID, TEST_EMPLOYEE_ID)
+        assert result["success"] is True
+        # Should show a summary and ask to confirm
+        assert "60" in result["reply"]
+        assert "add" in result["reply"].lower() or "pricebook" in result["reply"].lower()
+
+    def test_add_jt_confirm_yes_saves_and_resumes(self):
+        """
+        Confirming saves to pricebook and resumes estimate at ask_price.
+        Verifies the flow doesn't end — it asks for the job price.
+        """
+        from execution.guided_estimate import handle_input
+        session = _make_session(
+            current_step="add_jt_confirm",
+            notes=json.dumps({
+                "jt_name": "12 inch culvert replacement",
+                "jt_description": "Install or replace 12 inch culvert",
+                "jt_unit": "per foot",
+                "jt_price": 60.0,
+            }),
+        )
+        sb = self._mock_sb({"pricebook_items": []})
+
+        with patch("execution.guided_estimate.get_supabase", return_value=sb):
+            with patch("execution.db_pricebook.get_supabase", return_value=sb):
+                with patch("execution.db_pricebook.add_job_type", return_value={"id": "new-pb-1"}) as mock_add:
+                    result = handle_input(session, "yes", TEST_CLIENT_ID, TEST_EMPLOYEE_ID)
+
+        assert result["success"] is True
+        # Should confirm the add and ask for this job's price
+        assert "added" in result["reply"].lower() or "pricebook" in result["reply"].lower()
+        assert "price" in result["reply"].lower() or "how much" in result["reply"].lower()
+        assert result["action"] is None  # chip comes at review
+
+    def test_add_jt_confirm_no_restarts_name_step(self):
+        from execution.guided_estimate import handle_input
+        session = _make_session(
+            current_step="add_jt_confirm",
+            notes=json.dumps({
+                "jt_name": "wrong name",
+                "jt_description": "desc",
+                "jt_unit": "per job",
+                "jt_price": 100.0,
+            }),
+        )
+        sb = self._mock_sb()
+        with patch("execution.guided_estimate.get_supabase", return_value=sb):
+            result = handle_input(session, "no", TEST_CLIENT_ID, TEST_EMPLOYEE_ID)
+        assert result["success"] is True
+        assert "name" in result["reply"].lower()
 
 
 # ---------------------------------------------------------------------------
