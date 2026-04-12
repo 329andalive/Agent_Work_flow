@@ -86,8 +86,13 @@ def is_estimate_intent(message: str) -> bool:
 
 _CANCEL_RE = re.compile(r'\b(cancel|stop|nevermind|never mind|abort|quit)\b', re.IGNORECASE)
 _DONE_RE   = re.compile(r'^\s*(done|no|no more|that\'?s?\s*(it|all)|finish|finished)\s*$', re.IGNORECASE)
-_YES_RE    = re.compile(r'^\s*(yes|y|yep|yeah|yup|sure|ok|okay|correct|right)\s*$', re.IGNORECASE)
-_NO_RE     = re.compile(r'^\s*(no|n|nope|nah|skip)\s*$', re.IGNORECASE)
+
+# Bare yes — exact match only (for simple yes/no confirmations)
+_YES_BARE_RE = re.compile(r'^\s*(yes|y|yep|yeah|yup|sure|ok|okay|correct|right)\s*$', re.IGNORECASE)
+# Yes-prefix — "yes add it as...", "yes call it...", "yes name it..."
+_YES_PREFIX_RE = re.compile(r'^\s*(yes|yep|yeah|yup)\b', re.IGNORECASE)
+
+_NO_RE = re.compile(r'^\s*(no|n|nope|nah|skip)\s*$', re.IGNORECASE)
 
 
 def _is_cancel(text: str) -> bool:
@@ -99,11 +104,53 @@ def _is_done(text: str) -> bool:
 
 
 def _is_yes(text: str) -> bool:
-    return bool(_YES_RE.match(text.strip()))
+    """True for bare yes words only — use _is_yes_with_content() for 'yes add it as X'."""
+    return bool(_YES_BARE_RE.match(text.strip()))
+
+
+def _is_yes_prefix(text: str) -> bool:
+    """True if message starts with yes — may carry additional content after it."""
+    return bool(_YES_PREFIX_RE.match(text.strip()))
+
+
+def _yes_remainder(text: str) -> str:
+    """
+    Strip the leading yes word and return the rest.
+    "Yes add it as 12 inch culvert" → "add it as 12 inch culvert"
+    """
+    return _YES_PREFIX_RE.sub("", text.strip()).strip().lstrip(",-").strip()
 
 
 def _is_no(text: str) -> bool:
     return bool(_NO_RE.match(text.strip()))
+
+
+# ---------------------------------------------------------------------------
+# Instruction-vs-price detection
+# ---------------------------------------------------------------------------
+
+# Phrases that signal the tech is giving an instruction, not a price
+_INSTRUCTION_SIGNALS = re.compile(
+    r'\b(add|put|call it|name it|price book|pricebook|wrong|incorrect|change|update|fix)\b',
+    re.IGNORECASE,
+)
+
+# A price-only message is all digits/symbols with no instruction words
+# e.g. "325", "$325", "1,250", "1200.00"
+_PRICE_ONLY_RE = re.compile(r'^\s*\$?[\d,]+(\.\d{1,2})?\s*$')
+
+
+def _looks_like_price(text: str) -> bool:
+    """
+    Return True only if the text looks like a standalone price entry.
+    Rejects messages that contain instruction words even if they have numbers.
+    "Add 12 inch Culvert to the price book" → False (contains "add", "price book")
+    "325" → True
+    "$1,200" → True
+    """
+    if _INSTRUCTION_SIGNALS.search(text):
+        return False
+    return bool(_PRICE_ONLY_RE.match(text.strip()))
 
 
 # ---------------------------------------------------------------------------
@@ -270,9 +317,6 @@ def _classify_job_type(text: str, vertical_key: str = "sewer_drain") -> str | No
             if kw in text_lower:
                 return job_type
 
-    # Also check pricebook_items for this client — catches previously added custom types
-    # (We pass client_id through the session so we can't check here — handled in the handler)
-
     try:
         valid = list(_JOB_TYPE_KEYWORDS.keys()) + ["other"]
         response = call_claude(
@@ -299,7 +343,6 @@ def _find_in_pricebook(client_id: str, text: str) -> dict | None:
     """
     Check if the tech's text fuzzy-matches a job they've previously added
     to their pricebook. This catches custom job types on repeat use.
-    Returns the pricebook item dict, or None.
     """
     try:
         sb = get_supabase()
@@ -519,10 +562,8 @@ def _handle_job_type_input(session: dict, text: str, client_id: str) -> dict:
     except Exception:
         pass
 
-    # Step 1 & 3: keyword + Haiku
     job_type = _classify_job_type(text, vertical_key)
 
-    # Step 2: pricebook fuzzy match (catches custom types from prior sessions)
     if not job_type or job_type == "other":
         pb_item = _find_in_pricebook(client_id, text)
         if pb_item:
@@ -537,19 +578,16 @@ def _handle_job_type_input(session: dict, text: str, client_id: str) -> dict:
             })
             reply = f"{price_ref}\nWhat's your price for the {job_label}?" if price_ref else \
                     f"What's your price for the {job_label}?"
-            # Also include standard price as a reference if set
             if pb_item.get("price_mid"):
                 unit = pb_item.get("unit_of_measure", "per job")
                 reply = f"Standard: ${pb_item['price_mid']:.0f} {unit}.\n{reply}"
             return _reply(reply)
 
-    # Step 4: truly unrecognised — offer to add it
     if not job_type or job_type == "other":
         raw_text = text.strip()
         if not raw_text:
             return _reply("What type of job is this?")
 
-        # Store the raw text so the add sub-flow can use it as a starting point
         _update_session(session_pk, {
             ES.CURRENT_STEP: "offer_add_job_type",
             ES.NOTES: json.dumps({"raw_job_type": raw_text}),
@@ -559,7 +597,6 @@ def _handle_job_type_input(session: dict, text: str, client_id: str) -> dict:
             f"Would you like to add it to your pricebook?"
         )
 
-    # Known job type — proceed normally
     price_ref = get_pricing_reference(client_id, job_type, customer_id)
     _update_session(session_pk, {
         ES.JOB_TYPE: job_type,
@@ -574,7 +611,26 @@ def _handle_job_type_input(session: dict, text: str, client_id: str) -> dict:
 
 
 def _handle_price_input(session: dict, text: str, client_id: str) -> dict:
+    """
+    Accept a price from the tech.
+
+    Guards:
+    - If the text looks like an instruction (contains words like 'add', 'wrong',
+      'price book') rather than a number, reject it clearly and re-ask.
+      This prevents "Add 12 inch Culvert to the price book" from being parsed
+      as $12 because of the "12" in "12 inch".
+    - Rejects zero, negative, and absurdly large values.
+    """
     session_pk = session[ES.ID]
+
+    # Instruction guard — catches "Add 12 inch Culvert to the price book",
+    # "That is the wrong price", "Change it to X", etc.
+    if not _looks_like_price(text):
+        return _reply(
+            "I need a dollar amount for this job. "
+            "What's the price? (e.g. 325, $1200)"
+        )
+
     amount = _parse_dollar_amount(text)
 
     if amount is None:
@@ -721,7 +777,7 @@ def _build_review_chip(session_pk: str, client_id: str, employee_id: str) -> dic
 #
 # State stored in ES.NOTES as JSON during the sub-flow:
 #   {
-#     "raw_job_type":  "culvert replacement",       # tech's original text
+#     "raw_job_type":  "culvert replacement",
 #     "jt_name":       "12 inch culvert replacement",
 #     "jt_description":"Install/replace 12\" culvert",
 #     "jt_unit":       "per foot",
@@ -729,7 +785,6 @@ def _build_review_chip(session_pk: str, client_id: str, employee_id: str) -> dic
 # ---------------------------------------------------------------------------
 
 def _get_add_jt_state(session: dict) -> dict:
-    """Load the add-job-type scratchpad from session notes."""
     try:
         raw = session.get(ES.NOTES) or "{}"
         return json.loads(raw) if isinstance(raw, str) else raw
@@ -742,13 +797,20 @@ def _set_add_jt_state(session_pk: str, data: dict) -> None:
 
 
 def _handle_offer_add_job_type(session: dict, text: str, client_id: str) -> dict:
-    """Tech said yes/no to adding the unknown job type."""
+    """
+    Tech responded to "Would you like to add it to your pricebook?"
+
+    Handles three patterns:
+      - Bare yes/no: "yes", "no"
+      - Yes with inline name: "Yes add it as 12 inch culvert"
+        → skip the name question, use the inline name directly
+      - Anything else: re-ask
+    """
     session_pk = session[ES.ID]
     state = _get_add_jt_state(session)
     raw = state.get("raw_job_type", text.strip())
 
     if _is_no(text):
-        # Tech doesn't want to add it — fall back to custom slug and continue
         job_type  = _slugify_job_type(raw)
         job_label = raw.title()
         _update_session(session_pk, {
@@ -760,27 +822,53 @@ def _handle_offer_add_job_type(session: dict, text: str, client_id: str) -> dict
         })
         return _reply(f"Got it. What's your price for the {job_label}?")
 
-    if _is_yes(text):
-        # Offer the raw text as the default name
-        state["jt_name"] = raw  # pre-fill with what they typed
-        _set_add_jt_state(session_pk, state)
-        _update_session(session_pk, {ES.CURRENT_STEP: "add_jt_name"})
-        return _reply(
-            f"What should we call this job?\n"
-            f"(I'll use '{raw.title()}' if you just say yes)"
+    # "Yes add it as 12 inch culvert" — extract the name from the remainder
+    if _is_yes_prefix(text):
+        remainder = _yes_remainder(text)
+
+        # Extract name from "add it as X", "call it X", "name it X" patterns
+        name_match = re.search(
+            r'\b(?:add it as|call it|name it|as a|as)\s+(.+)$',
+            remainder,
+            re.IGNORECASE,
         )
+        if name_match:
+            inline_name = name_match.group(1).strip().strip('"\'')
+        elif remainder:
+            # Remainder itself is the name — e.g. "yes, 12 inch culvert replacement"
+            inline_name = remainder.strip().strip('"\'')
+        else:
+            inline_name = ""
+
+        if inline_name:
+            # Skip the name question — use inline name, go straight to description
+            state["raw_job_type"] = raw
+            state["jt_name"] = inline_name
+            _set_add_jt_state(session_pk, state)
+            _update_session(session_pk, {ES.CURRENT_STEP: "add_jt_description"})
+            return _reply(
+                f"'{inline_name}' — write a short description for the estimate.\n"
+                f"Example: 'Install or replace culvert at property entrance'"
+            )
+        else:
+            # Bare yes — proceed to name step
+            state["jt_name"] = raw
+            _set_add_jt_state(session_pk, state)
+            _update_session(session_pk, {ES.CURRENT_STEP: "add_jt_name"})
+            return _reply(
+                f"What should we call this job?\n"
+                f"(I'll use '{raw.title()}' if you just say yes)"
+            )
 
     return _reply(f"Add '{raw}' to your job types? (yes or no)")
 
 
 def _handle_add_jt_name(session: dict, text: str, client_id: str) -> dict:
-    """Tech confirms or renames the job type."""
     session_pk = session[ES.ID]
     state = _get_add_jt_state(session)
     raw_default = state.get("jt_name") or state.get("raw_job_type", "")
 
     if _is_yes(text):
-        # Keep the default name
         name = raw_default.strip()
     else:
         name = text.strip()
@@ -799,7 +887,6 @@ def _handle_add_jt_name(session: dict, text: str, client_id: str) -> dict:
 
 
 def _handle_add_jt_description(session: dict, text: str, client_id: str) -> dict:
-    """Tech provides the scope description."""
     session_pk = session[ES.ID]
     state = _get_add_jt_state(session)
 
@@ -830,7 +917,6 @@ _UNIT_MAP = {
 
 
 def _handle_add_jt_unit(session: dict, text: str, client_id: str) -> dict:
-    """Tech sets the pricing unit."""
     session_pk = session[ES.ID]
     state = _get_add_jt_state(session)
 
@@ -846,7 +932,6 @@ def _handle_add_jt_unit(session: dict, text: str, client_id: str) -> dict:
 
 
 def _handle_add_jt_price(session: dict, text: str, client_id: str) -> dict:
-    """Tech enters the standard price for this job type."""
     session_pk = session[ES.ID]
     state = _get_add_jt_state(session)
 
@@ -872,12 +957,10 @@ def _handle_add_jt_price(session: dict, text: str, client_id: str) -> dict:
 
 
 def _handle_add_jt_confirm(session: dict, text: str, client_id: str) -> dict:
-    """Tech confirms the new job type — save to pricebook and resume estimate."""
     session_pk = session[ES.ID]
     state = _get_add_jt_state(session)
 
     if _is_no(text):
-        # Start the sub-flow over
         _update_session(session_pk, {ES.CURRENT_STEP: "add_jt_name"})
         return _reply("No problem — what's the job name?")
 
@@ -893,7 +976,6 @@ def _handle_add_jt_confirm(session: dict, text: str, client_id: str) -> dict:
         _update_session(session_pk, {ES.CURRENT_STEP: "add_jt_name"})
         return _reply("Something went wrong — let's try again. What's the job name?")
 
-    # Save to pricebook
     try:
         from execution.db_pricebook import add_job_type
         add_job_type(
@@ -906,19 +988,15 @@ def _handle_add_jt_confirm(session: dict, text: str, client_id: str) -> dict:
         print(f"[{_ts()}] INFO guided_estimate: Added job type '{name}' to pricebook for client {client_id[:8]}")
     except Exception as e:
         print(f"[{_ts()}] WARN guided_estimate: pricebook save failed — {e}")
-        # Non-fatal — continue estimate anyway
 
-    # Slug the new job name as the job_type key for this estimate
     job_type  = _slugify_job_type(name)
-    job_label = name  # use raw name as label — not the slug
 
-    # Resume estimate — advance to ask_price
     _update_session(session_pk, {
         ES.JOB_TYPE: job_type,
         ES.JOB_TYPE_CONFIRMED: True,
         ES.CURRENT_STEP: "ask_price",
         ES.STATUS: "awaiting_price",
-        ES.NOTES: None,  # clear sub-flow scratchpad
+        ES.NOTES: None,
     })
 
     return _reply(
