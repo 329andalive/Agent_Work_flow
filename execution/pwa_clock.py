@@ -205,11 +205,23 @@ def clock_out(client_id: str, employee_id: str) -> dict:
 
     _update_schedule_status(schedule_id, "completed")
 
+    # Flag any unfinished jobs on today's route as carry_forward
+    # so the planner surfaces them at the top of the queue.
+    carry_ids = []
+    try:
+        from execution.dispatch_chain import carry_forward_unfinished
+        carry_ids = carry_forward_unfinished(client_id, employee_id)
+        if carry_ids:
+            print(f"[{_ts()}] INFO pwa_clock: {len(carry_ids)} job(s) carried forward at clock-out for {employee_id[:8]}")
+    except Exception as e:
+        print(f"[{_ts()}] WARN pwa_clock: carry_forward_unfinished failed — {e}")
+
     print(f"[{_ts()}] INFO pwa_clock: Clock-out success for employee={employee_id} duration={duration_minutes}min")
     return {
         "success": True,
         "entry_id": entry_id,
         "duration_minutes": duration_minutes,
         "duration_label": _fmt_duration(duration_minutes),
+        "carried_forward": len(carry_ids),
         "error": None,
     }

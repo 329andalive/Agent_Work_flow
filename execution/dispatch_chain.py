@@ -231,6 +231,76 @@ def _end_job(job_id: str) -> None:
         print(f"[{timestamp()}] ERROR dispatch_chain: _end_job failed — {e}")
 
 
+def carry_forward_unfinished(client_id: str, worker_id: str) -> list:
+    """
+    Called at clock-out. Finds any jobs on today's route that were not
+    completed and marks them carry_forward so the planner surfaces them
+    at the top of tomorrow's unscheduled queue.
+
+    A job is considered unfinished if:
+      - It has no job_end (not marked done)
+      - Its dispatch_status is not already 'completed', 'carry_forward',
+        'no_show', or 'cancelled'
+
+    Returns:
+        List of job_ids that were flipped to carry_forward.
+    """
+    try:
+        sb = get_supabase()
+        today_str = date.today().isoformat()
+
+        # Get all job_ids assigned to this worker today
+        assignments = sb.table("route_assignments").select(
+            "job_id"
+        ).eq("worker_id", worker_id).eq("client_id", client_id).execute()
+
+        if not assignments.data:
+            return []
+
+        job_ids = [a["job_id"] for a in assignments.data]
+
+        # Find jobs on today's date that are unfinished
+        jobs_result = sb.table("jobs").select(
+            "id, job_end, dispatch_status, status"
+        ).in_("id", job_ids).eq(
+            "scheduled_date", today_str
+        ).execute()
+
+        if not jobs_result.data:
+            return []
+
+        # Statuses that mean the job is already resolved — don't touch them
+        resolved = {"completed", "carry_forward", "no_show", "cancelled"}
+
+        carry_ids = []
+        for job in jobs_result.data:
+            if job.get("job_end"):
+                continue   # has an end time — it's done
+            if job.get("dispatch_status") in resolved:
+                continue   # already handled
+            carry_ids.append(job["id"])
+
+        if not carry_ids:
+            print(f"[{timestamp()}] INFO dispatch_chain: carry_forward — all jobs done for worker {worker_id[:8]}")
+            return []
+
+        # Flip each unfinished job to carry_forward
+        sb.table("jobs").update({
+            "dispatch_status": "carry_forward",
+        }).in_("id", carry_ids).execute()
+
+        print(
+            f"[{timestamp()}] INFO dispatch_chain: carry_forward — "
+            f"{len(carry_ids)} job(s) flagged for worker {worker_id[:8]}: "
+            f"{[jid[:8] for jid in carry_ids]}"
+        )
+        return carry_ids
+
+    except Exception as e:
+        print(f"[{timestamp()}] ERROR dispatch_chain: carry_forward_unfinished failed — {e}")
+        return []
+
+
 def resolve_job(route: list, identifier: str) -> dict | None:
     """
     Resolve a job from today's route by number, customer name, or address.
