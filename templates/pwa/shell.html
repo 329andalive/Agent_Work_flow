@@ -48,6 +48,7 @@
       transition:background .15s,transform .1s;
       display:flex;flex-direction:column;align-items:center;gap:8px;
       min-height:110px;justify-content:center;
+      cursor:pointer;
     }
     .nav-tile:active{transform:scale(0.97)}
     .nav-tile:hover{background:rgba(255,255,255,.1)}
@@ -58,6 +59,13 @@
       content:"soon";font-size:10px;color:#f59e0b;
       text-transform:uppercase;letter-spacing:.06em;
     }
+    /* Job tracker tile gets a distinct amber tint to stand out */
+    .nav-tile.job-tracker{
+      background:rgba(245,158,11,.1);
+      border-color:rgba(245,158,11,.25);
+    }
+    .nav-tile.job-tracker:hover{background:rgba(245,158,11,.18)}
+    .nav-tile.job-tracker .label{color:#f59e0b}
     .install-hint{
       background:rgba(245,158,11,.12);
       border:1px solid rgba(245,158,11,.3);
@@ -97,10 +105,15 @@
         <div class="icon">&#9201;</div>
         <div class="label">Clock In / Out</div>
       </a>
-      <a href="/pwa/job" class="nav-tile">
-        <div class="icon">&#128221;</div>
-        <div class="label">New Job</div>
+
+      <!-- Job Tracker — replaces New Job button.
+           Navigates to chat and fires the job log intent automatically
+           so the foreman lands directly in the job selection flow. -->
+      <a href="/pwa/chat?intent=job_log" class="nav-tile job-tracker" id="job-tracker-tile">
+        <div class="icon">&#128197;</div>
+        <div class="label">Job Tracker</div>
       </a>
+
       <a href="/pwa/route" class="nav-tile">
         <div class="icon">&#128737;</div>
         <div class="label">Today's Route</div>

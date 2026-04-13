@@ -90,7 +90,7 @@
     }
     .msg.user .ts{text-align:right}
 
-    /* Action chip — sits below the assistant bubble */
+    /* Action chip */
     .chip{
       align-self:flex-start;
       margin-top:6px;
@@ -197,7 +197,6 @@
     .send-btn:active{transform:scale(.95)}
     .send-btn:disabled{opacity:.4;cursor:not-allowed}
 
-    /* Voice input mic button — same size as send, sits before the textarea */
     .mic-btn{
       width:44px;height:44px;flex-shrink:0;
       border:none;border-radius:50%;
@@ -205,7 +204,7 @@
       color:#fff;
       font-size:20px;
       cursor:pointer;
-      display:none; /* JS reveals if Web Speech API is available */
+      display:none;
       align-items:center;justify-content:center;
       transition:background .15s,transform .1s;
     }
@@ -287,7 +286,6 @@ function appendMessage(role, content, ts, isError, action){
     col.appendChild(t);
   }
 
-  // Action chip — only on assistant messages, only when present
   if(role === 'assistant' && action && action.type){
     var chip = renderChip(action);
     if(chip) col.appendChild(chip);
@@ -297,10 +295,6 @@ function appendMessage(role, content, ts, isError, action){
   document.getElementById('messages').appendChild(wrap);
   scrollToBottom();
 }
-
-// ---------------------------------------------------------------------------
-// Action chips — server-validated, server-decorated. We just render and POST.
-// ---------------------------------------------------------------------------
 
 function renderChip(action){
   var btn = document.createElement('button');
@@ -348,8 +342,6 @@ async function tapChip(btn, action){
       return;
     }
 
-    // Success — transform the chip into a follow-up link if we have one,
-    // otherwise show a green "done" pill in place of the button.
     var followUrl = d.review_url || d.html_url || d.url || null;
     if(followUrl){
       var link = document.createElement('a');
@@ -403,14 +395,10 @@ async function loadHistory(){
 
     SESSION_ID = d.session_id;
     if(d.messages && d.messages.length){
-      // Remove the empty state
       var hide = document.getElementById('empty-state');
       if(hide) hide.remove();
 
       d.messages.forEach(function(m){
-        // Action chips are persisted on assistant messages in metadata.action.
-        // We re-render them on history load so a tech who closes and re-opens
-        // the chat still sees the chip (until they tap or it goes stale).
         var act = (m.metadata && m.metadata.action) || null;
         appendMessage(m.role, m.content, m.created_at, false, act);
       });
@@ -420,16 +408,17 @@ async function loadHistory(){
   }
 }
 
-async function sendMessage(){
+async function sendMessage(overrideText){
   var input = document.getElementById('input');
   var btn = document.getElementById('send-btn');
-  var text = input.value.trim();
+  var text = overrideText !== undefined ? overrideText : input.value.trim();
   if(!text) return;
 
-  // Show user bubble immediately
   appendMessage('user', text, new Date().toISOString(), false);
-  input.value = '';
-  autosizeInput();
+  if(overrideText === undefined){
+    input.value = '';
+    autosizeInput();
+  }
   btn.disabled = true;
 
   appendTyping();
@@ -452,7 +441,7 @@ async function sendMessage(){
     appendMessage('assistant', "Connection error. Try again in a moment.", new Date().toISOString(), true);
   }finally{
     btn.disabled = false;
-    input.focus();
+    if(overrideText === undefined) input.focus();
   }
 }
 
@@ -462,7 +451,6 @@ function autosizeInput(){
   input.style.height = Math.min(input.scrollHeight, 120) + 'px';
 }
 
-// Wire events
 document.getElementById('composer').addEventListener('submit', function(e){
   e.preventDefault();
   sendMessage();
@@ -471,7 +459,6 @@ document.getElementById('composer').addEventListener('submit', function(e){
 document.getElementById('input').addEventListener('input', autosizeInput);
 
 document.getElementById('input').addEventListener('keydown', function(e){
-  // Enter to send (Shift+Enter for newline)
   if(e.key === 'Enter' && !e.shiftKey){
     e.preventDefault();
     sendMessage();
@@ -479,9 +466,7 @@ document.getElementById('input').addEventListener('keydown', function(e){
 });
 
 // ---------------------------------------------------------------------------
-// Voice input (Web Speech API) — push-to-talk into the textarea.
-// We do NOT auto-send the transcript. The tech can edit/correct first.
-// Hidden entirely if the browser doesn't support speech recognition.
+// Voice input
 // ---------------------------------------------------------------------------
 
 (function setupVoice(){
@@ -532,7 +517,6 @@ document.getElementById('input').addEventListener('keydown', function(e){
     transcript = transcript.trim();
     if(!transcript) return;
 
-    // Append to whatever's already in the textarea (don't overwrite)
     var current = input.value.trim();
     input.value = current ? (current + ' ' + transcript) : transcript;
     autosizeInput();
@@ -545,7 +529,6 @@ document.getElementById('input').addEventListener('keydown', function(e){
   };
 
   rec.onend = function(){
-    // Browser ended the session — make sure UI matches
     listening = false;
     micBtn.classList.remove('recording');
     micBtn.setAttribute('aria-label', 'Voice input');
@@ -553,9 +536,7 @@ document.getElementById('input').addEventListener('keydown', function(e){
 })();
 
 // ---------------------------------------------------------------------------
-// New Chat button — start a fresh session without dropping any history rows.
-// The backend mints a new session_id and stores it as a Flask-session
-// override, so subsequent /send + /messages calls automatically pick it up.
+// New Chat button
 // ---------------------------------------------------------------------------
 
 async function newChat(){
@@ -569,8 +550,6 @@ async function newChat(){
 
     SESSION_ID = d.session_id;
 
-    // Clear the message display and restore the empty state — old messages
-    // remain in pwa_chat_messages, just no longer attached to the active session.
     var m = document.getElementById('messages');
     m.innerHTML =
       '<div class="empty" id="empty-state">' +
@@ -579,7 +558,6 @@ async function newChat(){
         'I can answer questions and (soon) trigger actions.' +
       '</div>';
 
-    // Reset the composer
     var input = document.getElementById('input');
     input.value = '';
     autosizeInput();
@@ -593,8 +571,32 @@ async function newChat(){
 
 document.getElementById('new-chat-btn').addEventListener('click', newChat);
 
-// Initial load
-loadHistory();
+// ---------------------------------------------------------------------------
+// Intent auto-fire — triggered when arriving from the Job Tracker button.
+//
+// If the URL contains ?intent=job_log, wait for history to load then
+// automatically send the trigger phrase into the chat. This kicks the
+// job_log state machine without the foreman having to type anything.
+// The URL param is stripped after firing so a page refresh doesn't
+// repeat it.
+// ---------------------------------------------------------------------------
+
+function checkIntentParam(){
+  var params = new URLSearchParams(window.location.search);
+  var intent = params.get('intent');
+  if(intent === 'job_log'){
+    // Clean the URL immediately so refresh doesn't re-fire
+    var cleanUrl = window.location.pathname;
+    window.history.replaceState({}, '', cleanUrl);
+    // Short delay so history loads first and session_id is set
+    setTimeout(function(){
+      sendMessage('start job log');
+    }, 600);
+  }
+}
+
+// Initial load — then check for intent param
+loadHistory().then(checkIntentParam);
 </script>
 </body>
 </html>
