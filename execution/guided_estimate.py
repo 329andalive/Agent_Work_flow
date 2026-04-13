@@ -14,6 +14,12 @@ State flow:
       ask_customer           → confirm_customer → ask_job_type → ask_price
                                → ask_line_items → ask_notes → review chip
 
+      New customer sub-flow (triggered by typing 'new' at ask_customer):
+      add_new_customer       → tech types customer name
+      ask_customer_phone     → tech types phone number (E.164 normalized)
+      ask_customer_address   → tech types address (or 'skip')
+                               → customer created in DB → advance to ask_job_type
+
     Add-job-type sub-flow (triggered when job type is unrecognised):
       offer_add_job_type     → tech says yes/no
       add_jt_name            → tech confirms or renames the job
@@ -87,12 +93,15 @@ def is_estimate_intent(message: str) -> bool:
 _CANCEL_RE = re.compile(r'\b(cancel|stop|nevermind|never mind|abort|quit)\b', re.IGNORECASE)
 _DONE_RE   = re.compile(r'^\s*(done|no|no more|that\'?s?\s*(it|all)|finish|finished)\s*$', re.IGNORECASE)
 
-# Bare yes — exact match only (for simple yes/no confirmations)
-_YES_BARE_RE = re.compile(r'^\s*(yes|y|yep|yeah|yup|sure|ok|okay|correct|right)\s*$', re.IGNORECASE)
-# Yes-prefix — "yes add it as...", "yes call it...", "yes name it..."
+_YES_BARE_RE   = re.compile(r'^\s*(yes|y|yep|yeah|yup|sure|ok|okay|correct|right)\s*$', re.IGNORECASE)
 _YES_PREFIX_RE = re.compile(r'^\s*(yes|yep|yeah|yup)\b', re.IGNORECASE)
+_NO_RE         = re.compile(r'^\s*(no|n|nope|nah|skip)\s*$', re.IGNORECASE)
 
-_NO_RE = re.compile(r'^\s*(no|n|nope|nah|skip)\s*$', re.IGNORECASE)
+# "new" command — triggers add-new-customer flow at the ask_customer step
+_NEW_CUSTOMER_RE = re.compile(
+    r'^\s*(new|new customer|add new|add customer|add a new|add)\s*$',
+    re.IGNORECASE,
+)
 
 
 def _is_cancel(text: str) -> bool:
@@ -104,20 +113,14 @@ def _is_done(text: str) -> bool:
 
 
 def _is_yes(text: str) -> bool:
-    """True for bare yes words only — use _is_yes_with_content() for 'yes add it as X'."""
     return bool(_YES_BARE_RE.match(text.strip()))
 
 
 def _is_yes_prefix(text: str) -> bool:
-    """True if message starts with yes — may carry additional content after it."""
     return bool(_YES_PREFIX_RE.match(text.strip()))
 
 
 def _yes_remainder(text: str) -> str:
-    """
-    Strip the leading yes word and return the rest.
-    "Yes add it as 12 inch culvert" → "add it as 12 inch culvert"
-    """
     return _YES_PREFIX_RE.sub("", text.strip()).strip().lstrip(",-").strip()
 
 
@@ -125,32 +128,42 @@ def _is_no(text: str) -> bool:
     return bool(_NO_RE.match(text.strip()))
 
 
+def _is_new_customer(text: str) -> bool:
+    return bool(_NEW_CUSTOMER_RE.match(text.strip()))
+
+
 # ---------------------------------------------------------------------------
 # Instruction-vs-price detection
 # ---------------------------------------------------------------------------
 
-# Phrases that signal the tech is giving an instruction, not a price
 _INSTRUCTION_SIGNALS = re.compile(
     r'\b(add|put|call it|name it|price book|pricebook|wrong|incorrect|change|update|fix)\b',
     re.IGNORECASE,
 )
-
-# A price-only message is all digits/symbols with no instruction words
-# e.g. "325", "$325", "1,250", "1200.00"
 _PRICE_ONLY_RE = re.compile(r'^\s*\$?[\d,]+(\.\d{1,2})?\s*$')
 
 
 def _looks_like_price(text: str) -> bool:
-    """
-    Return True only if the text looks like a standalone price entry.
-    Rejects messages that contain instruction words even if they have numbers.
-    "Add 12 inch Culvert to the price book" → False (contains "add", "price book")
-    "325" → True
-    "$1,200" → True
-    """
     if _INSTRUCTION_SIGNALS.search(text):
         return False
     return bool(_PRICE_ONLY_RE.match(text.strip()))
+
+
+# ---------------------------------------------------------------------------
+# Phone normalization
+# ---------------------------------------------------------------------------
+
+def _normalize_phone(raw: str) -> str:
+    if not raw:
+        return ""
+    digits = re.sub(r"\D", "", raw)
+    if len(digits) == 10:
+        return f"+1{digits}"
+    if len(digits) == 11 and digits.startswith("1"):
+        return f"+{digits}"
+    if digits:
+        return f"+{digits}"
+    return ""
 
 
 # ---------------------------------------------------------------------------
@@ -278,6 +291,31 @@ def _find_customers(client_id: str, query: str) -> list[dict]:
         return []
 
 
+def _create_customer(client_id: str, name: str, phone: str,
+                     address: str | None = None) -> str | None:
+    """
+    Create a new customer record and return their UUID.
+    Phone is required (HARD RULE #1).
+    """
+    try:
+        sb = get_supabase()
+        row = {
+            C.CLIENT_ID:       client_id,
+            C.CUSTOMER_NAME:   name.strip(),
+            C.CUSTOMER_PHONE:  phone,
+            C.SMS_CONSENT:     False,
+        }
+        if address:
+            row[C.CUSTOMER_ADDRESS] = address.strip()
+        result = sb.table(C.TABLE).insert(row).execute()
+        if result.data:
+            return result.data[0][C.ID]
+        return None
+    except Exception as e:
+        print(f"[{_ts()}] ERROR guided_estimate: _create_customer failed — {e}")
+        return None
+
+
 # ---------------------------------------------------------------------------
 # Job type classification — keyword-first, Haiku fallback
 # ---------------------------------------------------------------------------
@@ -296,20 +334,12 @@ _JOB_TYPE_KEYWORDS = {
 
 
 def _slugify_job_type(text: str) -> str:
-    """
-    Convert free-form tech input to a clean job_type key.
-    "Grease trap cleaning" → "custom_grease_trap_cleaning"
-    """
     slug = re.sub(r"[^a-z0-9]+", "_", text.lower().strip()).strip("_")
     slug = re.sub(r"_+", "_", slug)[:60]
     return f"custom_{slug}" if slug else "custom_job"
 
 
 def _classify_job_type(text: str, vertical_key: str = "sewer_drain") -> str | None:
-    """
-    Keyword-first, Haiku fallback.
-    Returns a known job_type key, or None if unrecognised.
-    """
     text_lower = text.lower()
 
     for job_type, keywords in _JOB_TYPE_KEYWORDS.items():
@@ -340,10 +370,6 @@ def _classify_job_type(text: str, vertical_key: str = "sewer_drain") -> str | No
 
 
 def _find_in_pricebook(client_id: str, text: str) -> dict | None:
-    """
-    Check if the tech's text fuzzy-matches a job they've previously added
-    to their pricebook. This catches custom job types on repeat use.
-    """
     try:
         sb = get_supabase()
         result = sb.table("pricebook_items").select(
@@ -409,6 +435,15 @@ def handle_input(session: dict, user_message: str,
         return _handle_customer_confirm(session, user_message, client_id)
     if current_step == "disambiguate_customer":
         return _handle_customer_disambiguate(session, user_message, client_id)
+
+    # New customer sub-flow
+    if current_step == "add_new_customer":
+        return _handle_add_new_customer(session, user_message, client_id)
+    if current_step == "ask_customer_phone":
+        return _handle_ask_customer_phone(session, user_message, client_id)
+    if current_step == "ask_customer_address":
+        return _handle_ask_customer_address(session, user_message, client_id)
+
     if current_step == "ask_job_type":
         return _handle_job_type_input(session, user_message, client_id)
     if current_step == "ask_price":
@@ -441,7 +476,22 @@ def handle_input(session: dict, user_message: str,
 # ---------------------------------------------------------------------------
 
 def _handle_customer_input(session: dict, text: str, client_id: str) -> dict:
+    """
+    Look up a customer by name. Intercepts 'new' before the DB lookup
+    so the tech can add a new customer mid-flow without dead-ending.
+    """
     session_pk = session[ES.ID]
+
+    # Intercept 'new' / 'new customer' / 'add' before any DB lookup.
+    # Without this guard, "new" gets passed to _find_customers() which
+    # searches for a customer literally named "New" and finds nothing.
+    if _is_new_customer(text):
+        _update_session(session_pk, {
+            ES.CURRENT_STEP: "add_new_customer",
+            ES.NOTES: json.dumps({}),
+        })
+        return _reply("New customer — what's their name?")
+
     matches = _find_customers(client_id, text)
 
     if not matches:
@@ -529,16 +579,117 @@ def _handle_customer_disambiguate(session: dict, text: str, client_id: str) -> d
             })
             return _reply(f"Found {name}{addr_part}. Correct?")
 
-    if stripped.lower() == "new":
+    if _is_new_customer(stripped):
         _update_session(session_pk, {
-            ES.CURRENT_STEP: "ask_customer",
-            ES.STATUS: "gathering",
-            ES.NOTES: json.dumps({"create_new": True}),
+            ES.CURRENT_STEP: "add_new_customer",
+            ES.NOTES: json.dumps({}),
         })
         return _reply("New customer — what's their name?")
 
     return _reply(f"Pick a number (1–{len(candidates)}) or type 'new'.")
 
+
+# ---------------------------------------------------------------------------
+# New customer sub-flow
+#
+# Triggered when the tech types 'new' at the ask_customer step.
+# Collects name → phone → address (optional) → creates customer in DB
+# → advances to ask_job_type with the new customer_id set.
+#
+# State stored in ES.NOTES as JSON:
+#   { "new_name": "Michael Jackson", "new_phone": "+12075551234" }
+# ---------------------------------------------------------------------------
+
+def _handle_add_new_customer(session: dict, text: str, client_id: str) -> dict:
+    """Tech typed the new customer's name."""
+    session_pk = session[ES.ID]
+    name = text.strip()
+
+    if not name or len(name) < 2:
+        return _reply("What's the customer's name?")
+
+    _update_session(session_pk, {
+        ES.CURRENT_STEP: "ask_customer_phone",
+        ES.NOTES: json.dumps({"new_name": name}),
+    })
+    return _reply(f"{name} — what's their phone number?")
+
+
+def _handle_ask_customer_phone(session: dict, text: str, client_id: str) -> dict:
+    """Tech typed the new customer's phone number."""
+    session_pk = session[ES.ID]
+
+    try:
+        stored = json.loads(session.get(ES.NOTES) or "{}")
+    except Exception:
+        stored = {}
+
+    phone = _normalize_phone(text.strip())
+    if not phone:
+        return _reply(
+            "I didn't catch a valid phone number. "
+            "Enter it like: 207-555-1234 or 2075551234"
+        )
+
+    stored["new_phone"] = phone
+    _update_session(session_pk, {
+        ES.CURRENT_STEP: "ask_customer_address",
+        ES.NOTES: json.dumps(stored),
+    })
+    name = stored.get("new_name", "the customer")
+    return _reply(f"Got it. What's {name}'s address? (or 'skip')")
+
+
+def _handle_ask_customer_address(session: dict, text: str,
+                                  client_id: str) -> dict:
+    """Tech typed the address (or 'skip'). Create the customer and advance."""
+    session_pk = session[ES.ID]
+
+    try:
+        stored = json.loads(session.get(ES.NOTES) or "{}")
+    except Exception:
+        stored = {}
+
+    name  = stored.get("new_name", "")
+    phone = stored.get("new_phone", "")
+
+    skip_words = {"skip", "no", "none", "-", "n/a"}
+    address = None if text.strip().lower() in skip_words else text.strip()
+
+    if not name or not phone:
+        # Something went wrong — restart the sub-flow
+        _update_session(session_pk, {
+            ES.CURRENT_STEP: "add_new_customer",
+            ES.NOTES: json.dumps({}),
+        })
+        return _reply("Let's try again — what's the customer's name?")
+
+    # Create the customer
+    customer_id = _create_customer(client_id, name, phone, address)
+    if not customer_id:
+        return _reply(
+            "Something went wrong creating the customer. "
+            "Try again or type 'cancel'."
+        )
+
+    print(f"[{_ts()}] INFO guided_estimate: Created customer '{name}' {phone} for client {client_id[:8]}")
+
+    # Advance to job type with new customer set
+    _update_session(session_pk, {
+        ES.CUSTOMER_ID:        customer_id,
+        ES.CUSTOMER_CONFIRMED: True,
+        ES.CURRENT_STEP:       "ask_job_type",
+        ES.STATUS:             "gathering",
+        ES.NOTES:              None,
+    })
+
+    addr_str = f" at {address}" if address else ""
+    return _reply(f"Added {name}{addr_str}. What type of job?")
+
+
+# ---------------------------------------------------------------------------
+# Job type handling
+# ---------------------------------------------------------------------------
 
 def _handle_job_type_input(session: dict, text: str, client_id: str) -> dict:
     """
@@ -611,20 +762,8 @@ def _handle_job_type_input(session: dict, text: str, client_id: str) -> dict:
 
 
 def _handle_price_input(session: dict, text: str, client_id: str) -> dict:
-    """
-    Accept a price from the tech.
-
-    Guards:
-    - If the text looks like an instruction (contains words like 'add', 'wrong',
-      'price book') rather than a number, reject it clearly and re-ask.
-      This prevents "Add 12 inch Culvert to the price book" from being parsed
-      as $12 because of the "12" in "12 inch".
-    - Rejects zero, negative, and absurdly large values.
-    """
     session_pk = session[ES.ID]
 
-    # Instruction guard — catches "Add 12 inch Culvert to the price book",
-    # "That is the wrong price", "Change it to X", etc.
     if not _looks_like_price(text):
         return _reply(
             "I need a dollar amount for this job. "
@@ -769,19 +908,6 @@ def _build_review_chip(session_pk: str, client_id: str, employee_id: str) -> dic
 
 # ---------------------------------------------------------------------------
 # Add-job-type sub-flow
-#
-# Triggered when the tech enters a job type the system doesn't recognise.
-# Walks them through naming it, writing a description, setting the unit,
-# and entering the standard price — then saves it to pricebook_items so
-# it exists on every future estimate.
-#
-# State stored in ES.NOTES as JSON during the sub-flow:
-#   {
-#     "raw_job_type":  "culvert replacement",
-#     "jt_name":       "12 inch culvert replacement",
-#     "jt_description":"Install/replace 12\" culvert",
-#     "jt_unit":       "per foot",
-#   }
 # ---------------------------------------------------------------------------
 
 def _get_add_jt_state(session: dict) -> dict:
@@ -797,15 +923,6 @@ def _set_add_jt_state(session_pk: str, data: dict) -> None:
 
 
 def _handle_offer_add_job_type(session: dict, text: str, client_id: str) -> dict:
-    """
-    Tech responded to "Would you like to add it to your pricebook?"
-
-    Handles three patterns:
-      - Bare yes/no: "yes", "no"
-      - Yes with inline name: "Yes add it as 12 inch culvert"
-        → skip the name question, use the inline name directly
-      - Anything else: re-ask
-    """
     session_pk = session[ES.ID]
     state = _get_add_jt_state(session)
     raw = state.get("raw_job_type", text.strip())
@@ -822,11 +939,9 @@ def _handle_offer_add_job_type(session: dict, text: str, client_id: str) -> dict
         })
         return _reply(f"Got it. What's your price for the {job_label}?")
 
-    # "Yes add it as 12 inch culvert" — extract the name from the remainder
     if _is_yes_prefix(text):
         remainder = _yes_remainder(text)
 
-        # Extract name from "add it as X", "call it X", "name it X" patterns
         name_match = re.search(
             r'\b(?:add it as|call it|name it|as a|as)\s+(.+)$',
             remainder,
@@ -835,13 +950,11 @@ def _handle_offer_add_job_type(session: dict, text: str, client_id: str) -> dict
         if name_match:
             inline_name = name_match.group(1).strip().strip('"\'')
         elif remainder:
-            # Remainder itself is the name — e.g. "yes, 12 inch culvert replacement"
             inline_name = remainder.strip().strip('"\'')
         else:
             inline_name = ""
 
         if inline_name:
-            # Skip the name question — use inline name, go straight to description
             state["raw_job_type"] = raw
             state["jt_name"] = inline_name
             _set_add_jt_state(session_pk, state)
@@ -851,7 +964,6 @@ def _handle_offer_add_job_type(session: dict, text: str, client_id: str) -> dict
                 f"Example: 'Install or replace culvert at property entrance'"
             )
         else:
-            # Bare yes — proceed to name step
             state["jt_name"] = raw
             _set_add_jt_state(session_pk, state)
             _update_session(session_pk, {ES.CURRENT_STEP: "add_jt_name"})
@@ -989,7 +1101,7 @@ def _handle_add_jt_confirm(session: dict, text: str, client_id: str) -> dict:
     except Exception as e:
         print(f"[{_ts()}] WARN guided_estimate: pricebook save failed — {e}")
 
-    job_type  = _slugify_job_type(name)
+    job_type = _slugify_job_type(name)
 
     _update_session(session_pk, {
         ES.JOB_TYPE: job_type,
