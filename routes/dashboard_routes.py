@@ -2529,7 +2529,7 @@ def api_reschedule_job():
 # ---------------------------------------------------------------------------
 
 @dashboard_bp.route("/api/work-orders/create", methods=["POST"])
-def api_create_work_order():
+def api_create_work_order_planner():
     """Create a work order from the Planner Quick-Add panel."""
     client_id = _resolve_client_id()
     if not client_id:
