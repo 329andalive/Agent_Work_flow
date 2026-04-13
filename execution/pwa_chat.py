@@ -404,6 +404,32 @@ def chat(
             # than breaking the chat entirely. Log it prominently.
             print(f"[{_ts()}] ERROR pwa_chat: guided_estimate intercept failed — {e}")
 
+     # ------------------------------------------------------------------
+    # Guided job log intercept — runs BEFORE any Claude call.
+    #
+    # If there is an active job log session for this chat session, all
+    # input goes to the state machine.
+    #
+    if session_id:
+        try:
+            from execution.job_log import (
+                get_active_session as get_active_log_session,
+                handle_input as handle_log_input,
+                start as start_log,
+                is_job_log_intent,
+                check_missed_log,
+            )
+            active_log = get_active_log_session(client_id, employee_id, session_id)
+            if active_log:
+                print(f"[{_ts()}] INFO pwa_chat: routing to job_log (session active)")
+                return handle_log_input(active_log, user_message, client_id, employee_id)
+            if is_job_log_intent(user_message):
+                print(f"[{_ts()}] INFO pwa_chat: job log intent detected")
+                missed = check_missed_log(client_id, employee_id)
+                return start_log(client_id, employee_id, session_id, missed_session=missed)
+        except Exception as e:
+            print(f"[{_ts()}] ERROR pwa_chat: job_log intercept failed — {e}")
+    
     # ------------------------------------------------------------------
     # Standard Claude path — free-form chat for everything else
     # ------------------------------------------------------------------
