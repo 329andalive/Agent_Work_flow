@@ -530,8 +530,248 @@ def pwa_logout():
 
 
 # ---------------------------------------------------------------------------
-# GET /pwa/api/customers — customer list for PWA search dropdowns
+# GET /pwa/api/employees — active employee list for job log crew picker
 # ---------------------------------------------------------------------------
+
+@pwa_bp.route("/api/employees", methods=["GET"])
+@require_pwa_auth
+def pwa_employees_list():
+    from execution.db_connection import get_client as get_supabase
+    client_id = session.get("client_id")
+    try:
+        sb = get_supabase()
+        result = sb.table("employees").select(
+            "id, name, role"
+        ).eq("client_id", client_id).eq("active", True).order("name").execute()
+        return jsonify({"success": True, "employees": result.data or []})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+# ---------------------------------------------------------------------------
+# GET /pwa/api/joblog/jobs?customer_id=X — open jobs for a customer
+# ---------------------------------------------------------------------------
+
+@pwa_bp.route("/api/joblog/jobs", methods=["GET"])
+@require_pwa_auth
+def pwa_joblog_jobs():
+    from execution.db_connection import get_client as get_supabase
+    client_id   = session.get("client_id")
+    customer_id = request.args.get("customer_id", "").strip()
+
+    try:
+        sb = get_supabase()
+        q = sb.table("jobs").select(
+            "id, job_type, job_description, status, scheduled_date, customer_id"
+        ).eq("client_id", client_id).in_(
+            "status", ["new", "estimated", "scheduled", "in_progress"]
+        ).order("created_at", desc=True).limit(20)
+
+        if customer_id:
+            q = q.eq("customer_id", customer_id)
+
+        result = q.execute()
+        jobs = result.data or []
+
+        # Enrich with customer name
+        if jobs:
+            cust_ids = list({j.get("customer_id") for j in jobs if j.get("customer_id")})
+            custs = sb.table("customers").select("id, customer_name").in_("id", cust_ids).execute()
+            cust_map = {c["id"]: c["customer_name"] for c in (custs.data or [])}
+            for j in jobs:
+                j["customer_name"] = cust_map.get(j.get("customer_id"), "")
+
+        return jsonify({"success": True, "jobs": jobs})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+# ---------------------------------------------------------------------------
+# POST /pwa/api/joblog/start — Job Start (phase 1 submit)
+# ---------------------------------------------------------------------------
+
+@pwa_bp.route("/api/joblog/start", methods=["POST"])
+@require_pwa_auth
+def pwa_joblog_start():
+    """
+    Record that a job started. Creates a job_log_sessions row.
+    Returns session_id for phase 2.
+    """
+    import uuid as _uuid
+    from execution.db_connection import get_client as get_supabase
+    from execution.schema import JobLogSessions as JLS, Jobs
+    from datetime import date as _date
+
+    client_id   = session.get("client_id")
+    employee_id = session.get("employee_id")
+    data        = request.get_json(silent=True) or {}
+    job_id      = (data.get("job_id") or "").strip()
+    crew_ids    = data.get("crew_ids") or []
+
+    if not job_id:
+        return jsonify({"success": False, "error": "job_id required"}), 400
+    if not crew_ids:
+        return jsonify({"success": False, "error": "Select at least one crew member"}), 400
+
+    try:
+        sb = get_supabase()
+
+        # Verify job belongs to this client
+        check = sb.table(Jobs.TABLE).select("id").eq("id", job_id).eq(
+            Jobs.CLIENT_ID, client_id
+        ).execute()
+        if not check.data:
+            return jsonify({"success": False, "error": "Job not found"}), 404
+
+        # Mark job as in_progress
+        sb.table(Jobs.TABLE).update({Jobs.STATUS: "in_progress"}).eq(
+            "id", job_id
+        ).eq(Jobs.CLIENT_ID, client_id).execute()
+
+        # Create job_log_sessions row
+        session_id = str(_uuid.uuid4())
+        sb.table(JLS.TABLE).insert({
+            JLS.CLIENT_ID:    client_id,
+            JLS.EMPLOYEE_ID:  employee_id,
+            JLS.SESSION_ID:   session_id,
+            JLS.JOB_ID:       job_id,
+            JLS.LOG_DATE:     _date.today().isoformat(),
+            JLS.STATUS:       "open",
+            JLS.CURRENT_STEP: "phase2",
+            JLS.CREW_CONFIRMED: True,
+        }).execute()
+
+        print(f"[{_ts()}] INFO pwa_joblog_start: job={job_id[:8]} crew={len(crew_ids)} session={session_id[:8]}")
+        return jsonify({"success": True, "session_id": session_id})
+
+    except Exception as e:
+        print(f"[{_ts()}] ERROR pwa_joblog_start: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+# ---------------------------------------------------------------------------
+# POST /pwa/api/joblog/stop — Job Stop (phase 2 submit)
+# ---------------------------------------------------------------------------
+
+@pwa_bp.route("/api/joblog/stop", methods=["POST"])
+@require_pwa_auth
+def pwa_joblog_stop():
+    """
+    Save crew, equipment, materials, incidents. Close the session.
+    Same DB writes as job_log._save_log() but driven by form data.
+    """
+    from execution.db_connection import get_client as get_supabase
+    from execution.schema import (
+        JobLogSessions as JLS, JobCrewLog as JCL,
+        JobEquipmentLog as JEL, JobMaterialLog as JML, Jobs
+    )
+    from datetime import date as _date, datetime as _datetime, timezone as _tz
+
+    client_id   = session.get("client_id")
+    employee_id = session.get("employee_id")
+    data        = request.get_json(silent=True) or {}
+
+    session_id = (data.get("session_id") or "").strip()
+    job_id     = (data.get("job_id") or "").strip()
+    crew_ids   = data.get("crew_ids") or [employee_id]
+    equipment  = data.get("equipment") or []   # list of strings
+    materials  = data.get("materials") or []   # [{name, qty, unit}]
+    incidents  = (data.get("incidents") or "").strip()
+
+    if not job_id:
+        return jsonify({"success": False, "error": "job_id required"}), 400
+
+    log_date = _date.today().isoformat()
+
+    try:
+        sb = get_supabase()
+
+        # Write crew rows
+        for eid in crew_ids:
+            try:
+                sb.table(JCL.TABLE).insert({
+                    JCL.CLIENT_ID:   client_id,
+                    JCL.JOB_ID:      job_id,
+                    JCL.EMPLOYEE_ID: eid,
+                    JCL.LOG_DATE:    log_date,
+                    JCL.LOGGED_BY:   employee_id,
+                    JCL.BILLED:      False,
+                }).execute()
+            except Exception as e:
+                print(f"[{_ts()}] WARN pwa_joblog_stop: crew insert skipped — {e}")
+
+        # Write equipment rows
+        for name in equipment:
+            if not name: continue
+            try:
+                sb.table(JEL.TABLE).insert({
+                    JEL.CLIENT_ID:      client_id,
+                    JEL.JOB_ID:         job_id,
+                    JEL.LOGGED_BY:      employee_id,
+                    JEL.EQUIPMENT_NAME: name,
+                    JEL.LOG_DATE:       log_date,
+                    JEL.BILLED:         False,
+                }).execute()
+            except Exception as e:
+                print(f"[{_ts()}] WARN pwa_joblog_stop: equip insert — {e}")
+
+        # Write material rows
+        for mat in materials:
+            mat_name = (mat.get("name") or "").strip()
+            if not mat_name: continue
+            try:
+                sb.table(JML.TABLE).insert({
+                    JML.CLIENT_ID:     client_id,
+                    JML.JOB_ID:        job_id,
+                    JML.LOGGED_BY:     employee_id,
+                    JML.MATERIAL_NAME: mat_name,
+                    JML.QUANTITY:      float(mat.get("qty") or 1),
+                    JML.UNIT:          mat.get("unit") or "each",
+                    JML.LOG_DATE:      log_date,
+                    JML.BILLABLE:      True,
+                    JML.BILLED:        False,
+                }).execute()
+            except Exception as e:
+                print(f"[{_ts()}] WARN pwa_joblog_stop: material insert — {e}")
+
+        # If incidents reported, append to job_notes
+        if incidents:
+            try:
+                job_r = sb.table(Jobs.TABLE).select(Jobs.JOB_NOTES).eq(
+                    "id", job_id
+                ).execute()
+                existing = (job_r.data[0].get(Jobs.JOB_NOTES) or "") if job_r.data else ""
+                note = f"[{log_date} INCIDENT] {incidents}"
+                updated = (existing + "\n" + note).strip() if existing else note
+                sb.table(Jobs.TABLE).update({Jobs.JOB_NOTES: updated}).eq(
+                    "id", job_id
+                ).eq(Jobs.CLIENT_ID, client_id).execute()
+            except Exception as e:
+                print(f"[{_ts()}] WARN pwa_joblog_stop: incident note — {e}")
+
+        # Close the session
+        if session_id:
+            try:
+                sb.table(JLS.TABLE).update({
+                    JLS.STATUS:       "closed",
+                    JLS.UPDATED_AT:   _datetime.now(_tz.utc).isoformat(),
+                }).eq(JLS.SESSION_ID, session_id).eq(JLS.CLIENT_ID, client_id).execute()
+            except Exception:
+                pass
+
+        parts = []
+        if crew_ids:  parts.append(f"{len(crew_ids)} crew")
+        if equipment: parts.append(f"{len(equipment)} equipment")
+        if materials: parts.append(f"{len(materials)} material {'entry' if len(materials)==1 else 'entries'}")
+        if incidents: parts.append("incident noted")
+        msg = "Logged: " + ", ".join(parts) + f" for {log_date}." if parts else f"Log saved for {log_date}."
+
+        print(f"[{_ts()}] INFO pwa_joblog_stop: job={job_id[:8]} crew={len(crew_ids)} equip={len(equipment)} mats={len(materials)}")
+        return jsonify({"success": True, "message": msg})
+
+    except Exception as e:
+        print(f"[{_ts()}] ERROR pwa_joblog_stop: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
 
 @pwa_bp.route("/api/customers", methods=["GET"])
 @require_pwa_auth
