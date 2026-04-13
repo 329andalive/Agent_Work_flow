@@ -64,7 +64,8 @@ def get_todays_jobs(client_id: str, target_date: str = None) -> list:
                     "id, job_type, job_description, status, scheduled_date, "
                     "estimated_amount, customer_id, raw_input, job_notes, "
                     "geo_lat, geo_lng, zone_cluster, requested_time, "
-                    "dispatch_status, assigned_worker_id, wave_id, sort_order"
+                    "dispatch_status, assigned_worker_id, wave_id, sort_order, "
+                    "job_start, job_end"
                 )
                 .eq("client_id", client_id)
                 .eq("scheduled_date", target_date)
@@ -85,7 +86,8 @@ def get_todays_jobs(client_id: str, target_date: str = None) -> list:
                 .execute()
             )
 
-        # Filter out dispatch-cancelled — keep NULL, unassigned, assigned, etc.
+        # Filter out dispatch-cancelled — keep everything else including completed
+        # (completed jobs stay visible on the board but get shaded out)
         all_jobs = result.data or []
         jobs = [j for j in all_jobs if j.get("dispatch_status") != "cancelled"]
         print(f"[{timestamp()}] INFO db_scheduling: get_todays_jobs({target_date}) → {len(jobs)} jobs")

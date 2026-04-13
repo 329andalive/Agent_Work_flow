@@ -51,6 +51,13 @@
 .slip-card.dragging { opacity:0.35; }
 .slip-card.carry-forward { border-left:3px solid var(--amber); }
 .slip-card__cf { font-family:'DM Mono',monospace; font-size:9px; color:var(--amber); margin-bottom:3px; }
+
+/* ── Completed job styling ── */
+.slip-card.done { opacity:0.45; border-left:3px solid var(--green); background:#f6faf0; cursor:default; }
+.slip-card.done .slip-card__name { text-decoration:line-through; color:var(--text-tertiary); }
+.slip-card__done-badge { display:none; }
+.slip-card.done .slip-card__done-badge { display:inline-flex; align-items:center; gap:4px; font-family:'DM Mono',monospace; font-size:9px; font-weight:700; color:var(--green-text); background:var(--green-bg); padding:2px 7px; border-radius:3px; margin-bottom:5px; }
+
 .slip-card__name { font-size:14px; font-weight:600; color:var(--text-primary); margin-bottom:2px; }
 .slip-card__desc { font-size:12px; color:var(--text-secondary); margin-bottom:5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .slip-card__badges { display:flex; flex-wrap:wrap; gap:4px; }
@@ -141,7 +148,7 @@
 
 {% if held %}
 <div class="held-section">
-  <div class="held-header" onclick="document.getElementById('held-list').classList.toggle('open')">▸ Held Jobs ({{ held|length }})</div>
+  <div class="held-header" onclick="document.getElementById('held-list').classList.toggle('open')">&#9656; Held Jobs ({{ held|length }})</div>
   <div class="held-list" id="held-list">
     {% for h in held %}
     <div class="held-card">
@@ -210,30 +217,38 @@
 
   function makeCard(job, isCF) {
     var zc = (job.zone_cluster || 'unknown').toLowerCase();
+    // A job is done if the tech pressed Done on the PWA (sets job_end, status=completed, dispatch_status=completed)
+    var isDone = job.status === 'completed'
+              || job.dispatch_status === 'completed'
+              || !!job.job_end;
     var div = document.createElement('div');
-    div.className = 'slip-card' + (isCF ? ' carry-forward' : '');
-    div.dataset.jobId = job.id || job.jobId || '';
-    div.dataset.name = job.customer_name || job.name || '';
-    div.dataset.desc = (job.job_notes || job.job_description || job.job_type || job.desc || '').toString().slice(0,50);
-    div.dataset.zone = job.zone_cluster || job.zone || 'Unknown';
-    div.dataset.time = job.requested_time || job.time || '';
-    div.dataset.type = job.job_type || job.type || '';
-    div.dataset.phone = job.customer_phone || job.phone || '';
+    div.className = 'slip-card'
+      + (isCF   ? ' carry-forward' : '')
+      + (isDone ? ' done' : '');
+    div.dataset.jobId   = job.id || job.jobId || '';
+    div.dataset.name    = job.customer_name || job.name || '';
+    div.dataset.desc    = (job.job_notes || job.job_description || job.job_type || job.desc || '').toString().slice(0,50);
+    div.dataset.zone    = job.zone_cluster || job.zone || 'Unknown';
+    div.dataset.time    = job.requested_time || job.time || '';
+    div.dataset.type    = job.job_type || job.type || '';
+    div.dataset.phone   = job.customer_phone || job.phone || '';
     div.dataset.address = job.address || job.job_description || '';
-    div.dataset.price = job.estimated_amount ? '$' + Math.round(job.estimated_amount) : '';
-    var cfFrom = job.carry_forward_from || job.scheduled_date || '';
-    var cf = isCF ? '<div class="slip-card__cf">&#8617; carried from ' + cfFrom + '</div>' : '';
+    div.dataset.price   = job.estimated_amount ? '$' + Math.round(job.estimated_amount) : '';
+    var cfFrom     = job.carry_forward_from || job.scheduled_date || '';
+    var doneBadge  = isDone ? '<div class="slip-card__done-badge">&#10003; Done</div>' : '';
+    var cfBadge    = isCF   ? '<div class="slip-card__cf">&#8617; carried from ' + cfFrom + '</div>' : '';
     div.innerHTML =
       '<div style="display:flex;align-items:flex-start;gap:6px">' +
-        '<span class="slip-card__handle" title="Drag to reorder">&#8942;&#8942;</span>' +
+        (isDone ? '' : '<span class="slip-card__handle" title="Drag to reorder">&#8942;&#8942;</span>') +
         '<div style="flex:1;min-width:0">' +
-          cf +
+          doneBadge +
+          cfBadge +
           '<div class="slip-card__name">' + (div.dataset.name || 'Customer') + '</div>' +
           '<div class="slip-card__desc">' + (div.dataset.desc || 'No description') + '</div>' +
           '<div class="slip-card__badges">' +
             '<span class="slip-badge slip-badge--' + zc + '">' + div.dataset.zone + '</span>' +
-            (div.dataset.time ? '<span class="slip-badge slip-badge--time">' + div.dataset.time + '</span>' : '') +
-            (div.dataset.price ? '<span class="slip-badge slip-badge--amt">' + div.dataset.price + '</span>' : '') +
+            (div.dataset.time  ? '<span class="slip-badge slip-badge--time">' + div.dataset.time  + '</span>' : '') +
+            (div.dataset.price ? '<span class="slip-badge slip-badge--amt">'  + div.dataset.price + '</span>' : '') +
           '</div>' +
           (div.dataset.address ? '<div class="slip-card__addr">\ud83d\udccd ' + div.dataset.address + '</div>' : '') +
         '</div>' +
@@ -267,7 +282,6 @@
   }
 
   function initDropZones() {
-    // SortableJS — touch + mouse drag-and-drop, cross-column
     document.querySelectorAll('.queue-list, .worker-list').forEach(function(zone) {
       Sortable.create(zone, {
         group:     'dispatch',
@@ -278,15 +292,15 @@
         delay:       window.innerWidth <= 768 ? 120 : 0,
         delayOnTouchOnly: true,
         touchStartThreshold: 4,
+        filter: '.done',   // prevent dragging completed cards
 
         onEnd: function(evt) {
-          var item    = evt.item;
-          var fromCol = evt.from;
-          var toCol   = evt.to;
-          var jid     = item.dataset.jobId;
+          var item      = evt.item;
+          var fromCol   = evt.from;
+          var toCol     = evt.to;
+          var jid       = item.dataset.jobId;
           var newWorker = toCol.dataset.worker || '';
 
-          // If moved between columns, handle assign
           if (fromCol !== toCol && newWorker) {
             fetch('/api/dispatch/assign', {
               method: 'POST',
@@ -295,7 +309,6 @@
             }).catch(function() {});
           }
 
-          // Persist sort order for all affected columns
           var moves = [];
           function collectCol(colEl) {
             var wid = colEl.dataset.worker || '';
@@ -324,22 +337,53 @@
   }
 
   function populateBoard() {
-    var queue = document.getElementById('queue');
+    var queue  = document.getElementById('queue');
+    var cfJobs = {{ carry_forward_json|safe }};
     var assigned = new Set(Object.keys(ASSIGNMENTS));
+
     ALL_JOBS.forEach(function(j) {
       if (!assigned.has(j.id)) {
-        var isCF = !!j.carry_forward_from;
-        queue.appendChild(makeCard(j, isCF));
+        queue.appendChild(makeCard(j, !!j.carry_forward_from));
       }
     });
-    var cfJobs = {{ carry_forward_json|safe }};
-    cfJobs.forEach(function(j) { if (!assigned.has(j.id)) queue.appendChild(makeCard(j, true)); });
+    cfJobs.forEach(function(j) {
+      if (!assigned.has(j.id)) queue.appendChild(makeCard(j, true));
+    });
+
     Object.keys(ASSIGNMENTS).forEach(function(jid) {
       var wid = ASSIGNMENTS[jid];
-      var wl = document.getElementById('worker-' + wid);
+      var wl  = document.getElementById('worker-' + wid);
       if (!wl) return;
-      var job = ALL_JOBS.find(function(j) { return j.id === jid; }) || cfJobs.find(function(j) { return j.id === jid; });
-      if (job) wl.appendChild(makeTab(Object.assign({}, job, {name:job.customer_name||'', zone:job.zone_cluster||'', time:job.requested_time||'', type:job.job_type||'', phone:job.customer_phone||'', address:job.address||'', jobId:job.id})));
+      var job = ALL_JOBS.find(function(j) { return j.id === jid; })
+             || cfJobs.find(function(j) { return j.id === jid; });
+      if (!job) return;
+
+      // Completed jobs go back as shaded cards (not draggable tabs) so the
+      // done styling is visible in the worker column too
+      var isDone = job.status === 'completed'
+                || job.dispatch_status === 'completed'
+                || !!job.job_end;
+
+      if (isDone) {
+        wl.appendChild(makeCard(Object.assign({}, job, {
+          customer_name: job.customer_name || '',
+          zone_cluster:  job.zone_cluster  || '',
+          requested_time:job.requested_time|| '',
+          job_type:      job.job_type      || '',
+          customer_phone:job.customer_phone|| '',
+          address:       job.address       || '',
+        }), false));
+      } else {
+        wl.appendChild(makeTab(Object.assign({}, job, {
+          name:    job.customer_name  || '',
+          zone:    job.zone_cluster   || '',
+          time:    job.requested_time || '',
+          type:    job.job_type       || '',
+          phone:   job.customer_phone || '',
+          address: job.address        || '',
+          jobId:   job.id,
+        })));
+      }
     });
     updateCounts(); updateSendBtn();
   }
@@ -347,7 +391,11 @@
   function updateCounts() {
     var q = document.getElementById('queue'), qc = document.getElementById('queue-count');
     if (q && qc) qc.textContent = q.children.length;
-    ALL_WORKERS.forEach(function(w) { var wl = document.getElementById('worker-' + w.id), b = document.getElementById('count-' + w.id); if (wl && b) b.textContent = wl.children.length; });
+    ALL_WORKERS.forEach(function(w) {
+      var wl = document.getElementById('worker-' + w.id);
+      var b  = document.getElementById('count-' + w.id);
+      if (wl && b) b.textContent = wl.children.length;
+    });
   }
   function updateSendBtn() {
     var has = false;
@@ -358,28 +406,46 @@
   }
 
   function openPreview(d) {
-    document.getElementById('pv-name').textContent = d.name || '—';
-    document.getElementById('pv-phone').textContent = d.phone || '—';
+    document.getElementById('pv-name').textContent    = d.name    || '—';
+    document.getElementById('pv-phone').textContent   = d.phone   || '—';
     document.getElementById('pv-address').textContent = d.address || '—';
-    document.getElementById('pv-time').textContent = d.time || 'Anytime';
-    document.getElementById('pv-type').textContent = d.type || '—';
+    document.getElementById('pv-time').textContent    = d.time    || 'Anytime';
+    document.getElementById('pv-type').textContent    = d.type    || '—';
     document.getElementById('preview-panel').classList.add('open');
   }
   window.closePreview = function() { document.getElementById('preview-panel').classList.remove('open'); };
 
   document.getElementById('btn-send').addEventListener('click', function() {
-    var btn = this; btn.disabled = true; btn.textContent = 'Sending…';
+    var btn = this; btn.disabled = true; btn.textContent = 'Sending\u2026';
     var asgn = [];
     document.querySelectorAll('.worker-list').forEach(function(wl) {
       var wid = wl.dataset.worker; if (!wid) return;
-      var jobs = []; wl.querySelectorAll('.slip-tab, .slip-card').forEach(function(el, idx) { if (el.dataset.jobId) jobs.push({job_id:el.dataset.jobId, sort_order:idx}); });
-      if (jobs.length > 0) asgn.push({worker_id:wid, jobs:jobs});
+      var jobs = [];
+      wl.querySelectorAll('.slip-tab, .slip-card').forEach(function(el, idx) {
+        if (el.dataset.jobId) jobs.push({job_id: el.dataset.jobId, sort_order: idx});
+      });
+      if (jobs.length > 0) asgn.push({worker_id: wid, jobs: jobs});
     });
     if (!asgn.length) { btn.disabled = false; btn.textContent = 'Send Routes'; return; }
-    fetch('/api/dispatch/send', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({date:DISPATCH_DATE, assignments:asgn}) })
+    fetch('/api/dispatch/send', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({date: DISPATCH_DATE, assignments: asgn})
+    })
     .then(function(r) { return r.json(); })
-    .then(function(d) { if (d.success) { btn.textContent = 'Sent (' + d.sms_sent + ' SMS)'; btn.classList.add('sent'); } else { btn.textContent = 'Failed'; btn.disabled = false; setTimeout(function() { btn.textContent = 'Send Routes'; }, 3000); } })
-    .catch(function() { btn.textContent = 'Error'; btn.disabled = false; setTimeout(function() { btn.textContent = 'Send Routes'; }, 3000); });
+    .then(function(d) {
+      if (d.success) {
+        btn.textContent = 'Sent (' + d.sms_sent + ' SMS)';
+        btn.classList.add('sent');
+      } else {
+        btn.textContent = 'Failed'; btn.disabled = false;
+        setTimeout(function() { btn.textContent = 'Send Routes'; }, 3000);
+      }
+    })
+    .catch(function() {
+      btn.textContent = 'Error'; btn.disabled = false;
+      setTimeout(function() { btn.textContent = 'Send Routes'; }, 3000);
+    });
   });
 
   buildWeekStrip(); populateBoard(); initDropZones(); loadLabels();
