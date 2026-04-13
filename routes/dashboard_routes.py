@@ -503,6 +503,182 @@ def api_create_estimate():
 
 
 # ---------------------------------------------------------------------------
+# GET /dashboard/workorders/new — New Work Order form
+# ---------------------------------------------------------------------------
+
+@dashboard_bp.route("/dashboard/workorders/new", strict_slashes=False)
+def new_work_order_page():
+    client_id = _resolve_client_id()
+    if not client_id:
+        return redirect("/login")
+
+    ctx = _base_context("workorders", client_id)
+    sb  = _get_supabase()
+
+    customers_list = []
+    try:
+        result = sb.table("customers").select(
+            "id, customer_name, customer_phone, customer_address"
+        ).eq("client_id", client_id).order("customer_name").execute()
+        customers_list = result.data or []
+    except Exception as e:
+        print(f"[{_ts()}] ERROR dashboard_routes: new work order customers — {e}")
+
+    workers_list = []
+    try:
+        result = sb.table("employees").select(
+            "id, name, role"
+        ).eq("client_id", client_id).eq("active", True).order("name").execute()
+        workers_list = result.data or []
+    except Exception as e:
+        print(f"[{_ts()}] ERROR dashboard_routes: new work order workers — {e}")
+
+    ctx.update({
+        "customers":      customers_list,
+        "customers_json": json.dumps(customers_list),
+        "workers":        workers_list,
+    })
+    return render_template("dashboard/new_work_order.html", **ctx)
+
+
+# ---------------------------------------------------------------------------
+# POST /api/workorders/create — Create work order from dashboard
+# ---------------------------------------------------------------------------
+
+@dashboard_bp.route("/api/workorders/create", methods=["POST"])
+def api_create_work_order():
+    """
+    Create a work order directly as a job record — no proposal, no approval.
+
+    Body params:
+        customer_id       str   — UUID of existing customer (required)
+        job_type          str   — job type slug (required)
+        notes             str   — optional free-text notes
+        amount            float — verbally agreed price (required, tech-entered)
+        worker_id         str   — assigned worker UUID (optional)
+        when              str   — 'now' | 'later'
+        scheduled_date    str   — ISO date, required when when='later'
+        send_confirmation bool  — fire courtesy text/email to customer
+
+    Creates:
+        - jobs row: status='in_progress' (now) or 'scheduled' (later),
+          dispatch_status='unassigned', source_proposal_id=null
+        - If send_confirmation: proposal_agent fires as FYI doc (non-fatal)
+    """
+    from execution.schema import Jobs as J, Customers as C
+
+    client_id = _resolve_client_id()
+    if not client_id:
+        return jsonify({"success": False, "error": "Not authenticated"}), 401
+
+    data = request.get_json(silent=True) or {}
+
+    customer_id       = (data.get("customer_id") or "").strip()
+    job_type          = (data.get("job_type") or "").strip()
+    notes             = (data.get("notes") or "").strip()
+    worker_id         = (data.get("worker_id") or "").strip() or None
+    when              = (data.get("when") or "later").strip()      # 'now' | 'later'
+    scheduled_date    = (data.get("scheduled_date") or "").strip() or None
+    send_confirmation = bool(data.get("send_confirmation", False))
+
+    # Validate required fields
+    if not customer_id:
+        return jsonify({"success": False, "error": "Customer is required"}), 400
+    if not job_type:
+        return jsonify({"success": False, "error": "Job type is required"}), 400
+
+    try:
+        amount = float(data.get("amount") or 0)
+        if amount <= 0:
+            raise ValueError("amount must be > 0")
+    except (TypeError, ValueError) as e:
+        return jsonify({"success": False, "error": f"Invalid amount: {e}"}), 400
+
+    if when == "later" and not scheduled_date:
+        return jsonify({"success": False, "error": "Scheduled date required when scheduling for later"}), 400
+
+    # Resolve job status from 'when'
+    job_status = "in_progress" if when == "now" else "scheduled"
+    sched_date = date.today().isoformat() if when == "now" else scheduled_date
+
+    sb = _get_supabase()
+
+    # Verify customer belongs to this client
+    try:
+        cust_check = sb.table("customers").select("id, customer_name, customer_phone").eq(
+            "id", customer_id
+        ).eq("client_id", client_id).limit(1).execute()
+        if not cust_check.data:
+            return jsonify({"success": False, "error": "Customer not found"}), 404
+        cust_row = cust_check.data[0]
+    except Exception as e:
+        print(f"[{_ts()}] ERROR dashboard_routes: wo create customer check — {e}")
+        return jsonify({"success": False, "error": "Failed to verify customer"}), 500
+
+    # Build job description
+    job_label = job_type.replace("_", " ").title()
+    description = f"{job_label}" + (f" — {notes}" if notes else "")
+
+    try:
+        job_result = sb.table(J.TABLE).insert({
+            J.CLIENT_ID:          client_id,
+            J.CUSTOMER_ID:        customer_id,
+            J.JOB_TYPE:           job_type,
+            J.JOB_DESCRIPTION:    description,
+            J.JOB_NOTES:          notes or None,
+            J.RAW_INPUT:          description,
+            J.STATUS:             job_status,
+            J.DISPATCH_STATUS:    "unassigned",
+            J.ESTIMATED_AMOUNT:   amount,
+            J.SCHEDULED_DATE:     sched_date,
+            J.ASSIGNED_WORKER_ID: worker_id,
+            J.SOURCE_PROPOSAL_ID: None,
+        }).execute()
+
+        if not job_result.data:
+            return jsonify({"success": False, "error": "Failed to create job"}), 500
+
+        job_id        = job_result.data[0][J.ID]
+        customer_name = cust_row.get("customer_name", "Customer")
+
+        print(
+            f"[{_ts()}] INFO dashboard_routes: WO created job={job_id[:8]} "
+            f"status={job_status} amount={amount} customer={customer_name}"
+        )
+
+        # Optional courtesy confirmation
+        if send_confirmation:
+            try:
+                client_rec   = _load_client(client_id)
+                client_phone = client_rec.get("phone", "")
+                cust_phone   = cust_row.get("customer_phone", "")
+                if client_phone and cust_phone:
+                    from execution.proposal_agent import run as proposal_run
+                    proposal_run(
+                        client_phone=client_phone,
+                        customer_phone=cust_phone,
+                        raw_input=f"{description} ${int(amount)}",
+                        explicit_amount=amount,
+                    )
+                    print(f"[{_ts()}] INFO dashboard_routes: WO confirmation sent to {cust_phone}")
+                else:
+                    print(f"[{_ts()}] WARN dashboard_routes: WO confirmation skipped — missing phone")
+            except Exception as conf_err:
+                # Non-fatal — job is already created
+                print(f"[{_ts()}] WARN dashboard_routes: WO confirmation failed — {conf_err}")
+
+        return jsonify({
+            "success":  True,
+            "job_id":   job_id,
+            "redirect": "/dashboard/dispatch",
+        })
+
+    except Exception as e:
+        print(f"[{_ts()}] ERROR dashboard_routes: api_create_work_order — {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+# ---------------------------------------------------------------------------
 # GET /dashboard/invoices/ — Invoices page
 # ---------------------------------------------------------------------------
 

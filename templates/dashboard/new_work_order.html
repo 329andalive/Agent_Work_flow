@@ -1,0 +1,427 @@
+{% extends "base.html" %}
+
+{% block title %}New Work Order{% endblock %}
+{% block page_title %}New Work Order{% endblock %}
+{% block topbar_meta %}Verbal job · no estimate required{% endblock %}
+
+{% block extra_css %}
+  .back-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    color: var(--text-secondary);
+    text-decoration: none;
+    margin-bottom: 16px;
+  }
+  .back-link:hover { color: var(--text-primary); }
+
+  .form-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 24px;
+    max-width: 560px;
+  }
+
+  .wo-explainer {
+    background: var(--amber-bg);
+    border: 1px solid rgba(180,115,20,0.25);
+    border-radius: 6px;
+    padding: 11px 14px;
+    font-size: 13px;
+    color: var(--amber-text);
+    margin-bottom: 20px;
+    line-height: 1.5;
+  }
+  .wo-explainer strong { font-weight: 600; }
+
+  .form-group { margin-bottom: 16px; }
+  .form-group:last-of-type { margin-bottom: 20px; }
+
+  .form-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-tertiary);
+    margin-bottom: 6px;
+  }
+  .form-label .add-link {
+    font-family: 'Barlow', sans-serif;
+    font-size: 11px;
+    text-transform: none;
+    letter-spacing: normal;
+    color: var(--blue);
+    text-decoration: none;
+  }
+  .form-label .add-link:hover { text-decoration: underline; }
+
+  .form-input,
+  .form-select,
+  .form-textarea {
+    width: 100%;
+    font-family: 'Barlow', sans-serif;
+    font-size: 14px;
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg-card);
+    color: var(--text-primary);
+    outline: none;
+    transition: border-color 0.12s;
+  }
+  .form-input:focus,
+  .form-select:focus,
+  .form-textarea:focus { border-color: var(--blue); }
+  .form-textarea { resize: vertical; }
+
+  .form-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+
+  .input-prefix-wrap {
+    position: relative;
+    display: flex;
+    align-items: center;
+  }
+  .input-prefix {
+    position: absolute;
+    left: 10px;
+    font-size: 14px;
+    color: var(--text-secondary);
+    pointer-events: none;
+  }
+  .input-prefix-wrap .form-input { padding-left: 22px; }
+
+  /* ── When selector ── */
+  .when-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+  .when-btn {
+    padding: 14px 12px;
+    border: 1.5px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg-card);
+    cursor: pointer;
+    text-align: center;
+    transition: border-color 0.12s, background 0.12s;
+    font-family: 'Barlow', sans-serif;
+  }
+  .when-btn:hover { border-color: var(--blue); background: var(--blue-bg); }
+  .when-btn.selected {
+    border-color: var(--blue);
+    background: var(--blue-bg);
+  }
+  .when-btn .when-icon { font-size: 24px; margin-bottom: 4px; }
+  .when-btn .when-label {
+    font-size: 13px; font-weight: 600;
+    color: var(--text-primary);
+    display: block;
+  }
+  .when-btn .when-sub {
+    font-size: 11px;
+    color: var(--text-secondary);
+    display: block;
+    margin-top: 2px;
+  }
+  .when-btn.selected .when-label { color: var(--blue-text); }
+  .when-btn.selected .when-sub   { color: var(--blue-text); opacity: 0.7; }
+
+  /* Schedule date — only visible when "later" selected */
+  .schedule-date-group { display: none; margin-top: 12px; }
+  .schedule-date-group.visible { display: block; }
+
+  /* ── Confirmation checkbox ── */
+  .form-check {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    font-size: 13px;
+    color: var(--text-secondary);
+    margin-bottom: 20px;
+    cursor: pointer;
+  }
+  .form-check input[type="checkbox"] {
+    margin-top: 2px;
+    accent-color: var(--blue);
+  }
+  .form-check-hint {
+    font-size: 11px;
+    color: var(--text-tertiary);
+  }
+
+  .section-divider {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 20px 0;
+  }
+
+  .btn-create {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-family: 'Barlow', sans-serif;
+    font-size: 14px;
+    font-weight: 600;
+    padding: 10px 24px;
+    border-radius: 6px;
+    border: none;
+    background: var(--blue);
+    color: #fff;
+    cursor: pointer;
+    transition: background 0.12s;
+  }
+  .btn-create:hover { background: #1d4ed8; }
+  .btn-create:disabled { opacity: 0.6; cursor: not-allowed; }
+
+  .form-error   { margin-top: 10px; font-size: 13px; color: var(--red);   display: none; }
+  .form-success { margin-top: 10px; font-size: 13px; color: var(--green); display: none; }
+{% endblock %}
+
+{% block content %}
+<a href="/dashboard/" class="back-link">&larr; Back to Dashboard</a>
+
+<div class="form-card">
+
+  <div class="wo-explainer">
+    <strong>Work Order</strong> — verbal agreement, no estimate needed.
+    Job goes straight to the dispatch board. Invoice when done.
+  </div>
+
+  <form id="wo-form" autocomplete="off">
+
+    <!-- Customer -->
+    <div class="form-group">
+      <label class="form-label">
+        Customer
+        <a href="/dashboard/customers/new?redirect=workorders/new" class="add-link">+ Add Customer</a>
+      </label>
+      <select class="form-select" id="customer_id" name="customer_id" required>
+        <option value="">Select a customer&hellip;</option>
+        {% for c in customers %}
+        <option value="{{ c.id }}">{{ c.customer_name or c.customer_phone }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <!-- Job Type -->
+    <div class="form-group">
+      <label class="form-label">Job Type</label>
+      <select class="form-select" id="job_type" name="job_type" required>
+        <option value="">Select type&hellip;</option>
+        <option value="pump_out">Pump Out</option>
+        <option value="line_repair">Line Repair</option>
+        <option value="inspection">Inspection</option>
+        <option value="riser_installation">Riser Installation</option>
+        <option value="baffle_replacement">Baffle Replacement</option>
+        <option value="hydro_jetting">Hydro Jetting</option>
+        <option value="drain_cleaning">Drain Cleaning</option>
+        <option value="locate">Locate / Camera</option>
+        <option value="emergency">Emergency</option>
+        <option value="other">Other</option>
+      </select>
+    </div>
+
+    <!-- Description / Notes -->
+    <div class="form-group">
+      <label class="form-label">Notes (optional)</label>
+      <textarea class="form-textarea" id="notes" name="notes" rows="2"
+        placeholder="Access notes, scope details, special instructions&hellip;"></textarea>
+    </div>
+
+    <!-- Agreed Price -->
+    <div class="form-group">
+      <label class="form-label">Agreed Price</label>
+      <div class="input-prefix-wrap">
+        <span class="input-prefix">$</span>
+        <input type="number" class="form-input" id="amount" name="amount"
+          placeholder="0.00" min="0" step="0.01" required>
+      </div>
+    </div>
+
+    <!-- Assign Worker -->
+    <div class="form-group">
+      <label class="form-label">Assign To</label>
+      <select class="form-select" id="worker_id" name="worker_id">
+        <option value="">Unassigned</option>
+        {% for w in workers %}
+        <option value="{{ w.id }}">{{ w.name }}{% if w.role %} · {{ w.role|replace('_',' ')|title }}{% endif %}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <hr class="section-divider">
+
+    <!-- When -->
+    <div class="form-group">
+      <label class="form-label">When</label>
+      <div class="when-grid">
+        <button type="button" class="when-btn" id="btn-now" onclick="selectWhen('now')">
+          <div class="when-icon">⚡</div>
+          <span class="when-label">Now / Today</span>
+          <span class="when-sub">Starts immediately</span>
+        </button>
+        <button type="button" class="when-btn" id="btn-later" onclick="selectWhen('later')">
+          <div class="when-icon">📅</div>
+          <span class="when-label">Schedule Later</span>
+          <span class="when-sub">Pick a date</span>
+        </button>
+      </div>
+      <div class="schedule-date-group" id="schedule-date-group">
+        <label class="form-label" style="margin-top:10px">Scheduled Date</label>
+        <input type="date" class="form-input" id="scheduled_date" name="scheduled_date">
+      </div>
+    </div>
+
+    <!-- hidden when field -->
+    <input type="hidden" id="h_when" name="when" value="">
+
+    <hr class="section-divider">
+
+    <!-- Send confirmation -->
+    <label class="form-check">
+      <input type="checkbox" id="send_confirmation" name="send_confirmation">
+      <span>
+        Send customer a confirmation
+        <span class="form-check-hint">(text/email with job details — not an estimate)</span>
+      </span>
+    </label>
+
+    <button type="submit" class="btn-create" id="btn-submit" disabled>
+      Create Work Order
+    </button>
+    <div class="form-error"   id="form-error"></div>
+    <div class="form-success" id="form-success"></div>
+
+  </form>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function() {
+  // ── Customer address auto-fill ────────────────────────────────
+  var customers = {{ customers_json|safe }};
+  var custMap = {};
+  customers.forEach(function(c) { custMap[c.id] = c; });
+
+  // Pre-select customer from query param (coming from + Add Customer redirect)
+  var urlParams = new URLSearchParams(window.location.search);
+  var newCustId   = urlParams.get('new_customer_id');
+  var newCustName = urlParams.get('new_customer_name');
+  var selCustomer = document.getElementById('customer_id');
+
+  if (newCustId) {
+    var exists = false;
+    for (var i = 0; i < selCustomer.options.length; i++) {
+      if (selCustomer.options[i].value === newCustId) {
+        exists = true; selCustomer.options[i].selected = true; break;
+      }
+    }
+    if (!exists) {
+      var opt = document.createElement('option');
+      opt.value = newCustId;
+      opt.textContent = newCustName || newCustId;
+      opt.selected = true;
+      selCustomer.appendChild(opt);
+    }
+  }
+
+  // ── When selector ─────────────────────────────────────────────
+  window.selectWhen = function(val) {
+    document.getElementById('h_when').value = val;
+    document.getElementById('btn-now').classList.toggle('selected',   val === 'now');
+    document.getElementById('btn-later').classList.toggle('selected', val === 'later');
+    var dateGroup = document.getElementById('schedule-date-group');
+    dateGroup.classList.toggle('visible', val === 'later');
+    if (val === 'later') {
+      // Default to tomorrow
+      var tom = new Date();
+      tom.setDate(tom.getDate() + 1);
+      var yyyy = tom.getFullYear();
+      var mm   = String(tom.getMonth() + 1).padStart(2, '0');
+      var dd   = String(tom.getDate()).padStart(2, '0');
+      document.getElementById('scheduled_date').value = yyyy + '-' + mm + '-' + dd;
+    }
+    checkReady();
+  };
+
+  function checkReady() {
+    var when   = document.getElementById('h_when').value;
+    var custOk = !!document.getElementById('customer_id').value;
+    var typeOk = !!document.getElementById('job_type').value;
+    var amtOk  = parseFloat(document.getElementById('amount').value) > 0;
+    document.getElementById('btn-submit').disabled = !(when && custOk && typeOk && amtOk);
+  }
+
+  ['customer_id', 'job_type', 'amount'].forEach(function(id) {
+    document.getElementById(id).addEventListener('change', checkReady);
+    document.getElementById(id).addEventListener('input',  checkReady);
+  });
+
+  // ── Submit ────────────────────────────────────────────────────
+  var form      = document.getElementById('wo-form');
+  var btnSubmit = document.getElementById('btn-submit');
+  var elError   = document.getElementById('form-error');
+  var elSuccess = document.getElementById('form-success');
+
+  form.addEventListener('submit', function(e) {
+    e.preventDefault();
+    elError.style.display   = 'none';
+    elSuccess.style.display = 'none';
+    btnSubmit.disabled      = true;
+    btnSubmit.textContent   = 'Creating\u2026';
+
+    var when = document.getElementById('h_when').value;
+    var payload = {
+      customer_id:       document.getElementById('customer_id').value,
+      job_type:          document.getElementById('job_type').value,
+      notes:             document.getElementById('notes').value,
+      amount:            parseFloat(document.getElementById('amount').value),
+      worker_id:         document.getElementById('worker_id').value || null,
+      when:              when,                      // 'now' | 'later'
+      scheduled_date:    when === 'later'
+                           ? document.getElementById('scheduled_date').value
+                           : null,
+      send_confirmation: document.getElementById('send_confirmation').checked,
+    };
+
+    fetch('/api/workorders/create', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify(payload),
+    })
+    .then(function(res) { return res.json(); })
+    .then(function(data) {
+      if (data.success) {
+        elSuccess.textContent   = 'Work order created. Redirecting to dispatch board\u2026';
+        elSuccess.style.display = 'block';
+        setTimeout(function() {
+          window.location.href = data.redirect || '/dashboard/dispatch';
+        }, 1800);
+      } else {
+        elError.textContent   = data.error || 'Something went wrong.';
+        elError.style.display = 'block';
+        btnSubmit.disabled    = false;
+        btnSubmit.textContent = 'Create Work Order';
+      }
+    })
+    .catch(function(err) {
+      elError.textContent   = 'Network error: ' + err.message;
+      elError.style.display = 'block';
+      btnSubmit.disabled    = false;
+      btnSubmit.textContent = 'Create Work Order';
+    });
+  });
+})();
+</script>
+{% endblock %}
