@@ -182,6 +182,40 @@ def pwa_route_data():
     return jsonify(get_route(client_id, employee_id))
 
 
+@pwa_bp.route("/api/schedule", methods=["GET"])
+@require_pwa_auth
+def pwa_schedule_data():
+    """
+    Return jobs for the next N days (default 5) for this employee.
+    Each day includes: date, label (Today/Tomorrow/weekday), and job list.
+    Also includes carry_forward jobs (dispatch_status='carry_forward') as
+    a priority bucket at the top of today.
+    """
+    from execution.pwa_jobs import get_schedule
+    client_id   = session.get("client_id")
+    employee_id = session.get("employee_id")
+    if not employee_id:
+        return jsonify({"success": False, "error": "No employee in session"}), 400
+    days = min(int(request.args.get("days", 5)), 7)
+    return jsonify(get_schedule(client_id, employee_id, days=days))
+
+
+@pwa_bp.route("/api/job/<job_id>/pull-to-today", methods=["POST"])
+@require_pwa_auth
+def pwa_job_pull_to_today(job_id):
+    """
+    Pull a future scheduled job into today's route.
+    Updates jobs.scheduled_date to today, moves route_assignments row.
+    """
+    from execution.pwa_jobs import pull_job_to_today
+    client_id   = session.get("client_id")
+    employee_id = session.get("employee_id")
+    if not employee_id:
+        return jsonify({"success": False, "error": "No employee in session"}), 400
+    result = pull_job_to_today(client_id, employee_id, job_id)
+    return jsonify(result), (200 if result.get("success") else 400)
+
+
 @pwa_bp.route("/api/job/<job_id>/start", methods=["POST"])
 @require_pwa_auth
 def pwa_job_start(job_id):

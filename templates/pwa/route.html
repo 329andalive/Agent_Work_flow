@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <title>Today's Route — Bolts11</title>
+  <title>Route — Bolts11</title>
   <link rel="manifest" href="/static/manifest.json">
   <meta name="theme-color" content="#132038">
   <meta name="apple-mobile-web-app-capable" content="yes">
@@ -12,48 +12,86 @@
 
   <style>
     *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-    html,body{height:100%;-webkit-tap-highlight-color:transparent}
+    html,body{
+      height:100%;-webkit-tap-highlight-color:transparent;overflow:hidden;
+    }
     body{
       font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
       background:#132038;color:#fff;
       min-height:100vh;display:flex;flex-direction:column;
-      padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+      padding:env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left);
     }
+
+    /* ── Top bar ── */
     .topbar{
       display:flex;align-items:center;justify-content:space-between;
-      padding:14px 18px;background:rgba(0,0,0,.2);
-      position:sticky;top:0;z-index:5;
+      padding:14px 18px;background:rgba(0,0,0,.2);flex-shrink:0;
     }
     .topbar a{color:rgba(255,255,255,.7);text-decoration:none;font-size:14px;padding:6px 10px}
     .topbar .who{font-size:13px;color:rgba(255,255,255,.6)}
     .topbar .who strong{color:#fff;font-weight:600}
 
-    main{flex:1;padding:20px 18px 100px}
-
-    .hdr-summary{
-      text-align:center;margin-bottom:20px;
+    /* ── Day tab strip ── */
+    .day-tabs{
+      display:flex;background:rgba(0,0,0,.2);
+      border-bottom:1px solid rgba(255,255,255,.08);
+      flex-shrink:0;overflow-x:auto;scrollbar-width:none;
     }
-    .hdr-title{font-size:22px;font-weight:800;margin-bottom:4px}
-    .hdr-meta{font-size:13px;color:rgba(255,255,255,.6)}
+    .day-tabs::-webkit-scrollbar{display:none}
+    .day-tab{
+      flex:0 0 auto;padding:10px 18px 8px;
+      font-size:12px;font-weight:600;
+      text-transform:uppercase;letter-spacing:.05em;
+      color:rgba(255,255,255,.4);
+      border-bottom:2px solid transparent;
+      cursor:pointer;white-space:nowrap;
+      transition:color .15s,border-color .15s;
+    }
+    .day-tab.active{color:#f59e0b;border-bottom-color:#f59e0b}
+    .day-tab .count{
+      display:inline-block;
+      background:rgba(255,255,255,.12);color:rgba(255,255,255,.6);
+      font-size:10px;font-weight:700;border-radius:8px;padding:1px 5px;margin-left:4px;
+    }
+    .day-tab.active .count{background:rgba(245,158,11,.2);color:#f59e0b}
 
-    /* Job card */
+    /* ── Swipeable columns ── */
+    .days-scroll{
+      flex:1;display:flex;
+      overflow-x:scroll;scroll-snap-type:x mandatory;
+      -webkit-overflow-scrolling:touch;scrollbar-width:none;
+    }
+    .days-scroll::-webkit-scrollbar{display:none}
+    .day-col{
+      flex:0 0 100%;width:100%;scroll-snap-align:start;
+      overflow-y:auto;padding:16px 18px 120px;
+    }
+
+    /* ── Day header ── */
+    .day-header{text-align:center;margin-bottom:16px}
+    .day-header-title{font-size:20px;font-weight:800}
+    .day-header-meta{font-size:12px;color:rgba(255,255,255,.5);margin-top:2px}
+
+    /* ── Carry-forward section ── */
+    .carry-section{margin-bottom:16px}
+    .carry-label{
+      font-size:10px;font-weight:700;color:#f59e0b;
+      text-transform:uppercase;letter-spacing:.08em;
+      margin-bottom:8px;display:flex;align-items:center;gap:6px;
+    }
+    .carry-label::before{content:"⚠️";font-size:12px}
+
+    /* ── Job card ── */
     .job{
-      background:rgba(255,255,255,.06);
-      border:1px solid rgba(255,255,255,.1);
-      border-radius:14px;
-      padding:16px 18px;margin-bottom:12px;
+      background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);
+      border-radius:14px;padding:16px 18px;margin-bottom:10px;
       transition:border-color .2s,background .2s;
     }
-    .job.current{
-      border-color:#f59e0b;
-      background:rgba(245,158,11,.08);
-    }
+    .job.current{border-color:#f59e0b;background:rgba(245,158,11,.08)}
     .job.done{opacity:.55}
-    .job.done .job-head{text-decoration:line-through;text-decoration-color:rgba(255,255,255,.3)}
+    .job.carry{border-color:rgba(245,158,11,.4);background:rgba(245,158,11,.06)}
 
-    .job-head{
-      display:flex;align-items:flex-start;gap:12px;margin-bottom:10px;
-    }
+    .job-head{display:flex;align-items:flex-start;gap:12px;margin-bottom:10px}
     .job-num{
       width:36px;height:36px;border-radius:50%;
       background:rgba(255,255,255,.1);
@@ -62,101 +100,75 @@
     }
     .job.current .job-num{background:#f59e0b;color:#132038}
     .job.done .job-num{background:#16a34a;color:#fff}
-    .job.done .job-num span{display:none}
+    .job.done .job-num .num-txt{display:none}
     .job.done .job-num::before{content:"✓";font-weight:800}
+    .job.carry .job-num{background:rgba(245,158,11,.3);color:#f59e0b;font-size:16px}
+
     .job-title{flex:1;min-width:0}
     .job-customer{font-size:17px;font-weight:700;line-height:1.25}
     .job-type{font-size:12px;color:#f59e0b;text-transform:uppercase;letter-spacing:.04em;margin-top:2px}
-    .job-amount{
-      font-size:14px;font-weight:700;color:#f59e0b;
-      flex-shrink:0;font-variant-numeric:tabular-nums;
-    }
+    .job-amount{font-size:14px;font-weight:700;color:#f59e0b;flex-shrink:0;font-variant-numeric:tabular-nums}
 
-    .job-body{
-      font-size:13px;color:rgba(255,255,255,.6);
-      line-height:1.5;margin-left:48px;
-    }
-    .job-body a.tel{
-      color:#60a5fa;text-decoration:none;font-weight:600;
-    }
+    .job-body{font-size:13px;color:rgba(255,255,255,.6);line-height:1.5;margin-left:48px}
+    .job-body a.tel{color:#60a5fa;text-decoration:none;font-weight:600}
     .job-body .desc{margin-top:6px;color:rgba(255,255,255,.5);font-size:12px}
 
-    /* Action buttons */
-    .actions{
-      display:grid;grid-template-columns:1fr;gap:8px;
-      margin:14px 0 0 48px;
-    }
+    /* ── Buttons ── */
+    .actions{display:grid;grid-template-columns:1fr;gap:8px;margin:14px 0 0 48px}
     .actions.split{grid-template-columns:1fr 1fr}
     .btn{
-      padding:14px 16px;
-      font-size:14px;font-weight:700;
-      border:none;border-radius:10px;
-      cursor:pointer;min-height:48px;
+      padding:14px 16px;font-size:14px;font-weight:700;
+      border:none;border-radius:10px;cursor:pointer;min-height:48px;
       transition:opacity .15s,transform .1s;
-      font-family:inherit;
-      letter-spacing:.02em;
-      text-transform:uppercase;
+      font-family:inherit;letter-spacing:.02em;text-transform:uppercase;
     }
-    .btn:active{transform:scale(0.97)}
+    .btn:active{transform:scale(.97)}
     .btn:disabled{opacity:.5;cursor:not-allowed}
     .btn-start{background:#f59e0b;color:#132038}
     .btn-done{background:#16a34a;color:#fff}
-    .btn-more{
-      background:rgba(255,255,255,.08);
-      color:rgba(255,255,255,.85);
-      border:1px solid rgba(255,255,255,.1);
+    .btn-more{background:rgba(255,255,255,.08);color:rgba(255,255,255,.85);border:1px solid rgba(255,255,255,.1)}
+    .btn-pull{
+      background:rgba(96,165,250,.15);color:#93c5fd;
+      border:1px solid rgba(96,165,250,.3);font-size:13px;
     }
+    .btn-pull:active{background:rgba(96,165,250,.25)}
 
-    /* More-actions sheet */
-    .sheet-bg{
-      position:fixed;inset:0;
-      background:rgba(0,0,0,.6);
-      display:none;z-index:90;
-      align-items:flex-end;
-    }
+    /* ── Sheet ── */
+    .sheet-bg{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;z-index:90;align-items:flex-end}
     .sheet-bg.open{display:flex}
     .sheet{
       width:100%;background:#1f2937;color:#fff;
       border-radius:18px 18px 0 0;
-      padding:20px 18px env(safe-area-inset-bottom);
-      max-height:80vh;overflow-y:auto;
+      padding:20px 18px env(safe-area-inset-bottom);max-height:80vh;overflow-y:auto;
     }
     .sheet h3{font-size:17px;font-weight:700;margin-bottom:14px;text-align:center}
     .sheet .opt{
-      display:block;width:100%;
-      padding:18px;margin-bottom:8px;
+      display:block;width:100%;padding:18px;margin-bottom:8px;
       font-size:15px;font-weight:600;
-      background:rgba(255,255,255,.05);
-      border:1px solid rgba(255,255,255,.08);
-      border-radius:12px;color:#fff;cursor:pointer;
-      text-align:left;font-family:inherit;
+      background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08);
+      border-radius:12px;color:#fff;cursor:pointer;text-align:left;font-family:inherit;
     }
     .sheet .opt:active{background:rgba(255,255,255,.1)}
     .sheet .opt .label{display:block;font-weight:700}
     .sheet .opt .desc{display:block;font-size:12px;color:rgba(255,255,255,.5);margin-top:2px}
     .sheet .cancel{
       background:none;border:none;color:rgba(255,255,255,.6);
-      width:100%;padding:14px;font-size:14px;cursor:pointer;
-      margin-top:6px;font-family:inherit;
+      width:100%;padding:14px;font-size:14px;cursor:pointer;margin-top:6px;font-family:inherit;
     }
 
-    /* Toast */
+    /* ── Toast ── */
     .toast{
-      position:fixed;left:20px;right:20px;bottom:20px;
-      background:#1f2937;color:#fff;
-      padding:14px 18px;border-radius:10px;
+      position:fixed;left:20px;right:20px;
+      bottom:calc(20px + env(safe-area-inset-bottom));
+      background:#1f2937;color:#fff;padding:14px 18px;border-radius:10px;
       font-size:14px;text-align:center;
-      transform:translateY(120%);transition:transform .3s;
-      z-index:100;
+      transform:translateY(120%);transition:transform .3s;z-index:100;
     }
     .toast.show{transform:translateY(0)}
     .toast.success{background:#15803d}
     .toast.error{background:#991b1b}
 
-    .empty{
-      text-align:center;padding:60px 20px;
-      color:rgba(255,255,255,.4);font-size:14px;
-    }
+    .empty{text-align:center;padding:48px 20px;color:rgba(255,255,255,.4);font-size:14px}
     .loading{text-align:center;padding:40px;color:rgba(255,255,255,.4)}
   </style>
 </head>
@@ -166,13 +178,13 @@
     <div class="who">Hi, <strong>{{ employee_name }}</strong></div>
   </div>
 
-  <main>
-    <div id="content">
-      <div class="loading">Loading route...</div>
-    </div>
-  </main>
+  <div class="day-tabs" id="day-tabs"></div>
 
-  <!-- More-actions sheet -->
+  <div class="days-scroll" id="days-scroll">
+    <div class="loading" style="width:100%;flex-shrink:0">Loading schedule...</div>
+  </div>
+
+  <!-- More-actions sheet (today's jobs only) -->
   <div class="sheet-bg" id="sheet">
     <div class="sheet">
       <h3>Mark this job as...</h3>
@@ -198,187 +210,262 @@
 
   <div class="toast" id="toast"></div>
 
-  <script>
-    var STATE = null;
-    var SHEET_JOB_ID = null;
+<script>
+var SCHEDULE = null;
+var SHEET_JOB_ID = null;
+var CURRENT_DAY_IDX = 0;
 
-    function fmt$(n){return'$'+Number(n||0).toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:0})}
-    function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
-    function fmtType(s){return(s||'job').replace(/_/g,' ').replace(/\b\w/g,function(c){return c.toUpperCase()})}
-    function fmtPhone(p){if(!p)return'';var d=p.replace(/\D/g,'').replace(/^1/,'');if(d.length===10)return'('+d.slice(0,3)+') '+d.slice(3,6)+'-'+d.slice(6);return p}
+// ── Helpers ──────────────────────────────────────────────────────────────────
+function fmt$(n){ return '$'+Number(n||0).toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:0}); }
+function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function fmtType(s){ return (s||'job').replace(/_/g,' ').replace(/\b\w/g,function(c){return c.toUpperCase()}); }
+function fmtPhone(p){
+  if(!p) return '';
+  var d = p.replace(/\D/g,'').replace(/^1/,'');
+  if(d.length===10) return '('+d.slice(0,3)+') '+d.slice(3,6)+'-'+d.slice(6);
+  return p;
+}
 
-    async function loadRoute(){
-      try{
-        var r = await fetch('/pwa/api/route');
-        if(r.status === 401 || r.status === 403){ window.location.href = '/pwa/login'; return }
-        var d = await r.json();
-        if(!d.success){ showError(d.error || 'Could not load route'); return }
-        STATE = d;
-        render(d);
-      }catch(e){ showError('Connection error') }
-    }
+// ── Load ─────────────────────────────────────────────────────────────────────
+async function loadSchedule(){
+  try{
+    var r = await fetch('/pwa/api/schedule?days=5');
+    if(r.status===401||r.status===403){ window.location.href='/pwa/login'; return; }
+    var d = await r.json();
+    if(!d.success){ showError(d.error||'Could not load schedule'); return; }
+    SCHEDULE = d;
+    var prevIdx = CURRENT_DAY_IDX;
+    renderAll(d);
+    // After re-render, scroll back to the same day the tech was on
+    if(prevIdx > 0) setTimeout(function(){ goToDay(prevIdx, false); }, 50);
+  }catch(e){ showError('Connection error'); }
+}
 
-    function render(d){
-      var html = '';
+// ── Render ───────────────────────────────────────────────────────────────────
+function renderAll(data){
+  renderTabs(data.days);
+  renderColumns(data.days);
+}
 
-      // Header summary
-      html += '<div class="hdr-summary">';
-      html += '<div class="hdr-title">Today\'s Route</div>';
-      html += '<div class="hdr-meta">' + d.completed_today + ' of ' + d.total_jobs + ' done</div>';
-      html += '</div>';
+function renderTabs(days){
+  var html = '';
+  days.forEach(function(day, i){
+    var total = day.jobs.length + ((day.carry_forward||[]).length);
+    var badge = total ? '<span class="count">'+total+'</span>' : '';
+    html += '<div class="day-tab'+(i===0?' active':'')+'" id="tab-'+i+'" onclick="goToDay('+i+',true)">';
+    html += esc(day.label) + badge + '</div>';
+  });
+  document.getElementById('day-tabs').innerHTML = html;
+}
 
-      if(!d.route || !d.route.length){
-        html += '<div class="empty">No jobs dispatched for you today.</div>';
-        document.getElementById('content').innerHTML = html;
-        return;
+function renderColumns(days){
+  var html = '';
+  days.forEach(function(day, i){
+    html += '<div class="day-col" id="day-col-'+i+'">';
+    html += renderDayContent(day, i);
+    html += '</div>';
+  });
+  document.getElementById('days-scroll').innerHTML = html;
+  setupScrollSync();
+}
+
+function renderDayContent(day, dayIdx){
+  var isToday   = day.is_today;
+  var completed = day.jobs.filter(function(j){ return !!j.job_end; }).length;
+  var total     = day.jobs.length;
+  var carry     = day.carry_forward || [];
+
+  var html = '';
+  html += '<div class="day-header">';
+  html += '<div class="day-header-title">'+esc(day.label)+'</div>';
+  if(isToday){
+    html += '<div class="day-header-meta">'+completed+' of '+total+' done</div>';
+  } else {
+    html += '<div class="day-header-meta">'+total+' job'+(total!==1?'s':'')+' scheduled</div>';
+  }
+  html += '</div>';
+
+  // Carry-forward at top of today
+  if(isToday && carry.length){
+    html += '<div class="carry-section">';
+    html += '<div class="carry-label">Needs reschedule ('+carry.length+')</div>';
+    carry.forEach(function(job){ html += renderJobCard(job, dayIdx, true); });
+    html += '</div>';
+  }
+
+  if(!day.jobs.length && !(isToday && carry.length)){
+    html += '<div class="empty">No jobs scheduled.</div>';
+    return html;
+  }
+
+  day.jobs.forEach(function(job, i){ html += renderJobCard(job, dayIdx, false, i+1); });
+  return html;
+}
+
+function renderJobCard(job, dayIdx, isCarry, num){
+  var isToday   = dayIdx === 0;
+  var isCurrent = isToday && !!(job.job_start && !job.job_end);
+  var isDone    = isToday && !!job.job_end;
+
+  var cls = 'job';
+  if(isCurrent) cls += ' current';
+  if(isDone)    cls += ' done';
+  if(isCarry)   cls += ' carry';
+
+  var html = '<div class="'+cls+'" id="jcard-'+esc(job.job_id)+'">';
+
+  // Header
+  html += '<div class="job-head">';
+  html += '<div class="job-num">';
+  html += isCarry ? '↩' : '<span class="num-txt">'+(num||'')+'</span>';
+  html += '</div>';
+  html += '<div class="job-title">';
+  html += '<div class="job-customer">'+esc(job.customer_name||'Customer')+'</div>';
+  if(job.job_type) html += '<div class="job-type">'+esc(fmtType(job.job_type))+'</div>';
+  html += '</div>';
+  if(job.estimated_amount) html += '<div class="job-amount">'+fmt$(job.estimated_amount)+'</div>';
+  html += '</div>';
+
+  // Body
+  if(job.customer_address||job.customer_phone||job.job_description){
+    html += '<div class="job-body">';
+    if(job.customer_address) html += '<div>📍 '+esc(job.customer_address)+'</div>';
+    if(job.customer_phone)   html += '<div>📞 <a class="tel" href="tel:'+esc(job.customer_phone)+'">'+esc(fmtPhone(job.customer_phone))+'</a></div>';
+    if(job.job_description)  html += '<div class="desc">'+esc(job.job_description)+'</div>';
+    html += '</div>';
+  }
+
+  // Action buttons
+  if(!isDone){
+    if(isToday || isCarry){
+      var notStarted = !job.job_start;
+      html += '<div class="actions split">';
+      if(notStarted){
+        html += '<button class="btn btn-start" onclick="startJob(\''+esc(job.job_id)+'\')">Start</button>';
+      } else {
+        html += '<button class="btn btn-done" onclick="completeJob(\''+esc(job.job_id)+'\')">Done</button>';
       }
+      html += '<button class="btn btn-more" onclick="openSheet(\''+esc(job.job_id)+'\')">More</button>';
+      html += '</div>';
+    } else {
+      // Future day — pull to today
+      html += '<div class="actions">';
+      html += '<button class="btn btn-pull" onclick="pullToToday(\''+esc(job.job_id)+'\',\''+esc(job.customer_name||'')+'\')">▶ Move to Today</button>';
+      html += '</div>';
+    }
+  }
 
-      // Job cards
-      d.route.forEach(function(job, i){
-        var isCurrent = !!(job.job_start && !job.job_end);
-        var isDone = !!job.job_end;
-        var notStarted = !job.job_start && !job.job_end;
-        var cls = 'job' + (isCurrent ? ' current' : '') + (isDone ? ' done' : '');
+  html += '</div>';
+  return html;
+}
 
-        html += '<div class="' + cls + '">';
+// ── Tab & scroll sync ─────────────────────────────────────────────────────────
+function goToDay(idx, animate){
+  var scrollEl = document.getElementById('days-scroll');
+  var col = document.getElementById('day-col-'+idx);
+  if(col){
+    scrollEl.scrollTo({left: col.offsetLeft, behavior: animate ? 'smooth' : 'auto'});
+  }
+  syncActiveTab(idx);
+}
 
-        // Header row
-        html += '<div class="job-head">';
-        html += '<div class="job-num"><span>' + (i + 1) + '</span></div>';
-        html += '<div class="job-title">';
-        html += '<div class="job-customer">' + esc(job.customer_name || 'Customer') + '</div>';
-        if(job.job_type){
-          html += '<div class="job-type">' + esc(fmtType(job.job_type)) + '</div>';
-        }
-        html += '</div>';
-        if(job.estimated_amount){
-          html += '<div class="job-amount">' + fmt$(job.estimated_amount) + '</div>';
-        }
-        html += '</div>';
+function syncActiveTab(idx){
+  document.querySelectorAll('.day-tab').forEach(function(t,i){
+    t.classList.toggle('active', i===idx);
+  });
+  CURRENT_DAY_IDX = idx;
+}
 
-        // Body
-        if(job.customer_address || job.customer_phone || job.job_description){
-          html += '<div class="job-body">';
-          if(job.customer_address){
-            html += '<div>📍 ' + esc(job.customer_address) + '</div>';
-          }
-          if(job.customer_phone){
-            html += '<div>📞 <a class="tel" href="tel:' + esc(job.customer_phone) + '">' + esc(fmtPhone(job.customer_phone)) + '</a></div>';
-          }
-          if(job.job_description){
-            html += '<div class="desc">' + esc(job.job_description) + '</div>';
-          }
-          html += '</div>';
-        }
-
-        // Action buttons (only for not-completed jobs)
-        if(!isDone){
-          if(notStarted){
-            html += '<div class="actions split">';
-            html += '<button class="btn btn-start" onclick="startJob(\'' + job.job_id + '\')">Start</button>';
-            html += '<button class="btn btn-more" onclick="openSheet(\'' + job.job_id + '\')">More</button>';
-            html += '</div>';
-          } else {
-            // Current/in-progress
-            html += '<div class="actions split">';
-            html += '<button class="btn btn-done" onclick="completeJob(\'' + job.job_id + '\')">Done</button>';
-            html += '<button class="btn btn-more" onclick="openSheet(\'' + job.job_id + '\')">More</button>';
-            html += '</div>';
-          }
-        }
-
-        html += '</div>';
+function setupScrollSync(){
+  var scrollEl = document.getElementById('days-scroll');
+  var ticking = false;
+  scrollEl.addEventListener('scroll', function(){
+    if(!ticking){
+      requestAnimationFrame(function(){
+        var colWidth = scrollEl.offsetWidth || 1;
+        var idx = Math.round(scrollEl.scrollLeft / colWidth);
+        if(idx !== CURRENT_DAY_IDX) syncActiveTab(idx);
+        ticking = false;
       });
-
-      document.getElementById('content').innerHTML = html;
+      ticking = true;
     }
+  });
+}
 
-    async function startJob(jobId){
-      try{
-        var r = await fetch('/pwa/api/job/' + jobId + '/start', {method: 'POST'});
-        var d = await r.json();
-        if(d.success){
-          showToast('Started · ' + (d.customer_name || ''), 'success');
-          loadRoute();
-        } else {
-          showError(d.error || 'Could not start job');
-        }
-      }catch(e){ showError('Connection error') }
-    }
+// ── Job actions ───────────────────────────────────────────────────────────────
+async function startJob(jobId){
+  try{
+    var r = await fetch('/pwa/api/job/'+jobId+'/start', {method:'POST'});
+    var d = await r.json();
+    if(d.success){ showToast('Started · '+(d.customer_name||''), 'success'); loadSchedule(); }
+    else showError(d.error||'Could not start job');
+  }catch(e){ showError('Connection error'); }
+}
 
-    async function completeJob(jobId){
-      if(!confirm('Mark this job done?')) return;
-      try{
-        var r = await fetch('/pwa/api/job/' + jobId + '/done', {method: 'POST'});
-        var d = await r.json();
-        if(d.success){
-          var msg = 'Done · ' + (d.customer_name || '');
-          if(d.invoice_amount){ msg += ' · invoice $' + d.invoice_amount.toFixed(0); }
-          if(d.next_job){ msg += ' · next: ' + (d.next_job.customer_name || ''); }
-          if(d.route_complete){ msg += ' · route complete!'; }
-          showToast(msg, 'success');
-          loadRoute();
-        } else {
-          showError(d.error || 'Could not complete job');
-        }
-      }catch(e){ showError('Connection error') }
-    }
+async function completeJob(jobId){
+  if(!confirm('Mark this job done?')) return;
+  try{
+    var r = await fetch('/pwa/api/job/'+jobId+'/done', {method:'POST'});
+    var d = await r.json();
+    if(d.success){
+      var msg = 'Done · '+(d.customer_name||'');
+      if(d.invoice_amount) msg += ' · invoice $'+d.invoice_amount.toFixed(0);
+      if(d.route_complete) msg += ' · route complete!';
+      showToast(msg, 'success');
+      loadSchedule();
+    } else showError(d.error||'Could not complete job');
+  }catch(e){ showError('Connection error'); }
+}
 
-    function openSheet(jobId){
-      SHEET_JOB_ID = jobId;
-      document.getElementById('sheet').classList.add('open');
-    }
-    function closeSheet(){
-      SHEET_JOB_ID = null;
-      document.getElementById('sheet').classList.remove('open');
-    }
+async function pullToToday(jobId, customerName){
+  var label = customerName || 'this job';
+  if(!confirm('Move '+label+' to today\'s route?')) return;
+  try{
+    var r = await fetch('/pwa/api/job/'+jobId+'/pull-to-today', {method:'POST'});
+    var d = await r.json();
+    if(d.success){
+      showToast((d.customer_name||'Job')+' moved to today ✓', 'success');
+      CURRENT_DAY_IDX = 0;   // jump back to today after pull
+      loadSchedule();
+    } else showError(d.error||'Could not move job');
+  }catch(e){ showError('Connection error'); }
+}
 
-    async function setStatus(command){
-      if(!SHEET_JOB_ID) return;
-      var jobId = SHEET_JOB_ID;
-      var prompts = {
-        BACK: 'Carry this job to another day?',
-        PARTS: 'Mark this job as needing parts?',
-        NOSHOW: 'Mark customer as no-show?',
-        SCOPE: 'Flag scope change for owner review?',
-      };
-      if(!confirm(prompts[command] || 'Continue?')){ closeSheet(); return }
-      closeSheet();
+// ── Sheet ─────────────────────────────────────────────────────────────────────
+function openSheet(jobId){ SHEET_JOB_ID=jobId; document.getElementById('sheet').classList.add('open'); }
+function closeSheet(){ SHEET_JOB_ID=null; document.getElementById('sheet').classList.remove('open'); }
 
-      try{
-        var r = await fetch('/pwa/api/job/' + jobId + '/status', {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({command: command}),
-        });
-        var d = await r.json();
-        if(d.success){
-          showToast('Marked ' + d.status.replace(/_/g, ' '), 'success');
-          loadRoute();
-        } else {
-          showError(d.error || 'Update failed');
-        }
-      }catch(e){ showError('Connection error') }
-    }
-
-    function showToast(msg, kind){
-      var t = document.getElementById('toast');
-      t.textContent = msg;
-      t.className = 'toast show ' + (kind || '');
-      setTimeout(function(){ t.className = 'toast'; }, 3500);
-    }
-    function showError(msg){ showToast(msg, 'error') }
-
-    // Close sheet on background tap
-    document.getElementById('sheet').addEventListener('click', function(e){
-      if(e.target === this) closeSheet();
+async function setStatus(command){
+  if(!SHEET_JOB_ID) return;
+  var jobId = SHEET_JOB_ID;
+  var prompts = {BACK:'Carry this job to another day?',PARTS:'Mark as needing parts?',NOSHOW:'Mark customer as no-show?',SCOPE:'Flag scope change for owner review?'};
+  if(!confirm(prompts[command]||'Continue?')){ closeSheet(); return; }
+  closeSheet();
+  try{
+    var r = await fetch('/pwa/api/job/'+jobId+'/status',{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({command:command}),
     });
+    var d = await r.json();
+    if(d.success){ showToast('Marked '+(d.status||'').replace(/_/g,' '), 'success'); loadSchedule(); }
+    else showError(d.error||'Update failed');
+  }catch(e){ showError('Connection error'); }
+}
 
-    // Initial load + refresh on visibility change
-    loadRoute();
-    document.addEventListener('visibilitychange', function(){
-      if(!document.hidden) loadRoute();
-    });
-  </script>
+// ── Toast ─────────────────────────────────────────────────────────────────────
+function showToast(msg, kind){
+  var t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast show '+(kind||'');
+  setTimeout(function(){ t.className='toast'; }, 3500);
+}
+function showError(msg){ showToast(msg,'error'); }
+
+document.getElementById('sheet').addEventListener('click', function(e){ if(e.target===this) closeSheet(); });
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+loadSchedule();
+document.addEventListener('visibilitychange', function(){ if(!document.hidden) loadSchedule(); });
+</script>
 </body>
 </html>

@@ -437,3 +437,245 @@ def _handle_scope_notification(sb, client_id: str, job_id: str, worker_name: str
         )
     except Exception as e:
         print(f"[{_ts()}] WARN pwa_jobs: scope notify failed — {e}")
+
+
+def get_schedule(client_id: str, employee_id: str, days: int = 5) -> dict:
+    """
+    Return jobs for the next `days` days (today through today+days-1)
+    for this employee, plus carry_forward jobs shown at top of today.
+
+    Returns:
+    {
+      "success": True,
+      "days": [
+        {
+          "date": "2026-04-13",
+          "label": "Today",
+          "is_today": True,
+          "jobs": [...],
+          "carry_forward": [...]   # only present on today
+        },
+        ...
+      ]
+    }
+    """
+    from datetime import timedelta
+    from collections import defaultdict
+    sb    = get_supabase()
+    today = date.today()
+
+    date_range = [today + timedelta(days=i) for i in range(days)]
+    date_strs  = [d.isoformat() for d in date_range]
+
+    # Route assignments for this worker across the date window
+    try:
+        ra = sb.table("route_assignments").select(
+            "job_id, sort_order, dispatch_date"
+        ).eq("client_id", client_id).eq(
+            "worker_id", employee_id
+        ).in_("dispatch_date", date_strs).order("sort_order").execute()
+    except Exception as e:
+        print(f"[{_ts()}] ERROR pwa_jobs: get_schedule ra failed — {e}")
+        return {"success": False, "error": str(e)}
+
+    # Group by date
+    date_to_jobs: dict = defaultdict(list)
+    date_sort_map: dict = defaultdict(dict)
+    for row in (ra.data or []):
+        d   = row["dispatch_date"]
+        jid = row["job_id"]
+        date_to_jobs[d].append(jid)
+        date_sort_map[d][jid] = row.get("sort_order", 0)
+
+    # Fetch all jobs in one query
+    all_job_ids = [jid for jids in date_to_jobs.values() for jid in jids]
+    jobs_map: dict = {}
+    if all_job_ids:
+        try:
+            jobs_result = sb.table("jobs").select(
+                "id, job_type, job_description, status, dispatch_status, "
+                "estimated_amount, scheduled_date, customer_id, job_start, job_end"
+            ).eq("client_id", client_id).in_("id", all_job_ids).execute()
+
+            cust_ids = list({j.get("customer_id") for j in (jobs_result.data or []) if j.get("customer_id")})
+            cust_map: dict = {}
+            if cust_ids:
+                custs = sb.table("customers").select(
+                    "id, customer_name, customer_address, customer_phone"
+                ).in_("id", cust_ids).execute()
+                cust_map = {c["id"]: c for c in (custs.data or [])}
+
+            for job in (jobs_result.data or []):
+                cust = cust_map.get(job.get("customer_id"), {})
+                jobs_map[job["id"]] = {
+                    "job_id":           job["id"],
+                    "job_type":         job.get("job_type", ""),
+                    "job_description":  job.get("job_description", ""),
+                    "status":           job.get("status", ""),
+                    "dispatch_status":  job.get("dispatch_status", ""),
+                    "estimated_amount": job.get("estimated_amount"),
+                    "scheduled_date":   job.get("scheduled_date"),
+                    "job_start":        job.get("job_start"),
+                    "job_end":          job.get("job_end"),
+                    "customer_name":    cust.get("customer_name", ""),
+                    "customer_address": cust.get("customer_address", ""),
+                    "customer_phone":   cust.get("customer_phone", ""),
+                }
+        except Exception as e:
+            print(f"[{_ts()}] ERROR pwa_jobs: get_schedule jobs lookup failed — {e}")
+
+    # Carry-forward jobs — priority queue for today
+    carry_forward_jobs: list = []
+    try:
+        cf = sb.table("jobs").select(
+            "id, job_type, job_description, status, dispatch_status, "
+            "estimated_amount, scheduled_date, customer_id"
+        ).eq("client_id", client_id).eq(
+            "assigned_worker_id", employee_id
+        ).eq("dispatch_status", "carry_forward").execute()
+
+        cf_cust_ids = list({j.get("customer_id") for j in (cf.data or []) if j.get("customer_id")})
+        cf_cust_map: dict = {}
+        if cf_cust_ids:
+            cf_custs = sb.table("customers").select(
+                "id, customer_name, customer_address, customer_phone"
+            ).in_("id", cf_cust_ids).execute()
+            cf_cust_map = {c["id"]: c for c in (cf_custs.data or [])}
+
+        for job in (cf.data or []):
+            cust = cf_cust_map.get(job.get("customer_id"), {})
+            carry_forward_jobs.append({
+                "job_id":           job["id"],
+                "job_type":         job.get("job_type", ""),
+                "job_description":  job.get("job_description", ""),
+                "status":           job.get("status", ""),
+                "dispatch_status":  "carry_forward",
+                "estimated_amount": job.get("estimated_amount"),
+                "scheduled_date":   job.get("scheduled_date"),
+                "job_start":        None,
+                "job_end":          None,
+                "customer_name":    cust.get("customer_name", ""),
+                "customer_address": cust.get("customer_address", ""),
+                "customer_phone":   cust.get("customer_phone", ""),
+            })
+    except Exception as e:
+        print(f"[{_ts()}] WARN pwa_jobs: get_schedule carry_forward failed — {e}")
+
+    # Build response
+    day_labels    = ["Today", "Tomorrow"]
+    weekday_names = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+
+    result_days = []
+    for i, (d, d_str) in enumerate(zip(date_range, date_strs)):
+        label = day_labels[i] if i < len(day_labels) else weekday_names[d.weekday()] + " " + d.strftime("%b %-d")
+        day_job_ids = date_to_jobs.get(d_str, [])
+        sort_map    = date_sort_map.get(d_str, {})
+        day_jobs    = [jobs_map[jid] for jid in day_job_ids if jid in jobs_map]
+        day_jobs.sort(key=lambda j: sort_map.get(j["job_id"], 0))
+
+        day_entry: dict = {
+            "date":     d_str,
+            "label":    label,
+            "is_today": i == 0,
+            "jobs":     day_jobs,
+        }
+        if i == 0:
+            day_entry["carry_forward"] = carry_forward_jobs
+
+        result_days.append(day_entry)
+
+    return {"success": True, "days": result_days}
+
+
+def pull_job_to_today(client_id: str, employee_id: str, job_id: str) -> dict:
+    """
+    Pull a future scheduled job into today's route.
+
+    Steps:
+      1. Find this worker's route_assignment for the job (any future date)
+      2. Delete that future assignment
+      3. Insert a new route_assignment for today at end of list
+      4. Update jobs.scheduled_date = today, status = 'scheduled',
+         dispatch_status = 'assigned'
+
+    Job appears at bottom of today's list. Dispatcher can reorder from dashboard.
+    """
+    sb    = get_supabase()
+    today = date.today().isoformat()
+
+    try:
+        ra = sb.table("route_assignments").select(
+            "id, dispatch_date, sort_order"
+        ).eq("client_id", client_id).eq(
+            "worker_id", employee_id
+        ).eq("job_id", job_id).execute()
+    except Exception as e:
+        print(f"[{_ts()}] ERROR pwa_jobs: pull_job_to_today ra lookup failed — {e}")
+        return {"success": False, "error": str(e)}
+
+    if not ra.data:
+        return {"success": False, "error": "Job not found in your schedule"}
+
+    existing_ra = ra.data[0]
+    if existing_ra["dispatch_date"] == today:
+        return {"success": False, "error": "Job is already on today's route"}
+
+    # Max sort_order for today → append at end
+    try:
+        today_ra = sb.table("route_assignments").select(
+            "sort_order"
+        ).eq("client_id", client_id).eq(
+            "worker_id", employee_id
+        ).eq("dispatch_date", today).order("sort_order", desc=True).limit(1).execute()
+        max_sort = (today_ra.data[0]["sort_order"] if today_ra.data else 0) + 10
+    except Exception:
+        max_sort = 100
+
+    try:
+        # Remove future assignment
+        sb.table("route_assignments").delete().eq("id", existing_ra["id"]).execute()
+
+        # Insert today's assignment
+        sb.table("route_assignments").insert({
+            "client_id":     client_id,
+            "worker_id":     employee_id,
+            "job_id":        job_id,
+            "dispatch_date": today,
+            "sort_order":    max_sort,
+            "status":        "assigned",
+        }).execute()
+
+        # Update the job itself
+        sb.table("jobs").update({
+            "scheduled_date":  today,
+            "status":          "scheduled",
+            "dispatch_status": "assigned",
+        }).eq("id", job_id).eq("client_id", client_id).execute()
+
+        # Get customer name for response
+        customer_name = ""
+        try:
+            jr = sb.table("jobs").select("customer_id").eq("id", job_id).execute()
+            if jr.data and jr.data[0].get("customer_id"):
+                cr = sb.table("customers").select("customer_name").eq(
+                    "id", jr.data[0]["customer_id"]
+                ).execute()
+                if cr.data:
+                    customer_name = cr.data[0].get("customer_name", "")
+        except Exception:
+            pass
+
+        print(
+            f"[{_ts()}] INFO pwa_jobs: Pulled job {job_id[:8]} to today "
+            f"from {existing_ra['dispatch_date']} for worker {employee_id[:8]}"
+        )
+        return {
+            "success":       True,
+            "job_id":        job_id,
+            "customer_name": customer_name,
+            "from_date":     existing_ra["dispatch_date"],
+        }
+
+    except Exception as e:
+        print(f"[{_ts()}] ERROR pwa_jobs: pull_job_to_today write failed — {e}")
+        return {"success": False, "error": str(e)}
