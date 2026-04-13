@@ -16,12 +16,15 @@ State flow:
       → confirm_crew       multi-select from active employees; "me" = logged-in foreman
       → confirm_equipment  yesterday's equipment if any, else ask fresh; loop
       → log_materials      ask yes/no; if yes: name → qty → unit → supplier? → loop
-      → day_close          confirm summary → write all three log tables → done
+      → day_close          confirm summary
+                           yes → save all three tables → done
+                           no  → correction menu (crew / equipment / materials / cancel)
+      → day_close_fix      foreman picks what to correct, routes back to correct step
 
 Key design decisions:
     - Any job with status new/estimated/scheduled/in_progress shows in the list.
-      No special work_order type needed — today's route jobs, multi-day installs,
-      everything that isn't complete or lost is fair game.
+    - "no" at the summary opens a correction menu, not a cancel.
+      Only an explicit "4" or "cancel" at that menu throws the log away.
     - log_date is a DATE, not a timestamp. Enables backdating missed close-outs.
     - Equipment is presence-only for MVP. Hours field added in phase 2.
     - Materials: name + qty + unit required. Supplier optional free text.
@@ -35,7 +38,7 @@ import re
 import sys
 import json
 import os
-from datetime import datetime, timezone, date, timedelta
+from datetime import datetime, timezone, date
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -80,10 +83,6 @@ def is_job_log_intent(message: str) -> bool:
 # ---------------------------------------------------------------------------
 
 def check_missed_log(client_id: str, employee_id: str) -> dict | None:
-    """
-    Check if this employee has an unclosed job_log_session from a prior date.
-    Returns the session dict if found, or None.
-    """
     try:
         sb = get_supabase()
         result = sb.table(JLS.TABLE).select("*").eq(
@@ -153,7 +152,7 @@ def _update_session(session_pk: str, updates: dict) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# Scratchpad helpers (state stored in JLS.NOTES as JSON)
+# Scratchpad helpers
 # ---------------------------------------------------------------------------
 
 def _get_state(session: dict) -> dict:
@@ -172,19 +171,10 @@ def _set_state(session_pk: str, data: dict) -> None:
 # DB lookups
 # ---------------------------------------------------------------------------
 
-# Job statuses that are eligible for daily logging.
-# Any open job — today's route, multi-day install, anything not closed.
 _LOGGABLE_STATUSES = ["new", "estimated", "scheduled", "in_progress"]
 
 
 def _get_open_jobs(client_id: str) -> list[dict]:
-    """
-    Return loggable jobs for this client sorted by most recently created.
-
-    Any job with status new/estimated/scheduled/in_progress is shown.
-    No special work_order type needed — today's route jobs show up here
-    alongside multi-day installs. The foreman picks whichever they're on.
-    """
     try:
         sb = get_supabase()
         result = sb.table(Jobs.TABLE).select(
@@ -195,7 +185,7 @@ def _get_open_jobs(client_id: str) -> list[dict]:
         ).in_(
             Jobs.STATUS, _LOGGABLE_STATUSES
         ).order(
-            Jobs.CREATED_AT, desc=True   # created_at — jobs table has no updated_at
+            Jobs.CREATED_AT, desc=True
         ).limit(20).execute()
 
         jobs = result.data or []
@@ -219,7 +209,6 @@ def _get_open_jobs(client_id: str) -> list[dict]:
 
 
 def _get_active_employees(client_id: str) -> list[dict]:
-    """Return active employees for this client, sorted by name."""
     try:
         sb = get_supabase()
         result = sb.table(EMP.TABLE).select(
@@ -234,10 +223,6 @@ def _get_active_employees(client_id: str) -> list[dict]:
 
 
 def _get_yesterday_equipment(client_id: str, job_id: str) -> list[str]:
-    """
-    Return equipment names from the most recent prior log day for this job.
-    Powers the 'same as yesterday?' prompt.
-    """
     try:
         sb = get_supabase()
         result = sb.table(JEL.TABLE).select(
@@ -251,7 +236,6 @@ def _get_yesterday_equipment(client_id: str, job_id: str) -> list[str]:
         rows = result.data or []
         if not rows:
             return []
-
         most_recent_date = rows[0][JEL.LOG_DATE]
         return [r[JEL.EQUIPMENT_NAME] for r in rows
                 if r[JEL.LOG_DATE] == most_recent_date]
@@ -487,6 +471,8 @@ def handle_input(session: dict, user_message: str,
         return _handle_material_supplier(session, user_message, client_id, employee_id)
     if current_step == "day_close":
         return _handle_day_close(session, user_message, client_id, employee_id)
+    if current_step == "day_close_fix":
+        return _handle_day_close_fix(session, user_message, client_id, employee_id)
 
     return _show_job_list(session, client_id)
 
@@ -515,9 +501,9 @@ def _handle_missed_log(session: dict, text: str,
 def _handle_missed_materials(session: dict, text: str,
                               client_id: str, employee_id: str) -> dict:
     session_pk = session[JLS.ID]
-    state = _get_state(session)
 
     if _is_yes(text):
+        state = _get_state(session)
         state["logging_for_yesterday"] = True
         _set_state(session_pk, state)
         _update_session(session_pk, {JLS.CURRENT_STEP: "log_materials"})
@@ -556,7 +542,7 @@ def _handle_select_job(session: dict, text: str,
     ]
     _set_state(session_pk, state)
     _update_session(session_pk, {
-        JLS.JOB_ID:      job_id,
+        JLS.JOB_ID:       job_id,
         JLS.CURRENT_STEP: "confirm_crew",
     })
 
@@ -600,8 +586,8 @@ def _handle_confirm_crew(session: dict, text: str,
     state["crew_names"] = names
     _set_state(session_pk, state)
 
-    job_id           = state.get("job_id")
-    yesterday_equip  = _get_yesterday_equipment(client_id, job_id) if job_id else []
+    job_id          = state.get("job_id")
+    yesterday_equip = _get_yesterday_equipment(client_id, job_id) if job_id else []
     state["yesterday_equipment"] = yesterday_equip
     _set_state(session_pk, state)
 
@@ -626,7 +612,6 @@ def _handle_confirm_equipment(session: dict, text: str,
     session_pk = session[JLS.ID]
     state      = _get_state(session)
     yesterday  = state.get("yesterday_equipment", [])
-
     text_lower = text.strip().lower()
 
     if _is_yes(text) and yesterday:
@@ -760,14 +745,19 @@ def _handle_material_supplier(session: dict, text: str,
     _set_state(session_pk, state)
     _update_session(session_pk, {JLS.CURRENT_STEP: "log_materials"})
 
-    name     = current.get("name", "")
-    qty      = current.get("qty", "")
-    unit     = current.get("unit", "")
-    sup_str  = f" from {supplier}" if supplier else ""
+    name    = current.get("name", "")
+    qty     = current.get("qty", "")
+    unit    = current.get("unit", "")
+    sup_str = f" from {supplier}" if supplier else ""
     return _reply(f"Logged: {qty} {unit} of {name}{sup_str}.\nAnything else? (or 'done')")
 
 
+# ---------------------------------------------------------------------------
+# Summary + close
+# ---------------------------------------------------------------------------
+
 def _show_day_summary(session: dict, client_id: str) -> dict:
+    """Build the end-of-day summary. Called both on first show and after fixes."""
     state      = _get_state(session)
     session_pk = session[JLS.ID]
 
@@ -792,23 +782,101 @@ def _show_day_summary(session: dict, client_id: str) -> dict:
     else:
         lines.append("Materials: None")
 
-    lines.append("\nLooks right? (yes to save, no to cancel)")
+    lines.append("\nLooks right? (yes to save, no to fix something)")
 
     _update_session(session_pk, {JLS.CURRENT_STEP: "day_close"})
     return _reply("\n".join(lines))
 
 
+def _show_fix_menu() -> dict:
+    """
+    Correction menu shown when foreman says 'no' at the summary.
+    Never destroys the log — only option 4 does that.
+    """
+    return _reply(
+        "What would you like to fix?\n"
+        "  1) Crew\n"
+        "  2) Equipment\n"
+        "  3) Add materials\n"
+        "  4) Cancel and discard this log"
+    )
+
+
 def _handle_day_close(session: dict, text: str,
                        client_id: str, employee_id: str) -> dict:
+    """
+    'yes' → save everything.
+    'no'  → open correction menu (NOT a cancel).
+    anything else → re-show summary.
+    """
     session_pk = session[JLS.ID]
     state      = _get_state(session)
 
     if _is_no(text):
-        _update_session(session_pk, {JLS.STATUS: "abandoned"})
-        return _reply("Log cancelled. Nothing was saved.")
+        # Don't cancel — open the fix menu
+        _update_session(session_pk, {JLS.CURRENT_STEP: "day_close_fix"})
+        return _show_fix_menu()
 
     if not _is_yes(text):
         return _show_day_summary(session, client_id)
+
+    # Save everything
+    return _save_log(session, client_id, employee_id)
+
+
+def _handle_day_close_fix(session: dict, text: str,
+                           client_id: str, employee_id: str) -> dict:
+    """
+    Routes the foreman's correction choice back to the right step.
+    1 → crew, 2 → equipment, 3 → materials, 4 → discard
+    """
+    session_pk = session[JLS.ID]
+    stripped   = text.strip()
+
+    if stripped == "1" or "crew" in stripped.lower():
+        # Re-ask crew — repopulate the employee list first
+        state = _get_state(session)
+        employees = _get_active_employees(session.get(JLS.CLIENT_ID, ""))
+        state["employees"] = [
+            {EMP.ID: e[EMP.ID], EMP.NAME: e[EMP.NAME], EMP.ROLE: e.get(EMP.ROLE, "")}
+            for e in employees
+        ]
+        _set_state(session_pk, state)
+        _update_session(session_pk, {JLS.CURRENT_STEP: "confirm_crew"})
+        lines = ["Who's on the job today?"]
+        for i, e in enumerate(employees[:12], 1):
+            role = (e.get(EMP.ROLE) or "").replace("_", " ")
+            lines.append(f"  {i}) {e[EMP.NAME]}" + (f" ({role})" if role else ""))
+        return _reply("\n".join(lines))
+
+    if stripped == "2" or "equip" in stripped.lower():
+        state = _get_state(session)
+        yesterday = state.get("yesterday_equipment", [])
+        _update_session(session_pk, {JLS.CURRENT_STEP: "confirm_equipment"})
+        if yesterday:
+            return _reply(
+                f"What equipment today?\n"
+                f"(Last time: {', '.join(yesterday)})\n"
+                "Say yes to keep the same, list new ones, or 'none'."
+            )
+        return _reply("What equipment today? (or 'none')")
+
+    if stripped == "3" or "material" in stripped.lower() or "add" in stripped.lower():
+        _update_session(session_pk, {JLS.CURRENT_STEP: "log_materials"})
+        return _reply("What material?")
+
+    if stripped == "4" or re.search(r'\b(cancel|discard|quit|abort)\b', stripped, re.IGNORECASE):
+        _update_session(session_pk, {JLS.STATUS: "abandoned"})
+        return _reply("Log discarded. Nothing was saved.")
+
+    # Unrecognised input — re-show the menu
+    return _show_fix_menu()
+
+
+def _save_log(session: dict, client_id: str, employee_id: str) -> dict:
+    """Write crew, equipment, and material rows then close the session."""
+    session_pk = session[JLS.ID]
+    state      = _get_state(session)
 
     job_id    = state.get("job_id") or session.get(JLS.JOB_ID)
     log_date  = session.get(JLS.LOG_DATE, _today())
