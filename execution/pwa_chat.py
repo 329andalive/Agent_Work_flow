@@ -404,12 +404,12 @@ def chat(
             # than breaking the chat entirely. Log it prominently.
             print(f"[{_ts()}] ERROR pwa_chat: guided_estimate intercept failed — {e}")
 
-     # ------------------------------------------------------------------
+    # ------------------------------------------------------------------
     # Guided job log intercept — runs BEFORE any Claude call.
     #
     # If there is an active job log session for this chat session, all
     # input goes to the state machine.
-    #
+    # ------------------------------------------------------------------
     if session_id:
         try:
             from execution.job_log import (
@@ -429,7 +429,32 @@ def chat(
                 return start_log(client_id, employee_id, session_id, missed_session=missed)
         except Exception as e:
             print(f"[{_ts()}] ERROR pwa_chat: job_log intercept failed — {e}")
-    
+
+    # ------------------------------------------------------------------
+    # Work order intercept — runs BEFORE any Claude call.
+    #
+    # If there is an active work order session for this chat session,
+    # all input goes to the state machine. If the message matches a
+    # work order intent trigger and no session exists, start one.
+    # ------------------------------------------------------------------
+    if session_id:
+        try:
+            from execution.work_order import (
+                get_active_session as get_active_wo_session,
+                handle_input as handle_wo_input,
+                start as start_wo,
+                is_work_order_intent,
+            )
+            active_wo = get_active_wo_session(client_id, employee_id, session_id)
+            if active_wo:
+                print(f"[{_ts()}] INFO pwa_chat: routing to work_order (session active)")
+                return handle_wo_input(active_wo, user_message, client_id, employee_id)
+            if is_work_order_intent(user_message):
+                print(f"[{_ts()}] INFO pwa_chat: work order intent detected — starting WO flow")
+                return start_wo(client_id, employee_id, session_id)
+        except Exception as e:
+            print(f"[{_ts()}] ERROR pwa_chat: work_order intercept failed — {e}")
+
     # ------------------------------------------------------------------
     # Standard Claude path — free-form chat for everything else
     # ------------------------------------------------------------------

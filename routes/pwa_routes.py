@@ -273,6 +273,114 @@ def pwa_new_job_create():
     return jsonify(result), (200 if result.get("success") else 400)
 
 
+@pwa_bp.route("/api/workorder/new", methods=["POST"])
+@require_pwa_auth
+def pwa_workorder_create():
+    """
+    Create a work order directly as a job record — no proposal, no approval.
+    Called when the tech taps the 'Create work order' chip from work_order.py.
+
+    Body params:
+        customer_id       str   — UUID of an existing customer (required)
+        job_type          str   — job type slug
+        description       str   — human-readable job label
+        amount            float — verbally agreed price (tech-entered, never AI)
+        job_status        str   — 'in_progress' or 'scheduled'
+        send_confirmation bool  — if true, also create + send a proposal as a courtesy doc
+    """
+    from execution.db_connection import get_client as get_supabase
+    from execution.schema import Jobs as J, Customers as C
+
+    client_id   = session.get("client_id")
+    employee_id = session.get("employee_id")
+    if not employee_id:
+        return jsonify({"success": False, "error": "No employee in session"}), 400
+
+    data = request.get_json(silent=True) or {}
+    customer_id       = (data.get("customer_id") or "").strip()
+    job_type          = (data.get("job_type") or "service").strip()
+    description       = (data.get("description") or job_type).strip()
+    job_status        = data.get("job_status", "scheduled")
+    send_confirmation = bool(data.get("send_confirmation", False))
+
+    # Validate amount
+    try:
+        amount = float(data.get("amount") or 0)
+        if amount <= 0:
+            raise ValueError("amount must be > 0")
+    except (TypeError, ValueError) as e:
+        return jsonify({"success": False, "error": f"Invalid amount: {e}"}), 400
+
+    if not customer_id:
+        return jsonify({"success": False, "error": "customer_id is required"}), 400
+
+    # Validate job_status
+    if job_status not in ("in_progress", "scheduled"):
+        job_status = "scheduled"
+
+    try:
+        sb = get_supabase()
+
+        # Write the job record directly — no proposal needed
+        job_result = sb.table(J.TABLE).insert({
+            J.CLIENT_ID:          client_id,
+            J.CUSTOMER_ID:        customer_id,
+            J.JOB_TYPE:           job_type,
+            J.JOB_DESCRIPTION:    description,
+            J.RAW_INPUT:          description,
+            J.STATUS:             job_status,
+            J.DISPATCH_STATUS:    "unassigned",
+            J.ESTIMATED_AMOUNT:   amount,
+            J.ASSIGNED_WORKER_ID: employee_id,
+            J.SOURCE_PROPOSAL_ID: None,
+        }).execute()
+
+        if not job_result.data:
+            return jsonify({"success": False, "error": "Failed to create job"}), 500
+
+        job_id = job_result.data[0][J.ID]
+        print(f"[{_ts()}] INFO workorder: Created job {str(job_id)[:8]} status={job_status} "
+              f"amount={amount} customer={customer_id[:8]} employee={employee_id[:8]}")
+
+        # Optional courtesy confirmation — fire proposal_agent as FYI doc
+        # The job is already created regardless of whether this succeeds.
+        if send_confirmation:
+            try:
+                # Look up customer phone for the SMS/email send
+                cust_result = sb.table(C.TABLE).select(
+                    f"{C.CUSTOMER_PHONE}, {C.CUSTOMER_NAME}, {C.CUSTOMER_ADDRESS}"
+                ).eq(C.ID, customer_id).limit(1).execute()
+
+                if cust_result.data:
+                    cust = cust_result.data[0]
+                    from execution.db_client import get_client_record
+                    from execution.proposal_agent import run as proposal_run
+                    client_rec   = get_client_record(client_id)
+                    client_phone = client_rec.get("phone", "") if client_rec else ""
+                    cust_phone   = cust.get(C.CUSTOMER_PHONE, "")
+
+                    if client_phone and cust_phone:
+                        proposal_run(
+                            client_phone=client_phone,
+                            customer_phone=cust_phone,
+                            raw_input=f"{description} ${int(amount)}",
+                            explicit_amount=amount,
+                        )
+                        print(f"[{_ts()}] INFO workorder: Confirmation sent for job {str(job_id)[:8]}")
+                    else:
+                        print(f"[{_ts()}] WARN workorder: send_confirmation skipped — "
+                              f"missing phone (client={bool(client_phone)} cust={bool(cust_phone)})")
+            except Exception as conf_err:
+                # Confirmation failure is non-fatal — job is already created
+                print(f"[{_ts()}] WARN workorder: send_confirmation failed — {conf_err}")
+
+        return jsonify({"success": True, "job_id": job_id})
+
+    except Exception as e:
+        print(f"[{_ts()}] ERROR workorder: create failed — {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 @pwa_bp.route("/chat", strict_slashes=False)
 @require_pwa_auth
 def pwa_chat_screen():
