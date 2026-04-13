@@ -279,6 +279,10 @@
               <input class="field-input" id="est-cust-addr" type="text" placeholder="Street address">
             </div>
           </div>
+          <div class="field-group">
+            <div class="field-label">Email (optional)</div>
+            <input class="field-input" id="est-cust-email" type="email" placeholder="customer@email.com">
+          </div>
         </div>
 
         <div class="field-group">
@@ -355,6 +359,10 @@
               <div class="field-label">Address</div>
               <input class="field-input" id="wo-cust-addr" type="text" placeholder="Street address">
             </div>
+          </div>
+          <div class="field-group">
+            <div class="field-label">Email (optional)</div>
+            <input class="field-input" id="wo-cust-email" type="email" placeholder="customer@email.com">
           </div>
         </div>
 
@@ -603,13 +611,14 @@ document.getElementById('est-submit').addEventListener('click', async function()
 
   try {
     var customer_id   = EST_CUST_ID || null;
-    var customer_name = EST_NEW_CUST ? document.getElementById('est-cust-name').value.trim() : '';
-    var customer_phone= EST_NEW_CUST ? document.getElementById('est-cust-phone').value.trim() : '';
-    var customer_addr = EST_NEW_CUST ? document.getElementById('est-cust-addr').value.trim() : '';
-    var job_type      = document.getElementById('est-job-type').value;
-    var notes         = document.getElementById('est-notes').value.trim();
+    var customer_name  = EST_NEW_CUST ? document.getElementById('est-cust-name').value.trim() : '';
+    var customer_phone = EST_NEW_CUST ? document.getElementById('est-cust-phone').value.trim() : '';
+    var customer_addr  = EST_NEW_CUST ? document.getElementById('est-cust-addr').value.trim() : '';
+    var customer_email = EST_NEW_CUST ? document.getElementById('est-cust-email').value.trim() : '';
+    var job_type       = document.getElementById('est-job-type').value;
+    var notes          = document.getElementById('est-notes').value.trim();
 
-    var payload = { customer_id, customer_name, customer_phone, customer_address: customer_addr, job_type, notes };
+    var payload = { customer_id, customer_name, customer_phone, customer_address: customer_addr, customer_email, job_type, notes };
 
     var r = await fetch('/pwa/api/estimate/create', {
       method: 'POST', headers: {'Content-Type':'application/json'},
@@ -652,6 +661,7 @@ function resetEstimate() {
   document.getElementById('est-cust-name').value   = '';
   document.getElementById('est-cust-phone').value  = '';
   document.getElementById('est-cust-addr').value   = '';
+  document.getElementById('est-cust-email').value  = '';
   document.getElementById('est-job-type').value    = '';
   document.getElementById('est-notes').value       = '';
   document.getElementById('est-new-cust').style.display = 'none';
@@ -722,9 +732,10 @@ document.getElementById('wo-submit').addEventListener('click', async function() 
   try {
     var payload = {
       customer_id:    WO_CUST_ID || null,
-      customer_name:  WO_NEW_CUST ? document.getElementById('wo-cust-name').value.trim() : '',
-      customer_phone: WO_NEW_CUST ? document.getElementById('wo-cust-phone').value.trim() : '',
+      customer_name:    WO_NEW_CUST ? document.getElementById('wo-cust-name').value.trim() : '',
+      customer_phone:   WO_NEW_CUST ? document.getElementById('wo-cust-phone').value.trim() : '',
       customer_address: WO_NEW_CUST ? document.getElementById('wo-cust-addr').value.trim() : '',
+      customer_email:   WO_NEW_CUST ? document.getElementById('wo-cust-email').value.trim() : '',
       job_type:         document.getElementById('wo-job-type').value,
       notes:            document.getElementById('wo-notes').value.trim(),
       amount:           parseFloat(document.getElementById('wo-price').value),
@@ -769,7 +780,7 @@ document.getElementById('wo-submit').addEventListener('click', async function() 
 
 function resetWO() {
   WO_CUST_ID = null; WO_NEW_CUST = false; WO_WHEN = null;
-  ['wo-cust-search','wo-cust-name','wo-cust-phone','wo-cust-addr','wo-job-type','wo-price','wo-notes'].forEach(function(id) {
+  ['wo-cust-search','wo-cust-name','wo-cust-phone','wo-cust-addr','wo-cust-email','wo-job-type','wo-price','wo-notes'].forEach(function(id) {
     var el = document.getElementById(id); if (el) el.value = '';
   });
   document.getElementById('wo-new-cust').style.display  = 'none';

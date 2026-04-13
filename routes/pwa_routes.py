@@ -572,6 +572,7 @@ def pwa_estimate_create():
     customer_name    = (data.get("customer_name") or "").strip()
     customer_phone   = (data.get("customer_phone") or "").strip()
     customer_address = (data.get("customer_address") or "").strip()
+    customer_email   = (data.get("customer_email") or "").strip()
     job_type         = (data.get("job_type") or "").strip()
     notes            = (data.get("notes") or "").strip()
 
@@ -602,6 +603,7 @@ def pwa_estimate_create():
                     "customer_name":    customer_name or "New Customer",
                     "customer_phone":   phone_e164,
                     "customer_address": customer_address or None,
+                    "customer_email":   customer_email or None,
                     "sms_consent":      False,
                 }).execute()
                 if new_c.data:
@@ -682,6 +684,7 @@ def pwa_workorder_create_form():
     customer_name    = (data.get("customer_name") or "").strip()
     customer_phone   = (data.get("customer_phone") or "").strip()
     customer_address = (data.get("customer_address") or "").strip()
+    customer_email   = (data.get("customer_email") or "").strip()
     job_type         = (data.get("job_type") or "").strip()
     notes            = (data.get("notes") or "").strip()
     when             = (data.get("when") or "later").strip()
@@ -720,6 +723,7 @@ def pwa_workorder_create_form():
                     "customer_name":    customer_name or "New Customer",
                     "customer_phone":   phone_e164,
                     "customer_address": customer_address or None,
+                    "customer_email":   customer_email or None,
                     "sms_consent":      False,
                 }).execute()
                 if new_c.data:
