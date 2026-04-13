@@ -529,6 +529,241 @@ def pwa_logout():
     return redirect("/pwa/login")
 
 
+# ---------------------------------------------------------------------------
+# GET /pwa/api/customers — customer list for PWA search dropdowns
+# ---------------------------------------------------------------------------
+
+@pwa_bp.route("/api/customers", methods=["GET"])
+@require_pwa_auth
+def pwa_customers_list():
+    from execution.db_connection import get_client as get_supabase
+    client_id = session.get("client_id")
+    try:
+        sb = get_supabase()
+        result = sb.table("customers").select(
+            "id, customer_name, customer_phone, customer_address"
+        ).eq("client_id", client_id).order("customer_name").execute()
+        return jsonify({"success": True, "customers": result.data or []})
+    except Exception as e:
+        print(f"[{_ts()}] ERROR pwa_customers_list: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+# ---------------------------------------------------------------------------
+# POST /pwa/api/estimate/create — form-based estimate (no chat)
+# ---------------------------------------------------------------------------
+
+@pwa_bp.route("/api/estimate/create", methods=["POST"])
+@require_pwa_auth
+def pwa_estimate_create():
+    """
+    Create an estimate from the PWA form.
+    If customer_id is null, creates the customer first from name+phone.
+    Then fires proposal_agent in the background.
+    """
+    import re as _re
+    from execution.db_connection import get_client as get_supabase
+
+    client_id   = session.get("client_id")
+    employee_id = session.get("employee_id")
+    data = request.get_json(silent=True) or {}
+
+    customer_id      = (data.get("customer_id") or "").strip() or None
+    customer_name    = (data.get("customer_name") or "").strip()
+    customer_phone   = (data.get("customer_phone") or "").strip()
+    customer_address = (data.get("customer_address") or "").strip()
+    job_type         = (data.get("job_type") or "").strip()
+    notes            = (data.get("notes") or "").strip()
+
+    if not job_type:
+        return jsonify({"success": False, "error": "Job type is required"}), 400
+
+    sb = get_supabase()
+
+    # Create customer if needed
+    if not customer_id:
+        if not customer_phone:
+            return jsonify({"success": False, "error": "Customer phone is required for new customers"}), 400
+        # Normalize phone
+        digits = _re.sub(r"\D", "", customer_phone)
+        if len(digits) == 10:   phone_e164 = f"+1{digits}"
+        elif len(digits) == 11: phone_e164 = f"+{digits}"
+        else:                   phone_e164 = customer_phone
+        try:
+            # Check for existing
+            existing = sb.table("customers").select("id").eq(
+                "client_id", client_id
+            ).eq("customer_phone", phone_e164).execute()
+            if existing.data:
+                customer_id = existing.data[0]["id"]
+            else:
+                new_c = sb.table("customers").insert({
+                    "client_id":        client_id,
+                    "customer_name":    customer_name or "New Customer",
+                    "customer_phone":   phone_e164,
+                    "customer_address": customer_address or None,
+                    "sms_consent":      False,
+                }).execute()
+                if new_c.data:
+                    customer_id = new_c.data[0]["id"]
+                    print(f"[{_ts()}] INFO pwa_estimate: Created customer {customer_id[:8]}")
+        except Exception as e:
+            print(f"[{_ts()}] ERROR pwa_estimate: customer create failed — {e}")
+            return jsonify({"success": False, "error": "Could not create customer"}), 500
+
+    if not customer_id:
+        return jsonify({"success": False, "error": "Customer required"}), 400
+
+    # Build raw input for proposal_agent
+    job_label = job_type.replace("_", " ").title()
+    raw_input = job_label + (f" — {notes}" if notes else "")
+
+    # Resolve phones for proposal_agent
+    try:
+        client_rec = sb.table("clients").select("phone, business_name").eq(
+            "id", client_id
+        ).limit(1).execute()
+        client_phone   = client_rec.data[0].get("phone", "") if client_rec.data else ""
+        business_name  = client_rec.data[0].get("business_name", "Bolts11") if client_rec.data else "Bolts11"
+    except Exception:
+        client_phone  = ""
+        business_name = "Bolts11"
+
+    try:
+        cust_row = sb.table("customers").select(
+            "customer_phone, customer_name"
+        ).eq("id", customer_id).limit(1).execute()
+        cust_phone = cust_row.data[0].get("customer_phone", "") if cust_row.data else ""
+        cust_name  = cust_row.data[0].get("customer_name", "") if cust_row.data else ""
+    except Exception:
+        cust_phone = ""
+        cust_name  = ""
+
+    # Fire proposal_agent
+    if client_phone and cust_phone:
+        try:
+            from execution.proposal_agent import run as proposal_run
+            proposal_run(
+                client_phone=client_phone,
+                customer_phone=cust_phone,
+                raw_input=raw_input,
+            )
+            msg = f"Estimate drafted for {cust_name or 'customer'} — {job_label}."
+            print(f"[{_ts()}] INFO pwa_estimate: proposal_agent fired for customer={customer_id[:8]}")
+        except Exception as e:
+            print(f"[{_ts()}] WARN pwa_estimate: proposal_agent failed — {e}")
+            msg = "Estimate queued. Check Office for results."
+    else:
+        msg = "Estimate queued. Check Office for results."
+
+    return jsonify({"success": True, "message": msg, "customer_id": customer_id})
+
+
+# ---------------------------------------------------------------------------
+# POST /pwa/api/workorder/create — form-based work order (no chat)
+# ---------------------------------------------------------------------------
+
+@pwa_bp.route("/api/workorder/create", methods=["POST"])
+@require_pwa_auth
+def pwa_workorder_create_form():
+    """
+    Create a work order from the PWA form.
+    If customer_id is null, creates the customer first from name+phone.
+    """
+    import re as _re
+    from execution.db_connection import get_client as get_supabase
+    from execution.schema import Jobs as J
+
+    client_id   = session.get("client_id")
+    employee_id = session.get("employee_id")
+    data = request.get_json(silent=True) or {}
+
+    customer_id      = (data.get("customer_id") or "").strip() or None
+    customer_name    = (data.get("customer_name") or "").strip()
+    customer_phone   = (data.get("customer_phone") or "").strip()
+    customer_address = (data.get("customer_address") or "").strip()
+    job_type         = (data.get("job_type") or "").strip()
+    notes            = (data.get("notes") or "").strip()
+    when             = (data.get("when") or "later").strip()
+    scheduled_date   = (data.get("scheduled_date") or "").strip() or None
+
+    try:
+        amount = float(data.get("amount") or 0)
+        if amount <= 0: raise ValueError()
+    except Exception:
+        return jsonify({"success": False, "error": "Valid price is required"}), 400
+
+    if not job_type:
+        return jsonify({"success": False, "error": "Job type is required"}), 400
+    if when == "later" and not scheduled_date:
+        return jsonify({"success": False, "error": "Scheduled date required"}), 400
+
+    sb = get_supabase()
+
+    # Create customer if needed
+    if not customer_id:
+        if not customer_phone:
+            return jsonify({"success": False, "error": "Customer phone is required for new customers"}), 400
+        digits = _re.sub(r"\D", "", customer_phone)
+        if len(digits) == 10:   phone_e164 = f"+1{digits}"
+        elif len(digits) == 11: phone_e164 = f"+{digits}"
+        else:                   phone_e164 = customer_phone
+        try:
+            existing = sb.table("customers").select("id").eq(
+                "client_id", client_id
+            ).eq("customer_phone", phone_e164).execute()
+            if existing.data:
+                customer_id = existing.data[0]["id"]
+            else:
+                new_c = sb.table("customers").insert({
+                    "client_id":        client_id,
+                    "customer_name":    customer_name or "New Customer",
+                    "customer_phone":   phone_e164,
+                    "customer_address": customer_address or None,
+                    "sms_consent":      False,
+                }).execute()
+                if new_c.data:
+                    customer_id = new_c.data[0]["id"]
+                    print(f"[{_ts()}] INFO pwa_wo_form: Created customer {customer_id[:8]}")
+        except Exception as e:
+            return jsonify({"success": False, "error": "Could not create customer"}), 500
+
+    if not customer_id:
+        return jsonify({"success": False, "error": "Customer required"}), 400
+
+    from datetime import date as _date
+    job_status = "in_progress" if when == "now" else "scheduled"
+    sched_date = _date.today().isoformat() if when == "now" else scheduled_date
+    job_label  = job_type.replace("_", " ").title()
+    description = job_label + (f" — {notes}" if notes else "")
+
+    try:
+        result = sb.table(J.TABLE).insert({
+            J.CLIENT_ID:          client_id,
+            J.CUSTOMER_ID:        customer_id,
+            J.JOB_TYPE:           job_type,
+            J.JOB_DESCRIPTION:    description,
+            J.JOB_NOTES:          notes or None,
+            J.RAW_INPUT:          description,
+            J.STATUS:             job_status,
+            J.DISPATCH_STATUS:    "unassigned",
+            J.ESTIMATED_AMOUNT:   amount,
+            J.SCHEDULED_DATE:     sched_date,
+            J.ASSIGNED_WORKER_ID: employee_id,
+            J.SOURCE_PROPOSAL_ID: None,
+        }).execute()
+
+        if not result.data:
+            return jsonify({"success": False, "error": "Failed to create job"}), 500
+
+        job_id = result.data[0][J.ID]
+        print(f"[{_ts()}] INFO pwa_wo_form: WO created job={job_id[:8]} status={job_status} amount={amount}")
+        return jsonify({"success": True, "job_id": job_id})
+    except Exception as e:
+        print(f"[{_ts()}] ERROR pwa_wo_form: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 def register_root_sw(app):
     """Register the /sw.js root route on the Flask app (not the blueprint)."""
     @app.route("/sw.js")
