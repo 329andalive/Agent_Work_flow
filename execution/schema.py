@@ -271,7 +271,9 @@ class PwaChatMessages:
 
 
 # ---------------------------------------------------------------------------
-# time_entries — clock punch records.
+# time_entries — weekly timecard clock punch records (NOT job tracking).
+# This is the employee timecard system — week-level labor records.
+# For job-level presence tracking see job_crew_log.
 # ---------------------------------------------------------------------------
 
 class TimeEntries:
@@ -368,7 +370,7 @@ class FollowUps:
     PROPOSAL_ID     = "proposal_id"
     FOLLOW_UP_TYPE  = "follow_up_type"  # "estimate_followup" | "payment_chase" | "seasonal_reminder" | "pending_consent" | "lost_job_why"
     STATUS          = "status"          # "pending" | "sent" | "cancelled"
-    SCHEDULED_FOR   = "scheduled_for"
+    SCHEDULED_AT    = "scheduled_for"
     SENT_AT         = "sent_at"
     MESSAGE_SENT    = "message_sent"    # text body that actually went out
     CREATED_AT      = "created_at"
@@ -496,3 +498,114 @@ class JobPricingHistory:
     AMOUNT       = "amount"       # tech-entered final price — never AI-generated
     EMPLOYEE_ID  = "employee_id"
     COMPLETED_AT = "completed_at"
+
+
+# ---------------------------------------------------------------------------
+# job_log_sessions — state machine for the daily job log chat flow.
+# One row per foreman per job per log_date.
+# Mirrors the estimate_sessions pattern exactly.
+#
+# GOTCHA: session_id links to pwa_chat_messages.session_id — NOT this
+# table's primary key. Same gotcha as estimate_sessions.
+#
+# IMPORTANT: log_date is a DATE column, not timestamptz. This is intentional
+# — it allows backdating a missed close-out to yesterday without timezone
+# complications. Always pass a date string "YYYY-MM-DD", never a timestamp.
+# ---------------------------------------------------------------------------
+
+class JobLogSessions:
+    TABLE = "job_log_sessions"
+
+    ID                   = "id"
+    CLIENT_ID            = "client_id"
+    EMPLOYEE_ID          = "employee_id"
+    SESSION_ID           = "session_id"           # links to pwa_chat_messages.session_id
+    JOB_ID               = "job_id"
+    LOG_DATE             = "log_date"             # DATE not timestamptz — enables clean backdating
+    STATUS               = "status"              # open | crew_confirmed | equipment_confirmed | materials_done | closed | abandoned
+    CURRENT_STEP         = "current_step"         # missed_log_check | select_job | confirm_crew | confirm_equipment | log_materials | day_close
+    CREW_CONFIRMED       = "crew_confirmed"       # bool
+    EQUIPMENT_CONFIRMED  = "equipment_confirmed"  # bool
+    NOTES                = "notes"
+    CREATED_AT           = "created_at"
+    UPDATED_AT           = "updated_at"
+
+
+# ---------------------------------------------------------------------------
+# job_crew_log — who was present on a job on a given date.
+# One row per employee per job per day.
+# An employee can appear on multiple jobs the same day (Joe at two sites).
+#
+# UNIQUE constraint: (client_id, job_id, employee_id, log_date)
+# prevents double-logging the same person on the same job on the same day.
+#
+# billed: set true when this crew-day is included in a sent invoice.
+# Prevents double-billing on partial invoices.
+# ---------------------------------------------------------------------------
+
+class JobCrewLog:
+    TABLE = "job_crew_log"
+
+    ID          = "id"
+    CLIENT_ID   = "client_id"
+    JOB_ID      = "job_id"
+    EMPLOYEE_ID = "employee_id"   # the crew member who was present
+    LOG_DATE    = "log_date"      # DATE — which day they were on site
+    LOGGED_BY   = "logged_by"     # employee_id of foreman who recorded this
+    NOTES       = "notes"
+    BILLED      = "billed"        # bool default false
+    CREATED_AT  = "created_at"
+
+
+# ---------------------------------------------------------------------------
+# job_equipment_log — equipment on site per job per day.
+# Presence only for MVP. equipment_name is free text typed by the foreman.
+# The "same as yesterday?" prompt queries the most recent log_date for
+# this job_id to surface the prior day's list.
+#
+# billed: set true when included in a sent invoice.
+# ---------------------------------------------------------------------------
+
+class JobEquipmentLog:
+    TABLE = "job_equipment_log"
+
+    ID              = "id"
+    CLIENT_ID       = "client_id"
+    JOB_ID          = "job_id"
+    LOGGED_BY       = "logged_by"       # employee_id of foreman
+    EQUIPMENT_NAME  = "equipment_name"  # free text — "8 ton excavator"
+    LOG_DATE        = "log_date"        # DATE
+    NOTES           = "notes"
+    BILLED          = "billed"          # bool default false
+    CREATED_AT      = "created_at"
+
+
+# ---------------------------------------------------------------------------
+# job_material_log — materials received or consumed per job per day.
+# Core billing data. quantity + unit is the minimum viable record.
+# supplier is optional free text for MVP — vendor list added later.
+#
+# billable: false for consumables the company absorbs (fuel, rags, etc.)
+# billed:   set true when included in a sent invoice — prevents double-billing.
+#
+# The unbilled + billable index in SQL makes invoice assembly fast:
+#   SELECT * FROM job_material_log
+#   WHERE job_id = X AND billed = false AND billable = true
+# ---------------------------------------------------------------------------
+
+class JobMaterialLog:
+    TABLE = "job_material_log"
+
+    ID            = "id"
+    CLIENT_ID     = "client_id"
+    JOB_ID        = "job_id"
+    LOGGED_BY     = "logged_by"       # employee_id of foreman
+    MATERIAL_NAME = "material_name"   # "3/4 crushed gravel", "4 inch perf pipe"
+    QUANTITY      = "quantity"        # numeric(10,2)
+    UNIT          = "unit"            # "yards" | "tons" | "feet" | "each" | "lf"
+    SUPPLIER      = "supplier"        # nullable free text for MVP
+    LOG_DATE      = "log_date"        # DATE
+    BILLABLE      = "billable"        # bool default true — false = company absorbs cost
+    BILLED        = "billed"          # bool default false — true = on a sent invoice
+    NOTES         = "notes"
+    CREATED_AT    = "created_at"
