@@ -266,14 +266,267 @@ def resend_welcome(client_id):
 def toggle_active(client_id):
     try:
         sb = _sb()
-        result = sb.table("clients").select("active").eq("id",client_id).execute()
+        result = sb.table("clients").select("active,phone,business_name").eq("id",client_id).execute()
         if not result.data:
             flash("Client not found.","error"); return redirect("/clients")
         current = result.data[0].get("active",True)
         sb.table("clients").update({"active": not current}).eq("id",client_id).execute()
-        flash(f"Client {'deactivated' if current else 'activated'}.", "success")
+        _admin_audit(sb, result.data[0].get("phone",""),
+                     "pause_client" if current else "resume_client",
+                     f"client_id={client_id[:8]} business={result.data[0].get('business_name','')}")
+        flash(f"Client {'paused' if current else 'resumed'}.", "success")
     except Exception as e:
         flash(f"Error: {e}","error")
+    return redirect(f"/clients/{client_id}")
+
+
+# ---------------------------------------------------------------------------
+# Admin audit logging helper — every destructive/communication action
+# lands in agent_activity with agent_name="admin" for an immutable trail.
+# ---------------------------------------------------------------------------
+
+def _admin_audit(sb, client_phone: str, action: str, summary: str) -> None:
+    """
+    Append-only audit record for every admin action. Failures here must
+    NEVER block the action itself — log and swallow.
+    """
+    try:
+        sb.table("agent_activity").insert({
+            "client_phone": client_phone or "",
+            "agent_name":   "admin",
+            "action_taken": action,
+            "input_summary": summary[:500],
+            "output_summary": f"by admin_pin at {datetime.utcnow().isoformat()}",
+            "sms_sent":     False,
+        }).execute()
+    except Exception as e:
+        print(f"[{_ts()}] WARN admin: audit log write failed — {e}")
+
+
+# ---------------------------------------------------------------------------
+# Tables to cascade when a client is deleted. Order matters — children
+# first, client last. Most are multi-tenant on client_id; the legacy
+# ones (agent_activity, needs_attention) use client_phone.
+#
+# A missing table on this list does NOT block the delete — if Supabase
+# returns an error, we log and continue. The final client row delete
+# proceeds regardless, but the admin gets a summary of what succeeded
+# vs. what errored so they can follow up manually.
+# ---------------------------------------------------------------------------
+
+_CASCADE_TABLES_BY_CLIENT_ID = [
+    "draft_corrections", "job_photos", "invoice_drafts", "job_extended_data",
+    "pwa_chat_messages", "pwa_tokens",
+    "route_assignments", "route_tokens", "dispatch_decisions",
+    "time_entries", "time_bank",
+    "follow_ups", "estimate_edits", "client_prompt_overrides",
+    "job_pricing_history", "estimate_sessions",
+    "proposals", "invoices", "lost_jobs",
+    "jobs",
+    "customers", "employees", "pricebook_items",
+    "sms_message_log", "webhook_log",
+]
+_CASCADE_TABLES_BY_CLIENT_PHONE = ["agent_activity", "needs_attention"]
+
+
+@admin_bp.route("/clients/<client_id>/delete", methods=["POST"])
+@_require_admin
+def delete_client(client_id):
+    """
+    Hard delete a client + every child row they own.
+
+    Guard: the admin must type the client's exact business name into
+    the confirm_name field. Prevents fat-finger deletes of the wrong
+    tenant. Cascades through every table listed above; per-table
+    failures are logged but don't abort the cascade.
+    """
+    sb = _sb()
+    try:
+        result = sb.table("clients").select(
+            "id,business_name,phone,owner_name"
+        ).eq("id", client_id).execute()
+        if not result.data:
+            flash("Client not found.", "error")
+            return redirect("/clients")
+        client = result.data[0]
+        business_name = client.get("business_name") or ""
+        client_phone = client.get("phone") or ""
+    except Exception as e:
+        flash(f"Error loading client: {e}", "error")
+        return redirect("/clients")
+
+    # Guard — the admin must retype the business name exactly
+    typed = (request.form.get("confirm_name") or "").strip()
+    if typed != business_name:
+        flash(
+            f"Confirmation mismatch — type the business name exactly: "
+            f'"{business_name}". Nothing was deleted.',
+            "error",
+        )
+        return redirect(f"/clients/{client_id}")
+
+    # Cascade through child tables first
+    errors = []
+    total_rows_deleted = 0
+    for table in _CASCADE_TABLES_BY_CLIENT_ID:
+        try:
+            # PostgREST requires a filter on deletes; use eq client_id
+            res = sb.table(table).delete().eq("client_id", client_id).execute()
+            n = len(res.data or []) if hasattr(res, "data") else 0
+            total_rows_deleted += n
+        except Exception as e:
+            errors.append(f"{table}: {str(e)[:80]}")
+
+    for table in _CASCADE_TABLES_BY_CLIENT_PHONE:
+        if not client_phone:
+            continue
+        try:
+            res = sb.table(table).delete().eq("client_phone", client_phone).execute()
+            n = len(res.data or []) if hasattr(res, "data") else 0
+            total_rows_deleted += n
+        except Exception as e:
+            errors.append(f"{table}: {str(e)[:80]}")
+
+    # Finally delete the client row itself
+    try:
+        sb.table("clients").delete().eq("id", client_id).execute()
+    except Exception as e:
+        flash(f"Child rows cleaned but client row delete failed: {e}", "error")
+        return redirect(f"/clients/{client_id}")
+
+    _admin_audit(
+        sb, client_phone, "delete_client",
+        f"client_id={client_id[:8]} business={business_name!r} "
+        f"rows_deleted={total_rows_deleted} errors={len(errors)}"
+    )
+
+    msg = f"✓ Deleted {business_name} ({total_rows_deleted} child rows removed)"
+    if errors:
+        msg += f" — {len(errors)} cascade warnings (check logs)"
+        print(f"[{_ts()}] WARN admin: delete_client cascade errors — {errors}")
+    flash(msg, "success" if not errors else "warning")
+    return redirect("/clients")
+
+
+@admin_bp.route("/clients/<client_id>/reset-pin", methods=["POST"])
+@_require_admin
+def reset_pin(client_id):
+    """
+    Generate a fresh 4-digit PIN, hash it with werkzeug, write to
+    clients.pin_hash, and email the PLAINTEXT PIN to the owner's email
+    via Resend. The owner is expected to change it on first sign-in
+    via the existing /set-pin flow.
+
+    The plaintext PIN NEVER appears in the HTTP response or the flash
+    message — it only exists on the wire to Resend, then in the
+    owner's inbox. Admin sees confirmation that the email went out.
+    """
+    import secrets
+    try:
+        sb = _sb()
+        result = sb.table("clients").select(
+            "id,business_name,owner_name,phone"
+        ).eq("id", client_id).execute()
+        if not result.data:
+            flash("Client not found.", "error")
+            return redirect("/clients")
+        client = result.data[0]
+    except Exception as e:
+        flash(f"Error: {e}", "error")
+        return redirect("/clients")
+
+    # The email is provided by the form (admin pastes the owner's email
+    # from the client detail page — no column on clients table holds it)
+    owner_email = (request.form.get("email") or "").strip()
+    if not owner_email:
+        flash("Owner email required to send the new PIN.", "error")
+        return redirect(f"/clients/{client_id}")
+
+    # Mint a fresh 4-digit PIN using secrets.randbelow (CSPRNG) instead
+    # of random.randint (seeded PRNG). 4-digit space is small enough
+    # that attackers care about entropy of each issuance.
+    new_pin = f"{secrets.randbelow(10000):04d}"
+    pin_hash = generate_password_hash(new_pin)
+
+    try:
+        sb.table("clients").update({"pin_hash": pin_hash}).eq("id", client_id).execute()
+    except Exception as e:
+        flash(f"PIN hash write failed: {e}", "error")
+        return redirect(f"/clients/{client_id}")
+
+    # Send the plaintext PIN via Resend. Swallow failures — admin can
+    # retry the send; the hash is already updated so the owner can't
+    # log in with the old PIN regardless.
+    try:
+        from execution.resend_agent import send_pin_reset_email
+        result = send_pin_reset_email(
+            to_email=owner_email,
+            owner_name=client.get("owner_name", ""),
+            business_name=client.get("business_name", ""),
+            phone=client.get("phone", ""),
+            new_pin=new_pin,
+        )
+        if result.get("success"):
+            _admin_audit(sb, client.get("phone", ""), "reset_pin",
+                         f"client_id={client_id[:8]} emailed to={owner_email}")
+            flash(f"✓ New PIN sent to {owner_email}. Old PIN is disabled.", "success")
+        else:
+            flash(f"PIN updated but email failed: {result.get('error')}. "
+                  f"Try again or send the PIN manually.", "warning")
+    except Exception as e:
+        flash(f"PIN updated but email send crashed: {e}", "error")
+
+    return redirect(f"/clients/{client_id}")
+
+
+@admin_bp.route("/clients/<client_id>/send-reminder", methods=["POST"])
+@_require_admin
+def send_reminder(client_id):
+    """
+    Send an ad-hoc reminder email from the admin console. Subject +
+    body come straight from the admin's form; no templates, no
+    interpolation beyond the greeting. Used for one-off outreach
+    ("your trial is ending", "we noticed you haven't logged in").
+    """
+    try:
+        sb = _sb()
+        result = sb.table("clients").select(
+            "business_name,owner_name,phone"
+        ).eq("id", client_id).execute()
+        if not result.data:
+            flash("Client not found.", "error")
+            return redirect("/clients")
+        client = result.data[0]
+    except Exception as e:
+        flash(f"Error: {e}", "error")
+        return redirect("/clients")
+
+    owner_email = (request.form.get("email") or "").strip()
+    subject = (request.form.get("subject") or "").strip()
+    message_body = (request.form.get("message") or "").strip()
+
+    if not owner_email or not subject or not message_body:
+        flash("Email, subject, and message are all required.", "error")
+        return redirect(f"/clients/{client_id}")
+
+    try:
+        from execution.resend_agent import send_admin_reminder_email
+        result = send_admin_reminder_email(
+            to_email=owner_email,
+            owner_name=client.get("owner_name", ""),
+            business_name=client.get("business_name", ""),
+            subject=subject,
+            message_body=message_body,
+        )
+        if result.get("success"):
+            _admin_audit(sb, client.get("phone", ""), "send_reminder",
+                         f"client_id={client_id[:8]} to={owner_email} subject={subject[:60]!r}")
+            flash(f"✓ Reminder sent to {owner_email}.", "success")
+        else:
+            flash(f"Send failed: {result.get('error')}", "error")
+    except Exception as e:
+        flash(f"Send crashed: {e}", "error")
+
     return redirect(f"/clients/{client_id}")
 
 

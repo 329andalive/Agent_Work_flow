@@ -310,3 +310,102 @@ def send_document_email(
 <p class="small">This {label.lower()} was sent on behalf of {business_name} via Bolts11.</p>
 """
     return _send(to=[to_email], subject=subject, html=_wrap(body), reply_to=SUPPORT_EMAIL)
+
+
+# ── 7. Admin-issued PIN reset — owner gets a temporary 4-digit PIN ────────────
+
+def send_pin_reset_email(
+    to_email: str,
+    owner_name: str,
+    business_name: str,
+    phone: str,
+    new_pin: str,
+    signin_url: str = "https://bolts11.com/signin.html",
+) -> dict:
+    """
+    Send a temporary 4-digit PIN to the client owner after the Bolts11
+    admin team resets it on their behalf. The PIN is temporary — the
+    owner is prompted to create their own PIN on first sign-in via the
+    existing /set-pin flow.
+
+    Args:
+        to_email:       Owner's email address
+        owner_name:     Owner's full name (used for greeting)
+        business_name:  Client business name (for context)
+        phone:          Business phone (displayed, not used as auth)
+        new_pin:        The freshly generated 4-digit PIN
+        signin_url:     Where the owner signs in
+    """
+    first = owner_name.split()[0] if owner_name else "there"
+    display_phone = _fmt_phone(phone)
+    subject = f"Your Bolts11 PIN has been reset"
+    body = f"""
+<h1>Hey {first} — here's your new PIN.</h1>
+<p>We reset the PIN for <strong>{business_name}</strong> at your request.</p>
+
+<div class="highlight">
+  <p>
+    <strong>Sign in with:</strong> {display_phone}<br>
+    <strong>Temporary PIN:</strong> <strong style="font-size:20px;letter-spacing:3px">{new_pin}</strong>
+  </p>
+</div>
+
+<p><a href="{signin_url}" class="btn">Sign In to Bolts11 &rarr;</a></p>
+
+<div class="steps">
+  <p>
+    1. Go to <a href="{signin_url}">bolts11.com/signin.html</a><br>
+    2. Enter your phone number: <strong>{display_phone}</strong><br>
+    3. Enter the temporary PIN above: <strong>{new_pin}</strong><br>
+    4. You'll be prompted to create a new 4-digit PIN of your own<br>
+    5. Use that PIN going forward
+  </p>
+</div>
+
+<p>If you didn't request this reset, reply to this email right away and
+we'll lock the account down.</p>
+
+<p>— The Bolts11 Team</p>
+<hr>
+<p class="small">This PIN was issued from the Bolts11 admin console. It
+will stop working as soon as you set your own PIN at sign-in.</p>
+"""
+    return _send(to=[to_email], subject=subject, html=_wrap(body), reply_to=SUPPORT_EMAIL)
+
+
+# ── 8. Free-form admin reminder — subject + body from the admin console ──────
+
+def send_admin_reminder_email(
+    to_email: str,
+    owner_name: str,
+    business_name: str,
+    subject: str,
+    message_body: str,
+) -> dict:
+    """
+    Send an ad-hoc reminder / message to a client owner from the Bolts11
+    admin dashboard. Subject and body come from a free-form form on the
+    admin client detail page — no templating, no personalization beyond
+    the greeting. Used for one-off outreach like "your trial is ending"
+    or "we noticed you haven't logged in this week."
+
+    Args:
+        to_email:       Owner's email address
+        owner_name:     Owner's full name (for greeting)
+        business_name:  Client business name (for footer context)
+        subject:        Free-form email subject from the admin console
+        message_body:   Free-form plain-text body; newlines converted to <br>
+    """
+    first = owner_name.split()[0] if owner_name else "there"
+    safe_body = (message_body or "").replace("\n", "<br>")
+    body = f"""
+<h1>Hey {first},</h1>
+<div style="font-size:15px;line-height:1.7;color:#374151">
+{safe_body}
+</div>
+
+<hr>
+<p class="small">Sent on behalf of <strong>{business_name}</strong>'s account by
+the Bolts11 team. Reply to this email to reach us directly.</p>
+"""
+    return _send(to=[to_email], subject=subject, html=_wrap(body), reply_to=SUPPORT_EMAIL)
