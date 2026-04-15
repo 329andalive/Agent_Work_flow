@@ -24,7 +24,7 @@
           <td>{{ c.owner_name or '—' }}</td>
           <td class="mono" style="font-size:12px">{{ c.phone }}</td>
           <td style="font-size:11px;color:var(--text-muted)">{{ c.trade_vertical or 'general' }}</td>
-          <td class="mono">{{ counts.get(c.phone, 0) }}</td>
+          <td class="mono">{{ counts.get(c.id, 0) }}</td>
           <td>
             {% if c.active %}<span class="badge badge-active"><span class="dot"></span> Active</span>
             {% else %}<span class="badge badge-inactive">Inactive</span>{% endif %}

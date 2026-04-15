@@ -242,6 +242,71 @@ def test_agent_activity_uses_client_phone_not_client_id():
     )
 
 
+def test_sms_message_log_uses_client_phone_not_client_id():
+    """Same legacy quirk — sms_message_log is keyed by client_phone."""
+    from execution.schema import SmsMessageLog
+    assert SmsMessageLog.CLIENT_PHONE == "client_phone"
+    assert not hasattr(SmsMessageLog, "CLIENT_ID"), (
+        "SmsMessageLog uses client_phone. sms_send.py._send() inserts "
+        "rows with client_phone — moving to client_id requires a "
+        "coordinated schema migration + writer change."
+    )
+
+
+def test_webhook_log_uses_tenant_id_not_client_id_or_phone():
+    """
+    webhook_log is a third shape entirely: tenant_id (uuid). Kept past
+    client deletes for compliance/debugging — NOT in either admin
+    cascade list by design.
+    """
+    from execution.schema import WebhookLog
+    assert WebhookLog.TENANT_ID == "tenant_id"
+    assert not hasattr(WebhookLog, "CLIENT_ID")
+    assert not hasattr(WebhookLog, "CLIENT_PHONE")
+
+
+# ---------------------------------------------------------------------------
+# Dead column guard — jobs.client_phone was migrated away, never bring it back
+# ---------------------------------------------------------------------------
+
+def test_jobs_table_uses_client_id_not_client_phone():
+    """
+    The jobs table was migrated from client_phone (text) to client_id
+    (uuid). A regression in April 2026 reintroduced client_phone in the
+    admin dashboard queries and silently broke the Clients tab + the
+    Manage flow — the route's top-level try/except swallowed the
+    "column jobs.client_phone does not exist" Postgres error into an
+    empty page. Lock in the CLIENT_ID constant and the absence of any
+    client_phone attribute on Jobs so this class of bug can't return
+    via the schema surface.
+    """
+    from execution.schema import Jobs
+    assert Jobs.CLIENT_ID == "client_id"
+    assert not hasattr(Jobs, "CLIENT_PHONE"), (
+        "Jobs.CLIENT_PHONE must NOT be defined — that column was "
+        "migrated away. See CONVENTIONS.md DO NOT list."
+    )
+
+
+# ---------------------------------------------------------------------------
+# access_requests — sign-up records before a client exists
+# ---------------------------------------------------------------------------
+
+def test_access_requests_has_status_transition_columns():
+    """
+    access_requests go pending → contacted → approved/rejected. The
+    admin UI depends on contacted_at + approved_at for timestamps, so
+    both must be present on the schema class.
+    """
+    from execution.schema import AccessRequests
+    assert AccessRequests.STATUS == "status"
+    assert AccessRequests.CONTACTED_AT == "contacted_at"
+    assert AccessRequests.APPROVED_AT == "approved_at"
+    # The schema class deliberately has no client_id — these are
+    # pre-client records. Adding one would be a confusion signal.
+    assert not hasattr(AccessRequests, "CLIENT_ID")
+
+
 def test_needs_attention_uses_client_phone_not_client_id():
     from execution.schema import NeedsAttention
     assert NeedsAttention.CLIENT_PHONE == "client_phone"

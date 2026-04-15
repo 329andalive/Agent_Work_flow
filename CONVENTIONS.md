@@ -81,6 +81,20 @@ a runtime bug that surfaced in production logs:
   that's a session key, not a DB column.)
 - **DO NOT** use `followup_type` — the column is `follow_up_type` (with
   the underscore between "follow" and "up").
+- **DO NOT** query the `jobs` table by `client_phone` — that column
+  was migrated to `client_id` and **does not exist** on `jobs` anymore.
+  Writing `sb.table("jobs").eq("client_phone", ...)` raises
+  `42703 column jobs.client_phone does not exist` in Postgres. This
+  bit the admin dashboard's Clients list + Manage flow in April 2026
+  and the error got swallowed to an empty page by a top-level
+  try/except. The regression test lives in
+  `tests/test_admin_routes.py::test_clients_list_queries_jobs_by_client_id_not_client_phone`.
+- **DO NOT** assume `sms_message_log` uses `client_id` — it's one of
+  the legacy tables still keyed by `client_phone` (text). Same for
+  `agent_activity` and `needs_attention`. `webhook_log` is yet another
+  shape: it uses `tenant_id`. When doing an admin cascade delete, these
+  three categories go in DIFFERENT buckets — see the
+  `_CASCADE_TABLES_BY_*` lists in `routes/admin_routes.py`.
 - **DO NOT** use `worker_id` on `time_entries` or `pwa_chat_messages` —
   those tables use `employee_id`. Conversely don't use `employee_id`
   on `route_assignments` or `dispatch_decisions` — those use

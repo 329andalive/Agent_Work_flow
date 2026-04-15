@@ -224,11 +224,14 @@ def clients_list():
     try:
         sb = _sb()
         clients = sb.table("clients").select("id,business_name,owner_name,phone,active,trade_vertical,created_at").order("created_at",desc=True).execute().data or []
-        jobs_result = sb.table("jobs").select("client_phone").execute().data or []
+        # Job counts per client — the jobs table uses client_id (not the
+        # dead client_phone column that this query used to reference).
+        # See CONVENTIONS.md DO NOT list.
+        jobs_result = sb.table("jobs").select("client_id").execute().data or []
         counts = {}
         for j in jobs_result:
-            p = j.get("client_phone","")
-            counts[p] = counts.get(p,0) + 1
+            cid = j.get("client_id") or ""
+            counts[cid] = counts.get(cid, 0) + 1
     except Exception as e:
         print(f"[{_ts()}] ERROR admin: {e}")
         clients, counts = [], {}
@@ -255,7 +258,9 @@ def client_detail(client_id):
         client = result.data[0]
         phone  = client.get("phone","")
         activity = sb.table("agent_activity").select("*").eq("client_phone",phone).order("created_at",desc=True).limit(50).execute().data or []
-        jobs = sb.table("jobs").select("id,created_at,agent_used").eq("client_phone",phone).order("created_at",desc=True).limit(20).execute().data or []
+        # jobs table uses client_id, NOT client_phone (the legacy agent_activity
+        # + needs_attention tables are the only ones that still use client_phone).
+        jobs = sb.table("jobs").select("id,created_at,agent_used").eq("client_id",client_id).order("created_at",desc=True).limit(20).execute().data or []
         try:
             sms = sb.table("sms_message_log").select("id").eq("client_phone",phone).execute().data or []
         except Exception:
@@ -355,9 +360,18 @@ _CASCADE_TABLES_BY_CLIENT_ID = [
     "proposals", "invoices", "lost_jobs",
     "jobs",
     "customers", "employees", "pricebook_items",
-    "sms_message_log", "webhook_log",
 ]
-_CASCADE_TABLES_BY_CLIENT_PHONE = ["agent_activity", "needs_attention"]
+# Legacy tables tenant-scoped by client_phone (text), not client_id (uuid).
+# sms_message_log was accidentally in the by-id list above — confirmed by
+# grep of sms_send.py that the insert uses client_phone. agent_activity
+# and needs_attention predate the multi-tenant ID refactor.
+#
+# NOT cascaded: webhook_log uses tenant_id (yet another shape) AND we
+# deliberately keep raw Telnyx payloads past a client delete for
+# debugging / compliance purposes. It's audit data, not tenant data.
+_CASCADE_TABLES_BY_CLIENT_PHONE = [
+    "agent_activity", "needs_attention", "sms_message_log",
+]
 
 
 @admin_bp.route("/clients/<client_id>/delete", methods=["POST"])

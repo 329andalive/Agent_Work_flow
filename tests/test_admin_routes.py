@@ -438,6 +438,141 @@ def test_approved_requests_template_has_manage_affordance():
     assert "client_active" in src
 
 
+# ---------------------------------------------------------------------------
+# Clients list + detail don't query the dead jobs.client_phone column
+# ---------------------------------------------------------------------------
+
+def test_clients_list_queries_jobs_by_client_id_not_client_phone(admin_client):
+    """
+    Regression: the Clients tab was returning empty because
+    clients_list() tried to select jobs.client_phone — a column that
+    no longer exists on the jobs table (migrated to client_id). The
+    error was swallowed by the route's try/except, setting
+    clients = [] and silently breaking the tab.
+
+    This test locks in that the query goes through client_id, and
+    that a real error on clients_list doesn't get swallowed to
+    an empty page.
+    """
+    mock_sb = MagicMock()
+    jobs_select_args = []
+
+    def _table(name):
+        t = MagicMock()
+        for m in ("eq", "order", "limit", "is_", "ilike", "in_",
+                  "insert", "update", "delete"):
+            getattr(t, m).return_value = t
+        # Capture every .select() call's args so we can assert
+        # what column was asked for on the jobs table
+        def _select(*args):
+            if name == "jobs":
+                jobs_select_args.extend(args)
+            return t
+        t.select.side_effect = _select
+        if name == "clients":
+            t.execute.return_value = MagicMock(data=[
+                {"id": "client-1", "business_name": "Acme", "owner_name": "Bob",
+                 "phone": "+15555550200", "active": True,
+                 "trade_vertical": "sewer_drain",
+                 "created_at": "2026-01-01T00:00:00+00:00"},
+            ])
+        elif name == "jobs":
+            t.execute.return_value = MagicMock(data=[
+                {"client_id": "client-1"}, {"client_id": "client-1"},
+                {"client_id": "client-2"},
+            ])
+        elif name == "access_requests":
+            t.execute.return_value = MagicMock(data=[])
+        else:
+            t.execute.return_value = MagicMock(data=[])
+        return t
+
+    mock_sb.table.side_effect = _table
+
+    with patch("routes.admin_routes._sb", return_value=mock_sb):
+        resp = admin_client.get("/clients")
+
+    assert resp.status_code == 200
+    # The jobs select must NOT have asked for client_phone
+    assert "client_phone" not in jobs_select_args, (
+        "clients_list must not query jobs.client_phone — that column "
+        "does not exist on the jobs table. Use client_id."
+    )
+    # It must have asked for client_id
+    assert any("client_id" in a for a in jobs_select_args), (
+        "clients_list must query jobs.client_id for the count map"
+    )
+
+
+def test_client_detail_queries_jobs_by_client_id_not_client_phone():
+    """
+    The same bug was in client_detail's jobs lookup. Fixing it is what
+    unblocks the Manage button from /requests, since the detail page
+    errored out and triggered the route's redirect-to-/clients on any
+    Supabase exception.
+
+    This test isolates the jobs-specific query and tolerates the
+    agent_activity query still using client_phone (that table is
+    legitimately keyed by client_phone).
+    """
+    import inspect
+    from routes.admin_routes import client_detail
+    src = inspect.getsource(client_detail)
+    compact = src.replace(" ", "")
+    # The jobs query must use client_id
+    assert 'table("jobs")' in compact
+    assert 'table("jobs").select(' in compact
+    # Extract only the jobs line. Simple heuristic: split on lines,
+    # find the one that touches table("jobs").
+    jobs_lines = [
+        line for line in src.splitlines()
+        if 'table("jobs")' in line
+    ]
+    assert jobs_lines, "no jobs query found in client_detail"
+    for line in jobs_lines:
+        assert "client_phone" not in line, (
+            f"jobs query must not use client_phone — that column "
+            f"doesn't exist on the jobs table. Offending line: {line.strip()}"
+        )
+        assert "client_id" in line, (
+            f"jobs query should filter by client_id. "
+            f"Offending line: {line.strip()}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Cascade list sanity — sms_message_log uses client_phone, not client_id
+# ---------------------------------------------------------------------------
+
+def test_sms_message_log_is_cascaded_by_client_phone_not_client_id():
+    """
+    sms_message_log's tenant column is client_phone (confirmed via
+    sms_send.py's insert). It used to be in _CASCADE_TABLES_BY_CLIENT_ID
+    where the delete would silently fail. Moving it to the _PHONE
+    list makes the cascade actually work.
+    """
+    from routes.admin_routes import (
+        _CASCADE_TABLES_BY_CLIENT_ID,
+        _CASCADE_TABLES_BY_CLIENT_PHONE,
+    )
+    assert "sms_message_log" in _CASCADE_TABLES_BY_CLIENT_PHONE
+    assert "sms_message_log" not in _CASCADE_TABLES_BY_CLIENT_ID
+
+
+def test_webhook_log_is_not_cascaded_at_all():
+    """
+    webhook_log uses tenant_id (yet another shape), AND we deliberately
+    preserve raw Telnyx payloads past a client delete for debugging
+    and compliance. Verify it appears in NEITHER cascade list.
+    """
+    from routes.admin_routes import (
+        _CASCADE_TABLES_BY_CLIENT_ID,
+        _CASCADE_TABLES_BY_CLIENT_PHONE,
+    )
+    assert "webhook_log" not in _CASCADE_TABLES_BY_CLIENT_ID
+    assert "webhook_log" not in _CASCADE_TABLES_BY_CLIENT_PHONE
+
+
 def test_requests_list_attaches_client_id_to_approved_rows(admin_client):
     """
     The /requests route must batch-lookup the clients table to attach

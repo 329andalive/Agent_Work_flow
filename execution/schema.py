@@ -609,3 +609,71 @@ class JobMaterialLog:
     BILLED        = "billed"          # bool default false — true = on a sent invoice
     NOTES         = "notes"
     CREATED_AT    = "created_at"
+
+
+# ---------------------------------------------------------------------------
+# sms_message_log — every outbound SMS we attempt, for analytics + audit.
+#
+# GOTCHA: tenant column is `client_phone` (text), NOT `client_id` (uuid).
+# Legacy from before the ID refactor. Don't try to move it — the writer
+# in sms_send.py's _send() also uses client_phone and must stay in sync.
+# The admin delete cascade for this table lives in
+# _CASCADE_TABLES_BY_CLIENT_PHONE in routes/admin_routes.py.
+# ---------------------------------------------------------------------------
+
+class SmsMessageLog:
+    TABLE = "sms_message_log"
+
+    ID                = "id"
+    CLIENT_PHONE      = "client_phone"      # tenant; NOT client_id
+    RECIPIENT_PHONE   = "recipient_phone"
+    MESSAGE_TYPE      = "message_type"
+    BODY              = "body"
+    TELNYX_MESSAGE_ID = "telnyx_message_id"
+    STATUS            = "status"            # "sent" | "failed" | "pending"
+    CREATED_AT        = "created_at"
+
+
+# ---------------------------------------------------------------------------
+# webhook_log — raw Telnyx payloads for debugging + delivery webhook matching.
+#
+# GOTCHA: tenant column on THIS table is `tenant_id` (yet another shape —
+# not client_id, not client_phone). Intentional: webhook_log is kept past
+# a client delete for compliance + debugging, so it's deliberately NOT in
+# either admin cascade list.
+# ---------------------------------------------------------------------------
+
+class WebhookLog:
+    TABLE = "webhook_log"
+
+    ID          = "id"
+    TENANT_ID   = "tenant_id"     # NOT client_id or client_phone
+    MESSAGE_ID  = "message_id"
+    EVENT_TYPE  = "event_type"
+    RAW_PAYLOAD = "raw_payload"
+    PROCESSED   = "processed"
+    ERROR       = "error"
+    CREATED_AT  = "created_at"
+
+
+# ---------------------------------------------------------------------------
+# access_requests — sign-up requests from bolts11.com, triaged in the
+# admin dashboard's /requests view.
+#
+# Not multi-tenant scoped — these are pre-client records that get
+# PROMOTED into the clients table via POST /requests/<id>/approve.
+# Status transitions: pending → contacted → approved (or rejected).
+# ---------------------------------------------------------------------------
+
+class AccessRequests:
+    TABLE = "access_requests"
+
+    ID             = "id"
+    NAME           = "name"
+    EMAIL          = "email"
+    PHONE          = "phone"           # free-form at submit time, normalized on approve
+    BUSINESS_TYPE  = "business_type"
+    STATUS         = "status"          # "pending" | "contacted" | "approved" | "rejected"
+    CONTACTED_AT   = "contacted_at"
+    APPROVED_AT    = "approved_at"
+    CREATED_AT     = "created_at"
