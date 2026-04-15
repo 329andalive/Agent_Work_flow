@@ -307,6 +307,46 @@ def test_access_requests_has_status_transition_columns():
     assert not hasattr(AccessRequests, "CLIENT_ID")
 
 
+# ---------------------------------------------------------------------------
+# clients.email — added April 2026 via sql/add_email_to_clients.sql
+# ---------------------------------------------------------------------------
+
+def test_clients_email_constant_is_present():
+    """
+    Clients.EMAIL was added so the admin dashboard can pre-fill the
+    Reset PIN / Send Reminder / Resend Welcome forms instead of
+    asking the admin to retype the email every time. The migration
+    that adds the underlying column is at sql/add_email_to_clients.sql
+    — both pieces must ship together.
+    """
+    from execution.schema import Clients
+    assert Clients.EMAIL == "email"
+
+
+def test_clients_email_migration_sql_exists():
+    """
+    The schema constant is useless if the column doesn't actually
+    exist in Supabase. This test asserts the migration file is in
+    the repo so a fresh deployer can find + run it. (We can't
+    assert the column exists in Supabase from a test — that's
+    the migration runner's job.)
+    """
+    from pathlib import Path
+    sql_path = (Path(__file__).parent.parent
+                / "sql" / "add_email_to_clients.sql")
+    assert sql_path.exists(), (
+        "sql/add_email_to_clients.sql must exist alongside the "
+        "Clients.EMAIL schema constant — the constant references a "
+        "column the migration adds."
+    )
+    text = sql_path.read_text()
+    # Sanity-check the migration actually adds the column and backfills
+    assert "ALTER TABLE clients" in text
+    assert "ADD COLUMN" in text
+    assert "email" in text
+    assert "access_requests" in text  # the backfill source
+
+
 def test_needs_attention_uses_client_phone_not_client_id():
     from execution.schema import NeedsAttention
     assert NeedsAttention.CLIENT_PHONE == "client_phone"

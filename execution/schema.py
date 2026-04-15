@@ -85,6 +85,10 @@ class Clients:
     OWNER_NAME            = "owner_name"
     PHONE                 = "phone"           # Telnyx brand number for the business
     OWNER_MOBILE          = "owner_mobile"    # Owner's personal cell — different from Telnyx number
+    EMAIL                 = "email"           # Owner email — added April 2026 via
+                                              # sql/add_email_to_clients.sql. Backfilled from
+                                              # access_requests.email; used by admin dashboard
+                                              # Reset PIN / Send Reminder / Resend Welcome forms.
     PERSONALITY           = "personality"     # Free-form Markdown personality layer
     TRADE_VERTICAL        = "trade_vertical"  # See vertical_loader._normalize_vertical_key for accepted values
     SMS_OUTBOUND_ENABLED  = "sms_outbound_enabled"   # Layer 1 kill switch — false by default per HARD RULE #7

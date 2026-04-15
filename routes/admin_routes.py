@@ -134,7 +134,7 @@ def requests_list():
         if approved_phones_e164:
             try:
                 clients_result = sb.table("clients").select(
-                    "id, phone, business_name, active"
+                    "id, phone, business_name, active, email"
                 ).in_("phone", approved_phones_e164).execute()
                 for c in (clients_result.data or []):
                     client_by_phone[c.get("phone", "")] = c
@@ -146,6 +146,9 @@ def requests_list():
             r["client_id"] = c.get("id")
             r["client_active"] = c.get("active") if c else None
             r["client_business_name"] = c.get("business_name") or r.get("business_type") or "—"
+            # Prefer the live client email (post-backfill) over the original
+            # access_request email — admin may have updated it via a future UI
+            r["client_email"] = c.get("email") or r.get("email") or ""
 
     return render_template("admin_requests.html",
         pending=[r for r in data if r.get("status")=="pending"],
@@ -182,6 +185,12 @@ def approve_request(req_id):
             "trade_vertical": _map_vertical(req.get("business_type","")),
             "created_at": datetime.utcnow().isoformat(),
         }
+        # Carry the owner email forward onto the client record (added
+        # April 2026 — see sql/add_email_to_clients.sql). Without this
+        # the email gets orphaned in access_requests after approval and
+        # the admin has to retype it for every Reset PIN / Send Reminder.
+        if owner_email:
+            new_client["email"] = owner_email
         sb.table("clients").insert(new_client).execute()
         sb.table("access_requests").update({"status":"approved","approved_at":datetime.utcnow().isoformat()}).eq("id",req_id).execute()
         if owner_email:
@@ -223,7 +232,7 @@ def mark_contacted(req_id):
 def clients_list():
     try:
         sb = _sb()
-        clients = sb.table("clients").select("id,business_name,owner_name,phone,active,trade_vertical,created_at").order("created_at",desc=True).execute().data or []
+        clients = sb.table("clients").select("id,business_name,owner_name,phone,email,active,trade_vertical,created_at").order("created_at",desc=True).execute().data or []
         # Job counts per client — the jobs table uses client_id (not the
         # dead client_phone column that this query used to reference).
         # See CONVENTIONS.md DO NOT list.

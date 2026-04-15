@@ -627,3 +627,173 @@ def test_requests_list_attaches_client_id_to_approved_rows(admin_client):
     # The pending request's id must NOT appear as a client URL target
     # (it's not approved yet, it's in the Pending section with its own actions)
     assert "/clients/req-3" not in body
+
+
+# ---------------------------------------------------------------------------
+# clients.email forwarded on approval + surfaced in admin UI + pre-fills forms
+# ---------------------------------------------------------------------------
+
+def test_approve_request_writes_email_into_new_client_row(admin_client):
+    """
+    When an admin approves an access_request, the request's email
+    must be carried forward into the new clients.email column. Without
+    this the email gets orphaned in access_requests after approval and
+    every Reset PIN / Send Reminder makes the admin retype it.
+    """
+    captured_inserts = []
+    mock_sb = MagicMock()
+
+    def _table(name):
+        t = MagicMock()
+        for m in ("select", "eq", "order", "limit", "is_", "ilike", "in_",
+                  "update", "delete"):
+            getattr(t, m).return_value = t
+        if name == "access_requests":
+            # Single approved request with an email
+            t.execute.return_value = MagicMock(data=[{
+                "id": "req-1",
+                "name": "Bob Smith",
+                "email": "bob@acme.com",
+                "phone": "+12075550200",
+                "business_type": "Septic",
+                "status": "pending",
+            }])
+        elif name == "clients":
+            # First .select().eq("phone", ...) returns no existing client
+            # so the route proceeds to insert
+            t.execute.return_value = MagicMock(data=[])
+            # Capture inserts so we can assert on the new client row shape
+            def _insert(row):
+                captured_inserts.append(row)
+                inner = MagicMock()
+                inner.execute.return_value = MagicMock(data=[{"id": "client-new"}])
+                return inner
+            t.insert.side_effect = _insert
+        else:
+            t.execute.return_value = MagicMock(data=[])
+        return t
+
+    mock_sb.table.side_effect = _table
+
+    with patch("routes.admin_routes._sb", return_value=mock_sb), \
+         patch("execution.resend_agent.send_welcome_email",
+               return_value={"success": True, "id": "email-xyz"}):
+        admin_client.post(
+            "/requests/req-1/approve",
+            data={"business_name": "Acme Septic"},
+        )
+
+    # The clients insert must have included the email field, sourced
+    # from the access_request's email column
+    client_inserts = [
+        row for row in captured_inserts
+        if "business_name" in row  # filters out any non-clients inserts
+    ]
+    assert client_inserts, "no client row insert was captured"
+    new_client = client_inserts[0]
+    assert new_client.get("email") == "bob@acme.com", (
+        "approve_request must carry access_requests.email into the new "
+        "clients.email column. See sql/add_email_to_clients.sql."
+    )
+
+
+def test_approve_request_omits_email_when_access_request_has_none(admin_client):
+    """
+    If the original access_request had no email, the client insert
+    should NOT include an empty-string email key — that would write
+    "" to a column we'd rather see as NULL for the "no email" UI path.
+    """
+    captured_inserts = []
+    mock_sb = MagicMock()
+
+    def _table(name):
+        t = MagicMock()
+        for m in ("select", "eq", "order", "limit", "is_", "ilike", "in_",
+                  "update", "delete"):
+            getattr(t, m).return_value = t
+        if name == "access_requests":
+            t.execute.return_value = MagicMock(data=[{
+                "id": "req-2", "name": "No Email Bob",
+                "email": "", "phone": "+12075550300",
+                "business_type": "Septic", "status": "pending",
+            }])
+        elif name == "clients":
+            t.execute.return_value = MagicMock(data=[])
+            def _insert(row):
+                captured_inserts.append(row)
+                inner = MagicMock()
+                inner.execute.return_value = MagicMock(data=[{"id": "client-new"}])
+                return inner
+            t.insert.side_effect = _insert
+        else:
+            t.execute.return_value = MagicMock(data=[])
+        return t
+
+    mock_sb.table.side_effect = _table
+
+    with patch("routes.admin_routes._sb", return_value=mock_sb), \
+         patch("execution.resend_agent.send_welcome_email",
+               return_value={"success": True}):
+        admin_client.post(
+            "/requests/req-2/approve",
+            data={"business_name": "No Email Inc"},
+        )
+
+    client_inserts = [r for r in captured_inserts if "business_name" in r]
+    assert client_inserts
+    # The email key should be absent (left to default to NULL),
+    # not present-but-empty
+    assert "email" not in client_inserts[0], (
+        "approve_request should omit the email key entirely when the "
+        "access_request has no email — leaves clients.email NULL so "
+        "the UI's 'no email' path renders correctly."
+    )
+
+
+def test_admin_clients_template_renders_email_column():
+    """The Clients list template must show an Email column header + cell."""
+    from pathlib import Path
+    src = (Path(__file__).parent.parent
+           / "templates" / "admin_clients.html").read_text()
+    # New column header
+    assert "<th>Email</th>" in src
+    # Per-row email rendering with mailto: + stopPropagation so clicking
+    # the email doesn't double-trigger the row click
+    assert "{{ c.email }}" in src
+    assert "mailto:{{ c.email }}" in src
+    assert "event.stopPropagation()" in src
+    # Falls back to "no email" indicator when the column is null
+    assert "no email" in src.lower()
+
+
+def test_admin_requests_approved_section_renders_email_column():
+    """The Approved section on /requests must show an Email column."""
+    from pathlib import Path
+    src = (Path(__file__).parent.parent
+           / "templates" / "admin_requests.html").read_text()
+    # The Approved section's table now has an Email header
+    assert "<th>Email</th>" in src
+    # Renders the client_email field attached by the batch lookup
+    assert "client_email" in src
+
+
+def test_admin_client_detail_forms_prefill_email_from_client_row():
+    """
+    The Reset PIN / Send Reminder / Resend Welcome forms on the client
+    detail page must pre-fill the email input from client.email so
+    the admin doesn't retype it every action.
+    """
+    from pathlib import Path
+    src = (Path(__file__).parent.parent
+           / "templates" / "admin_client_detail.html").read_text()
+    # All three forms should have value="{{ client.email or '' }}"
+    # on their email inputs. Count occurrences — should be 3.
+    occurrences = src.count("value=\"{{ client.email or '' }}\"")
+    assert occurrences >= 3, (
+        f"Expected the email input to be pre-filled from client.email "
+        f"in all three forms (Reset PIN / Send Reminder / Resend Welcome), "
+        f"but found only {occurrences} occurrence(s)."
+    )
+    # And the Client Details card should show the email row so the admin
+    # can see what's on file at a glance
+    assert "client.email" in src

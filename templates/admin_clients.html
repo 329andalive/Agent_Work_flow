@@ -16,13 +16,20 @@
   {% if clients %}
   <div class="table-wrap">
     <table>
-      <thead><tr><th>Business</th><th>Owner</th><th>Phone</th><th>Vertical</th><th>Jobs</th><th>Status</th><th>Since</th></tr></thead>
+      <thead><tr><th>Business</th><th>Owner</th><th>Phone</th><th>Email</th><th>Vertical</th><th>Jobs</th><th>Status</th><th>Since</th></tr></thead>
       <tbody>
         {% for c in clients %}
         <tr style="cursor:pointer" onclick="window.location='/clients/{{ c.id }}'">
           <td><strong>{{ c.business_name or '—' }}</strong></td>
           <td>{{ c.owner_name or '—' }}</td>
           <td class="mono" style="font-size:12px">{{ c.phone }}</td>
+          <td style="font-size:12px">
+            {% if c.email %}
+              <a href="mailto:{{ c.email }}" style="color:var(--amber)" onclick="event.stopPropagation()">{{ c.email }}</a>
+            {% else %}
+              <span style="color:var(--text-muted)">— no email</span>
+            {% endif %}
+          </td>
           <td style="font-size:11px;color:var(--text-muted)">{{ c.trade_vertical or 'general' }}</td>
           <td class="mono">{{ counts.get(c.id, 0) }}</td>
           <td>

@@ -86,7 +86,7 @@
   </div>
   <div class="table-wrap">
     <table>
-      <thead><tr><th>Name</th><th>Business</th><th>Phone</th><th>Status</th><th>Approved</th><th></th></tr></thead>
+      <thead><tr><th>Name</th><th>Business</th><th>Phone</th><th>Email</th><th>Status</th><th>Approved</th><th></th></tr></thead>
       <tbody>
         {% for r in approved %}
         {% if r.client_id %}
@@ -94,6 +94,13 @@
           <td><strong>{{ r.name }}</strong></td>
           <td>{{ r.client_business_name }}</td>
           <td class="mono">{{ r.phone or '—' }}</td>
+          <td style="font-size:12px">
+            {% if r.client_email %}
+              <a href="mailto:{{ r.client_email }}" style="color:var(--amber)" onclick="event.stopPropagation()">{{ r.client_email }}</a>
+            {% else %}
+              <span style="color:var(--text-muted)">— no email</span>
+            {% endif %}
+          </td>
           <td>
             {% if r.client_active %}
               <span class="badge badge-active"><span class="dot"></span> Active</span>
@@ -116,6 +123,7 @@
           <td>{{ r.name }}</td>
           <td>{{ r.business_type or '—' }}</td>
           <td class="mono">{{ r.phone or '—' }}</td>
+          <td style="font-size:12px;color:var(--text-muted)">{{ r.email or '—' }}</td>
           <td><span class="badge badge-inactive">Deleted</span></td>
           <td style="color:var(--text-muted);font-size:11px">{{ fmt_dt(r.approved_at) }}</td>
           <td></td>

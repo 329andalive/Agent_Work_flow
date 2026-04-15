@@ -20,6 +20,14 @@
       <tr><td style="color:var(--text-muted);font-size:12px;padding:6px 0;width:130px">Business</td><td><strong>{{ client.business_name }}</strong></td></tr>
       <tr><td style="color:var(--text-muted);font-size:12px;padding:6px 0">Owner</td><td>{{ client.owner_name or '—' }}</td></tr>
       <tr><td style="color:var(--text-muted);font-size:12px;padding:6px 0">Phone</td><td class="mono">{{ client.phone }}</td></tr>
+      <tr><td style="color:var(--text-muted);font-size:12px;padding:6px 0">Email</td>
+        <td style="font-size:13px">
+          {% if client.email %}
+            <a href="mailto:{{ client.email }}" style="color:var(--amber)">{{ client.email }}</a>
+          {% else %}
+            <span style="color:var(--text-muted)">— not on file</span>
+          {% endif %}
+        </td></tr>
       <tr><td style="color:var(--text-muted);font-size:12px;padding:6px 0">Vertical</td><td>{{ client.trade_vertical or 'general' }}</td></tr>
       <tr><td style="color:var(--text-muted);font-size:12px;padding:6px 0">Status</td>
         <td>{% if client.active %}<span class="badge badge-active"><span class="dot"></span> Active</span>
@@ -43,7 +51,8 @@
   <form method="POST" action="/clients/{{ client.id }}/resend-welcome" style="display:flex;gap:12px;align-items:flex-end">
     <div class="form-group" style="flex:1;margin-bottom:0">
       <label class="form-label">Email Address</label>
-      <input type="email" name="email" class="form-input" placeholder="owner@business.com" required>
+      <input type="email" name="email" class="form-input" placeholder="owner@business.com"
+             value="{{ client.email or '' }}" required>
     </div>
     <button type="submit" class="btn btn-amber">Send Welcome Email</button>
   </form>
@@ -59,7 +68,8 @@
         onsubmit="return confirm('Reset this client&apos;s PIN and email the new one to the address below?');">
     <div class="form-group" style="flex:1;margin-bottom:0">
       <label class="form-label">Owner Email</label>
-      <input type="email" name="email" class="form-input" placeholder="owner@business.com" required>
+      <input type="email" name="email" class="form-input" placeholder="owner@business.com"
+             value="{{ client.email or '' }}" required>
     </div>
     <button type="submit" class="btn btn-amber">Reset PIN & Email It</button>
   </form>
@@ -74,7 +84,8 @@
         style="display:flex;flex-direction:column;gap:10px">
     <div class="form-group" style="margin-bottom:0">
       <label class="form-label">Owner Email</label>
-      <input type="email" name="email" class="form-input" placeholder="owner@business.com" required>
+      <input type="email" name="email" class="form-input" placeholder="owner@business.com"
+             value="{{ client.email or '' }}" required>
     </div>
     <div class="form-group" style="margin-bottom:0">
       <label class="form-label">Subject</label>
