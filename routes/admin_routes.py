@@ -116,10 +116,41 @@ def requests_list():
         data = []
     # Get pending count for sidebar badge
     pending_count = sum(1 for r in data if r.get("status") == "pending")
+
+    approved = [r for r in data if r.get("status") == "approved"]
+
+    # Attach client_id + active state to each approved row so the
+    # template can render a clickable "Manage →" link that takes the
+    # admin straight to /clients/<id> where the Reset PIN / Send
+    # Reminder / Delete forms live. Approve writes to clients.phone
+    # in E.164, so we normalize each request's phone to match and
+    # do a single batched lookup.
+    if approved:
+        approved_phones_e164 = list({
+            _normalize_phone(r.get("phone", ""))
+            for r in approved if r.get("phone")
+        })
+        client_by_phone = {}
+        if approved_phones_e164:
+            try:
+                clients_result = sb.table("clients").select(
+                    "id, phone, business_name, active"
+                ).in_("phone", approved_phones_e164).execute()
+                for c in (clients_result.data or []):
+                    client_by_phone[c.get("phone", "")] = c
+            except Exception as e:
+                print(f"[{_ts()}] WARN admin: client lookup for approved rows failed — {e}")
+
+        for r in approved:
+            c = client_by_phone.get(_normalize_phone(r.get("phone", ""))) or {}
+            r["client_id"] = c.get("id")
+            r["client_active"] = c.get("active") if c else None
+            r["client_business_name"] = c.get("business_name") or r.get("business_type") or "—"
+
     return render_template("admin_requests.html",
         pending=[r for r in data if r.get("status")=="pending"],
         contacted=[r for r in data if r.get("status")=="contacted"],
-        approved=[r for r in data if r.get("status")=="approved"],
+        approved=approved,
         rejected=[r for r in data if r.get("status") in ("rejected","declined")],
         fmt_dt=_fmt_dt, total=len(data), pending_count=pending_count,
         active_page="requests",

@@ -76,18 +76,51 @@
 
 {% if approved %}
 <div class="card" style="margin-bottom:20px">
-  <div class="card-header"><div class="card-title" style="color:var(--green)">&#10003; Approved — Live Clients</div></div>
+  <div class="card-header">
+    <div>
+      <div class="card-title" style="color:var(--green)">&#10003; Approved — Live Clients</div>
+      <div class="card-sub" style="font-size:11px;color:var(--text-muted);margin-top:3px">
+        Click any row to manage: pause / reset PIN / send reminder / delete
+      </div>
+    </div>
+  </div>
   <div class="table-wrap">
     <table>
-      <thead><tr><th>Name</th><th>Business</th><th>Phone</th><th>Approved</th></tr></thead>
+      <thead><tr><th>Name</th><th>Business</th><th>Phone</th><th>Status</th><th>Approved</th><th></th></tr></thead>
       <tbody>
         {% for r in approved %}
+        {% if r.client_id %}
+        <tr style="cursor:pointer" onclick="window.location='/clients/{{ r.client_id }}'">
+          <td><strong>{{ r.name }}</strong></td>
+          <td>{{ r.client_business_name }}</td>
+          <td class="mono">{{ r.phone or '—' }}</td>
+          <td>
+            {% if r.client_active %}
+              <span class="badge badge-active"><span class="dot"></span> Active</span>
+            {% elif r.client_active is false %}
+              <span class="badge badge-inactive">Paused</span>
+            {% else %}
+              <span class="badge badge-inactive">—</span>
+            {% endif %}
+          </td>
+          <td style="color:var(--text-muted);font-size:11px">{{ fmt_dt(r.approved_at) }}</td>
+          <td style="text-align:right">
+            <a href="/clients/{{ r.client_id }}" class="btn btn-sm btn-amber"
+               onclick="event.stopPropagation()">Manage &rarr;</a>
+          </td>
+        </tr>
+        {% else %}
+        {# Edge case: approved request whose client row no longer exists
+           (e.g. manually deleted from Supabase). Show data without actions. #}
         <tr>
           <td>{{ r.name }}</td>
           <td>{{ r.business_type or '—' }}</td>
           <td class="mono">{{ r.phone or '—' }}</td>
+          <td><span class="badge badge-inactive">Deleted</span></td>
           <td style="color:var(--text-muted);font-size:11px">{{ fmt_dt(r.approved_at) }}</td>
+          <td></td>
         </tr>
+        {% endif %}
         {% endfor %}
       </tbody>
     </table>
