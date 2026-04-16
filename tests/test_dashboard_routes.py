@@ -228,17 +228,6 @@ def test_invoice_mark_paid_redirects_to_list(invoice_client):
     assert "/dashboard/invoices/" in resp.headers["Location"]
 
 
-def test_invoice_send_action_redirects_to_list(invoice_client):
-    """POST /dashboard/invoice/<id>/action with action=send should 302 to /dashboard/invoices/."""
-    resp = invoice_client.post(
-        f"/dashboard/invoice/{FAKE_INVOICE_ID}/action",
-        data={"action": "send"},
-        follow_redirects=False,
-    )
-    assert resp.status_code == 302, f"Expected 302, got {resp.status_code}"
-    assert "/dashboard/invoices/" in resp.headers["Location"]
-
-
 @pytest.fixture
 def editable_invoice_client():
     """Flask test client with a work_order-status invoice that can be edited."""

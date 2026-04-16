@@ -261,10 +261,6 @@
         </form>
         {% elif not invoice.paid_at %}
         <form method="POST" action="/dashboard/invoice/{{ invoice.id }}/action" style="display:inline">
-          <input type="hidden" name="action" value="send">
-          <button type="submit" class="doc-btn doc-btn-primary">Send to Customer</button>
-        </form>
-        <form method="POST" action="/dashboard/invoice/{{ invoice.id }}/action" style="display:inline">
           <input type="hidden" name="action" value="paid">
           <button type="submit" class="doc-btn doc-btn-green">Mark Paid</button>
         </form>

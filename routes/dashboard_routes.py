@@ -1530,8 +1530,6 @@ def invoice_action(invoice_id):
         if action == "paid":
             sb.table("invoices").update({"status": "paid", "paid_at": now}).eq("id", invoice_id).execute()
             flash("Invoice marked as paid.", "success")
-        elif action == "send":
-            flash("SMS sending queued. Will send when 10DLC is active.", "info")
         elif action == "close_wo":
             # Work order → draft invoice. Also flips the jobs row to
             # 'complete' so the Planner board stops surfacing it.
