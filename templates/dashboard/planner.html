@@ -97,7 +97,8 @@
       <span class="pl-stat"><strong id="week-count">{{ week_jobs|length }}</strong> this week</span>
     </div>
   </div>
-  <button class="pl-week-btn" style="background:var(--amber);color:#1a2e4a;font-weight:700;border-color:var(--amber)" onclick="openQuickAdd()">+ Work Order</button>
+  <a class="pl-week-btn" href="/dashboard/new-job?type=work_order"
+     style="background:var(--amber);color:#1a2e4a;font-weight:700;border-color:var(--amber);text-decoration:none;display:inline-flex;align-items:center;justify-content:center">+ Work Order</a>
 </div>
 
 <!-- Week strip with capacity bars -->

@@ -1,7 +1,8 @@
 {% extends "base.html" %}
 
-{% block title %}Invoice{% endblock %}
-{% block page_title %}Invoice{% endblock %}
+{% set is_work_order = (invoice.status == 'work_order') %}
+{% block title %}{% if is_work_order %}Work Order{% else %}Invoice{% endif %}{% endblock %}
+{% block page_title %}{% if is_work_order %}Work Order{% else %}Invoice{% endif %}{% endblock %}
 {% block topbar_meta %}{{ fmt_date(invoice.created_at) }}{% endblock %}
 
 {% block extra_css %}
@@ -62,7 +63,7 @@
 
   <div class="doc-card">
     <div class="doc-header">
-      <span class="doc-type">Invoice</span>
+      <span class="doc-type">{% if is_work_order %}Work Order{% else %}Invoice{% endif %}</span>
       <span class="doc-id">#{{ invoice.id[:8]|upper if invoice.id else '—' }}</span>
       <div class="doc-biz">{{ business_name }}</div>
       <div class="doc-date">Created {{ fmt_date(invoice.created_at) }}</div>
@@ -88,9 +89,19 @@
     <div class="doc-section">
       <div class="doc-section-title">Line Items</div>
       {% for li in line_items %}
+      {% set _qty  = (li.qty|float) if li.qty is defined and li.qty is not none else None %}
+      {% set _rate = (li.unit_price|float) if li.unit_price is defined and li.unit_price is not none else None %}
+      {% set _tot  = (li.total|float) if li.total is defined else (li.amount|float if li.amount is defined else 0) %}
       <div class="doc-line-item">
-        <span class="doc-line-desc">{{ li.description or li.get('name','Item') }}</span>
-        <span class="doc-line-amount">${{ "%.2f"|format(li.total|float if li.total is defined else li.amount|float if li.amount is defined else 0) }}</span>
+        <span class="doc-line-desc">
+          {{ li.description or li.get('name','Item') }}
+          {% if _qty is not none and _rate is not none %}
+          <span style="color:var(--text-tertiary);font-size:12px;margin-left:8px">
+            {{ "%g"|format(_qty) }} × ${{ "%.2f"|format(_rate) }}
+          </span>
+          {% endif %}
+        </span>
+        <span class="doc-line-amount">${{ "%.2f"|format(_tot) }}</span>
       </div>
       {% endfor %}
 
@@ -129,6 +140,8 @@
         {% if invoice.paid_at %}
           <span class="badge badge-green">Paid</span>
           <span style="font-size:12px;color:var(--text-tertiary);margin-left:8px">{{ fmt_date(invoice.paid_at) }}</span>
+        {% elif is_work_order %}
+          <span class="badge badge-amber">Work Order — Open</span>
         {% elif invoice.status == 'overdue' %}
           <span class="badge badge-red">Overdue</span>
         {% elif invoice.status == 'sent' %}
@@ -138,7 +151,13 @@
         {% endif %}
       </div>
       <div class="doc-actions">
-        {% if not invoice.paid_at %}
+        {% if is_work_order %}
+        <form method="POST" action="/dashboard/invoice/{{ invoice.id }}/action" style="display:inline"
+              onsubmit="return confirm('Close this work order? It will become a draft invoice ready to send.');">
+          <input type="hidden" name="action" value="close_wo">
+          <button type="submit" class="doc-btn doc-btn-amber">Close Work Order</button>
+        </form>
+        {% elif not invoice.paid_at %}
         <form method="POST" action="/dashboard/invoice/{{ invoice.id }}/action" style="display:inline">
           <input type="hidden" name="action" value="send">
           <button type="submit" class="doc-btn doc-btn-primary">Send to Customer</button>
@@ -158,7 +177,7 @@
           Copy Invoice
         </button>
 
-        {% if total > 0 %}
+        {% if total > 0 and not is_work_order %}
         <button class="doc-btn doc-btn-amber" id="btn-email"
                 onclick="emailInvoice()"
                 {% if not has_text %}disabled title="Invoice text not available"{% endif %}>
@@ -166,7 +185,7 @@
         </button>
         {% endif %}
 
-        {% if payment_link_url and not invoice.paid_at %}
+        {% if payment_link_url and not invoice.paid_at and not is_work_order %}
         <a class="doc-btn doc-btn-green" href="{{ payment_link_url }}" target="_blank"
            style="font-weight:700;letter-spacing:0.03em">
           💳 PAY NOW — ${{ "%.2f"|format(total) }}
@@ -200,7 +219,14 @@ function buildInvoiceText() {
   lines.push('');
   lines.push('Line Items:');
   {% for li in line_items %}
-  lines.push('  {{ li.description or li.get("name","Item") }} — ${{ "%.2f"|format(li.total|float if li.total is defined else li.amount|float if li.amount is defined else 0) }}');
+  {% set _qty  = (li.qty|float) if li.qty is defined and li.qty is not none else None %}
+  {% set _rate = (li.unit_price|float) if li.unit_price is defined and li.unit_price is not none else None %}
+  {% set _tot  = (li.total|float) if li.total is defined else (li.amount|float if li.amount is defined else 0) %}
+  {% if _qty is not none and _rate is not none %}
+  lines.push('  {{ li.description or li.get("name","Item") }} ({{ "%g"|format(_qty) }} × ${{ "%.2f"|format(_rate) }}) — ${{ "%.2f"|format(_tot) }}');
+  {% else %}
+  lines.push('  {{ li.description or li.get("name","Item") }} — ${{ "%.2f"|format(_tot) }}');
+  {% endif %}
   {% endfor %}
   lines.push('');
   lines.push('Subtotal: ${{ "%.2f"|format(subtotal) }}');

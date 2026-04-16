@@ -38,7 +38,7 @@
     </span>
     <span style="display:flex;align-items:center;gap:8px">
       <a href="/api/invoices/export-csv" download class="export-btn">↓ Export CSV</a>
-      <a href="/dashboard/invoices/new" class="btn btn-primary">+ New Invoice</a>
+      <a href="/dashboard/new-job?type=invoice" class="btn btn-primary">+ New Invoice</a>
     </span>
   </div>
   <div class="card-body-flush">
@@ -86,7 +86,7 @@
     {% else %}
     <div class="empty-state">
       No invoices in the last 90 days.<br>
-      <a href="/dashboard/invoices/new" style="font-size:12px;color:var(--blue);text-decoration:none;margin-top:4px;display:inline-block">
+      <a href="/dashboard/new-job?type=invoice" style="font-size:12px;color:var(--blue);text-decoration:none;margin-top:4px;display:inline-block">
         Create your first invoice →
       </a>
     </div>

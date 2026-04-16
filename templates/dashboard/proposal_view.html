@@ -25,9 +25,11 @@
   .doc-line-amount { font-weight: 600; font-family: 'DM Mono', monospace; }
 
   /* Inline edit mode — only visible when editing */
-  .doc-line-item.editable { padding: 8px 0; }
-  .doc-line-item.editable .li-desc { flex: 1; padding: 6px 8px; border: 1px solid var(--border); border-radius: 4px; font-size: 14px; font-family: inherit; min-width: 0; }
-  .doc-line-item.editable .li-amount { width: 100px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 4px; font-size: 14px; font-family: 'DM Mono', monospace; text-align: right; }
+  .doc-line-item.editable { padding: 8px 0; display: grid; grid-template-columns: 1fr 60px 90px 80px 28px; gap: 8px; align-items: center; }
+  .doc-line-item.editable .li-desc  { padding: 6px 8px; border: 1px solid var(--border); border-radius: 4px; font-size: 14px; font-family: inherit; min-width: 0; }
+  .doc-line-item.editable .li-qty   { padding: 6px 8px; border: 1px solid var(--border); border-radius: 4px; font-size: 14px; font-family: 'DM Mono', monospace; text-align: right; }
+  .doc-line-item.editable .li-rate  { padding: 6px 8px; border: 1px solid var(--border); border-radius: 4px; font-size: 14px; font-family: 'DM Mono', monospace; text-align: right; }
+  .doc-line-item.editable .li-total { text-align: right; font-family: 'DM Mono', monospace; font-weight: 600; font-size: 13px; color: var(--text-primary); }
   .doc-line-item.editable .li-remove { background: transparent; border: none; color: #dc2626; cursor: pointer; font-size: 18px; line-height: 1; padding: 0 4px; }
   .doc-line-item.editable .li-remove:hover { color: #991b1b; }
   .doc-add-row { padding: 8px 0; }
@@ -60,7 +62,7 @@
   .flash-error { background: #fee2e2; color: #991b1b; }
   @media print {
     .doc-actions, .doc-back, .flash-msg, .doc-edit-toggle, .doc-add-row, .li-remove, #sidebar, #hamburger, #sidebar-overlay, .topbar { display: none !important; }
-    .doc-line-item.editable .li-desc, .doc-line-item.editable .li-amount { border: none !important; padding: 0 !important; background: transparent !important; }
+    .doc-line-item.editable .li-desc, .doc-line-item.editable .li-qty, .doc-line-item.editable .li-rate { border: none !important; padding: 0 !important; background: transparent !important; }
     #main { margin-left: 0 !important; padding: 0 !important; }
     body { background: #fff; }
     .doc-card { box-shadow: none; border: 1px solid #ddd; }
@@ -112,23 +114,42 @@
         {% endif %}
       </div>
 
-      {# View mode — read-only line items #}
+      {# View mode — read-only. Render qty × rate when those fields
+         exist on the line item; fall back to amount-only for legacy
+         rows that were saved before the qty/unit_price migration. #}
       <div id="li-view">
         {% for li in line_items %}
+          {% set _qty  = (li.qty|float)        if li.qty        is defined and li.qty        is not none else None %}
+          {% set _rate = (li.unit_price|float) if li.unit_price is defined and li.unit_price is not none else None %}
+          {% set _tot  = (li.total|float)      if li.total      is defined else (li.amount|float if li.amount is defined else 0) %}
         <div class="doc-line-item">
-          <span class="doc-line-desc">{{ li.description or li.get('name','Item') }}</span>
-          <span class="doc-line-amount">${{ "%.2f"|format(li.total|float if li.total is defined else li.amount|float if li.amount is defined else 0) }}</span>
+          <span class="doc-line-desc">
+            {{ li.description or li.get('name','Item') }}
+            {% if _qty is not none and _rate is not none %}
+              <span style="color:var(--text-tertiary);font-size:12px;margin-left:8px">
+                {{ "%g"|format(_qty) }} × ${{ "%.2f"|format(_rate) }}
+              </span>
+            {% endif %}
+          </span>
+          <span class="doc-line-amount">${{ "%.2f"|format(_tot) }}</span>
         </div>
         {% endfor %}
       </div>
 
-      {# Edit mode — inline-editable inputs, hidden until Edit toggle #}
+      {# Edit mode — inline-editable inputs. Qty + unit_price + total.
+         Legacy rows without qty/unit_price default to qty=1, with the
+         old amount landing in unit_price so total stays the same. #}
       <div id="li-edit" style="display:none">
         <div id="li-edit-rows">
           {% for li in line_items %}
+            {% set _qty  = (li.qty|float)        if li.qty        is defined and li.qty        is not none else 1 %}
+            {% set _rate = (li.unit_price|float) if li.unit_price is defined and li.unit_price is not none
+                           else (li.total|float if li.total is defined else (li.amount|float if li.amount is defined else 0)) %}
           <div class="doc-line-item editable">
-            <input type="text" class="li-desc" value="{{ li.description or li.get('name','Item') }}" placeholder="Description">
-            <input type="number" class="li-amount" step="0.01" value="{{ "%.2f"|format(li.total|float if li.total is defined else li.amount|float if li.amount is defined else 0) }}" placeholder="0.00">
+            <input type="text"   class="li-desc"  value="{{ li.description or li.get('name','Item') }}" placeholder="Description">
+            <input type="number" class="li-qty"   step="0.25" min="0"  value="{{ "%g"|format(_qty) }}"   placeholder="1">
+            <input type="number" class="li-rate"  step="0.01" min="0"  value="{{ "%.2f"|format(_rate) }}" placeholder="0.00">
+            <span class="li-total" data-li-total>${{ "%.2f"|format(_qty * _rate) }}</span>
             <button type="button" class="li-remove" onclick="removeRow(this)" aria-label="Remove">&times;</button>
           </div>
           {% endfor %}
@@ -268,12 +289,14 @@ function addRow() {
   var row = document.createElement('div');
   row.className = 'doc-line-item editable';
   row.innerHTML =
-    '<input type="text" class="li-desc" placeholder="Description">' +
-    '<input type="number" class="li-amount" step="0.01" placeholder="0.00">' +
+    '<input type="text"   class="li-desc"  placeholder="Description">' +
+    '<input type="number" class="li-qty"   step="0.25" min="0" value="1"    placeholder="1">' +
+    '<input type="number" class="li-rate"  step="0.01" min="0"                placeholder="0.00">' +
+    '<span class="li-total" data-li-total>$0.00</span>' +
     '<button type="button" class="li-remove" onclick="removeRow(this)" aria-label="Remove">&times;</button>';
   rows.appendChild(row);
   row.querySelector('.li-desc').focus();
-  attachAmountListeners(row);
+  attachRowListeners(row);
   recalcTotal();
 }
 
@@ -285,10 +308,15 @@ function removeRow(btn) {
   }
 }
 
-function attachAmountListeners(scope) {
-  var inputs = (scope || document).querySelectorAll('#li-edit-rows .li-amount');
-  inputs.forEach(function(inp) {
-    inp.addEventListener('input', recalcTotal);
+function attachRowListeners(scope) {
+  var rows = scope && scope.classList && scope.classList.contains('doc-line-item')
+    ? [scope]
+    : (scope || document).querySelectorAll('#li-edit-rows .doc-line-item');
+  rows.forEach(function(row) {
+    ['.li-qty', '.li-rate', '.li-desc'].forEach(function(sel) {
+      var el = row.querySelector(sel);
+      if (el) el.addEventListener('input', recalcTotal);
+    });
   });
 }
 
@@ -296,12 +324,16 @@ function recalcTotal() {
   var rows = document.querySelectorAll('#li-edit-rows .doc-line-item');
   var subtotal = 0;
   rows.forEach(function(row) {
-    var amt = parseFloat(row.querySelector('.li-amount').value) || 0;
-    subtotal += amt;
+    var qty  = parseFloat(row.querySelector('.li-qty')  ? row.querySelector('.li-qty').value  : '1') || 0;
+    var rate = parseFloat(row.querySelector('.li-rate') ? row.querySelector('.li-rate').value : '0') || 0;
+    var rowTotal = Math.round(qty * rate * 100) / 100;
+    var totalEl = row.querySelector('[data-li-total]');
+    if (totalEl) totalEl.textContent = '$' + rowTotal.toFixed(2);
+    subtotal += rowTotal;
   });
   // Notes block has no tax for proposals (proposals table has no tax columns)
   $('subtotal-display').textContent = '$' + subtotal.toFixed(2);
-  $('total-display').textContent = '$' + subtotal.toFixed(2);
+  $('total-display').textContent    = '$' + subtotal.toFixed(2);
 }
 
 // ---------------------------------------------------------------------------
@@ -313,9 +345,18 @@ function saveEdits() {
   var line_items = [];
   rows.forEach(function(row) {
     var desc = row.querySelector('.li-desc').value.trim();
-    var amt = parseFloat(row.querySelector('.li-amount').value) || 0;
-    if (desc || amt > 0) {
-      line_items.push({description: desc || 'Service', amount: amt});
+    var qty  = parseFloat(row.querySelector('.li-qty').value)  || 0;
+    var rate = parseFloat(row.querySelector('.li-rate').value) || 0;
+    var total = Math.round(qty * rate * 100) / 100;
+    if (desc || total > 0) {
+      line_items.push({
+        description: desc || 'Service',
+        qty: qty,
+        unit_price: rate,
+        total: total,
+        // Write `amount` too for backwards compat with older readers
+        amount: total,
+      });
     }
   });
   var notesEl = $('notes-edit');
@@ -419,6 +460,6 @@ function emailEstimate() {
 }
 
 // Wire up amount input listeners on initial load
-attachAmountListeners();
+attachRowListeners();
 </script>
 {% endblock %}

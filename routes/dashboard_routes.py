@@ -696,7 +696,7 @@ def invoices_page():
     try:
         result = sb.table("invoices").select(
             "id, amount_due, status, due_date, sent_at, paid_at, created_at, job_id, customer_id, invoice_text"
-        ).eq("client_id", client_id).gte("created_at", ninety_days_ago).order("created_at", desc=True).execute()
+        ).eq("client_id", client_id).gte("created_at", ninety_days_ago).neq("status", "work_order").order("created_at", desc=True).execute()
         invoices = result.data or []
     except Exception as e:
         print(f"[{_ts()}] ERROR dashboard_routes: invoices query — {e}")
@@ -1280,15 +1280,25 @@ def invoice_action(invoice_id):
     now = datetime.now(timezone.utc).isoformat()
 
     try:
-        result = sb.table("invoices").select("id").eq("id", invoice_id).eq("client_id", client_id).execute()
+        result = sb.table("invoices").select("id, job_id").eq("id", invoice_id).eq("client_id", client_id).execute()
         if not result.data:
             abort(404)
+        invoice_row = result.data[0]
 
         if action == "paid":
             sb.table("invoices").update({"status": "paid", "paid_at": now}).eq("id", invoice_id).execute()
             flash("Invoice marked as paid.", "success")
         elif action == "send":
             flash("SMS sending queued. Will send when 10DLC is active.", "info")
+        elif action == "close_wo":
+            # Work order → draft invoice. Also flips the jobs row to
+            # 'complete' so the Planner board stops surfacing it.
+            sb.table("invoices").update({"status": "draft"}).eq("id", invoice_id).execute()
+            jid = invoice_row.get("job_id")
+            if jid:
+                sb.table("jobs").update({"status": "complete"}).eq("id", jid).execute()
+            flash("Work order closed. Review and send the invoice.", "success")
+            return redirect(f"/dashboard/invoice/{invoice_id}")
         else:
             flash("Unknown action.", "error")
     except Exception as e:
@@ -1984,9 +1994,20 @@ def new_job():
     except Exception as e:
         print(f"[{_ts()}] ERROR dashboard_routes: new-job customers query — {e}")
 
+    # The form now accepts ?type=<estimate|work_order|invoice> so all
+    # four "+ New X" buttons (Dashboard, Estimates, Invoices, Planner)
+    # can share this single form. On save, the backend picks the
+    # target table + redirect based on this value. Default = estimate
+    # when no type is given (the Dashboard "New Job" button), since
+    # that's the most common owner workflow.
+    doc_type = (request.args.get("type") or "estimate").strip().lower()
+    if doc_type not in ("estimate", "work_order", "invoice"):
+        doc_type = "estimate"
+
     ctx.update({
         "customers": customers,
         "customers_json": json.dumps(customers),
+        "doc_type": doc_type,
     })
     return render_template("dashboard/new_job.html", **ctx)
 
@@ -2025,7 +2046,21 @@ def api_create_job():
         scheduled_dt = scheduled_date
 
     notes = data.get("notes", "").strip()
-    generate_proposal = data.get("generate_proposal", False)
+
+    # doc_type drives: (a) which downstream row gets created alongside
+    # the jobs row, and (b) which review page the form redirects to.
+    # "estimate" — jobs + proposals rows, redirect to /dashboard/proposal/<id>
+    # "work_order" — jobs row only (status=work_order), redirect to /dashboard/job/<id>
+    # "invoice" — jobs + invoices rows, redirect to /dashboard/invoice/<id>
+    # Falls back to "estimate" for unknown values (matches the form default)
+    # and also honors the legacy generate_proposal boolean so any old caller
+    # still gets an estimate flow.
+    doc_type = (data.get("doc_type") or "").strip().lower()
+    if doc_type not in ("estimate", "work_order", "invoice"):
+        if data.get("generate_proposal"):
+            doc_type = "estimate"
+        else:
+            doc_type = "estimate"  # unified form default — every doc is reviewed
 
     sb = _get_supabase()
 
@@ -2039,24 +2074,35 @@ def api_create_job():
         print(f"[{_ts()}] ERROR dashboard_routes: create job customer check — {e}")
         return jsonify({"success": False, "error": "Failed to verify customer"}), 500
 
-    # Insert job
-    # Pricing fields from the New Job form
+    # Pricing fields from the form. The unified form always sends
+    # line_items (qty × rate shape); estimated_amount is the sum of
+    # row totals; estimated_hours is sum of quantities on labor rows.
     estimated_amount = data.get("estimated_amount")
     estimated_hours = data.get("estimated_hours")
     contract_type = data.get("contract_type")
+    line_items = data.get("line_items") or []
+    address = data.get("address", "").strip()
 
+    # Job row status is determined by doc_type:
+    #   estimate → "scheduled" (same as before)
+    #   work_order → "work_order" (shows on Planner board)
+    #   invoice → "complete" (the work is done, we're just billing)
+    STATUS_BY_DOC_TYPE = {
+        "estimate":   "scheduled",
+        "work_order": "work_order",
+        "invoice":    "complete",
+    }
     job_row = {
         "client_id": client_id,
         "customer_id": customer_id,
         "job_type": job_type,
-        "status": "scheduled",
+        "status": STATUS_BY_DOC_TYPE[doc_type],
         "dispatch_status": "unassigned",
         "scheduled_date": scheduled_dt,
         "job_notes": notes,
-        "raw_input": "Created via dashboard New Job form",
+        "raw_input": f"Created via dashboard New Job form (doc_type={doc_type})",
     }
 
-    # Add pricing if provided
     if estimated_amount is not None:
         try:
             job_row["estimated_amount"] = float(estimated_amount)
@@ -2069,9 +2115,6 @@ def api_create_job():
             pass
     if contract_type:
         job_row["contract_type"] = contract_type
-
-    # Include address if provided
-    address = data.get("address", "").strip()
     if address:
         job_row["job_description"] = address
 
@@ -2084,66 +2127,97 @@ def api_create_job():
         print(f"[{_ts()}] ERROR dashboard_routes: create job insert — {e}")
         return jsonify({"success": False, "error": f"Database error: {e}"}), 500
 
-    # Optionally trigger proposal_agent — synchronous, matching command_routes pattern
+    # Create the doc_type-specific downstream row + compute the review URL
     proposal_id = None
-    proposal_summary = None
-    proposal_error = None
+    invoice_id = None
+    review_url = f"/dashboard/job/{job_id}"  # fallback = job detail page
 
-    if generate_proposal:
-        client = _load_client(client_id)
-        client_phone = client.get("phone", "")
-        customer_phone = customer.get("customer_phone", "")
-        customer_name = customer.get("customer_name", "Customer")
-
-        # Build natural language description — same pattern as command_routes.py
-        raw_input_text = f"{job_type} job for {customer_name} at {address or 'address on file'}. Notes: {notes}" if notes else f"{job_type} job for {customer_name} at {address or 'address on file'}"
-
+    total = 0.0
+    if estimated_amount is not None:
         try:
-            from execution.proposal_agent import run as proposal_run
-            output = proposal_run(client_phone=client_phone, customer_phone=customer_phone, raw_input=raw_input_text)
+            total = float(estimated_amount)
+        except (ValueError, TypeError):
+            total = 0.0
 
-            if output:
-                # Fetch the proposal_id from the most recent proposal for this job
-                try:
-                    prop_result = sb.table("proposals").select("id, amount_estimate").eq("client_id", client_id).eq("customer_id", customer_id).order("created_at", desc=True).limit(1).execute()
-                    if prop_result.data:
-                        proposal_id = prop_result.data[0]["id"]
-                        amount = prop_result.data[0].get("amount_estimate", 0)
-                        proposal_summary = f"Proposal for {customer_name} — ${float(amount):.0f}"
-                except Exception as e:
-                    print(f"[{_ts()}] WARN dashboard_routes: could not fetch proposal_id — {e}")
-                    proposal_summary = "Proposal drafted successfully."
+    import json as _json
 
-                print(f"[{_ts()}] INFO dashboard_routes: proposal_agent completed for job {job_id}")
-            else:
-                proposal_error = "Proposal agent returned no output — try from Command Center."
-                print(f"[{_ts()}] WARN dashboard_routes: proposal_agent returned None for job {job_id}")
-
+    if doc_type == "estimate":
+        # Write a draft proposal row tied to this job. The customer
+        # never sees "draft" — status is 'draft' until /doc/send fires
+        # per the April 2026 draft-gating fix.
+        try:
+            prop_row = {
+                "client_id": client_id,
+                "customer_id": customer_id,
+                "job_id": job_id,
+                "amount_estimate": total,
+                "status": "draft",
+            }
+            if line_items:
+                prop_row["line_items"] = _json.dumps(line_items)
+            if notes:
+                prop_row["proposal_text"] = notes
+            prop_res = sb.table("proposals").insert(prop_row).execute()
+            if prop_res.data:
+                proposal_id = prop_res.data[0]["id"]
+                review_url = f"/dashboard/proposal/{proposal_id}"
         except Exception as e:
-            proposal_error = f"Proposal generation failed: {e}"
-            print(f"[{_ts()}] ERROR dashboard_routes: proposal_agent failed for job {job_id} — {e}")
+            print(f"[{_ts()}] ERROR dashboard_routes: proposal insert — {e}")
+            # Non-fatal — the job exists, just no proposal row.
+            # review_url stays as /dashboard/job/<id>
 
-        # Log to agent_activity — success or failure
+    elif doc_type in ("invoice", "work_order"):
+        # Both invoice and work_order write to the invoices table so
+        # they share the same review page (invoice_view.html).
+        # - invoice: status='draft' — owner reviews, Sends to customer.
+        # - work_order: status='work_order' — tech adds items over time,
+        #   then "Close Work Order" flips status='draft' and the owner
+        #   sends normally. This honors the user's model of "a work
+        #   order is just an open form of an invoice."
+        inv_status = "work_order" if doc_type == "work_order" else "draft"
         try:
-            from execution.db_agent_activity import log_activity
-            log_activity(
-                client_phone=client_phone,
-                agent_name="proposal_agent",
-                action_taken="proposal_from_new_job",
-                input_summary=raw_input_text[:120],
-                output_summary=(proposal_summary or proposal_error or "unknown")[:120],
-                sms_sent=False,
-            )
-        except Exception:
-            pass
+            inv_row = {
+                "client_id": client_id,
+                "customer_id": customer_id,
+                "job_id": job_id,
+                "amount_due": total,
+                "status": inv_status,
+            }
+            if line_items:
+                inv_row["line_items"] = _json.dumps(line_items)
+            if notes:
+                inv_row["invoice_text"] = notes
+            inv_res = sb.table("invoices").insert(inv_row).execute()
+            if inv_res.data:
+                invoice_id = inv_res.data[0]["id"]
+                review_url = f"/dashboard/invoice/{invoice_id}"
+        except Exception as e:
+            print(f"[{_ts()}] ERROR dashboard_routes: invoice insert — {e}")
+            # Non-fatal — job exists, redirect to job detail
+
+    # Audit log for the unified flow — tells us which doc_type was
+    # created so we can see the mix of usage over time.
+    try:
+        from execution.db_agent_activity import log_activity
+        client_row = _load_client(client_id)
+        log_activity(
+            client_phone=client_row.get("phone", ""),
+            agent_name="new_job_form",
+            action_taken=f"create_{doc_type}",
+            input_summary=f"customer={customer.get('customer_name','?')} job_type={job_type} total=${total:.2f}",
+            output_summary=f"job_id={job_id[:8]} proposal_id={(proposal_id or '')[:8]} invoice_id={(invoice_id or '')[:8]}",
+            sms_sent=False,
+        )
+    except Exception:
+        pass
 
     return jsonify({
         "success": True,
+        "doc_type": doc_type,
         "job_id": job_id,
         "proposal_id": proposal_id,
-        "proposal_summary": proposal_summary,
-        "proposal_error": proposal_error,
-        "redirect": "/dashboard/",
+        "invoice_id": invoice_id,
+        "redirect": review_url,
     })
 
 

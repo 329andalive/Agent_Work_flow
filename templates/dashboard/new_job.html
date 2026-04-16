@@ -226,6 +226,114 @@
   .form-error   { margin-top: 10px; font-size: 13px; color: var(--red);   display: none; }
   .form-success { margin-top: 10px; font-size: 13px; color: var(--green); display: none; }
 
+  /* Document Type segmented control — all four "+ New X" buttons route
+     here; this switch tells the backend which table to write to. */
+  .doc-type-switch {
+    display: flex;
+    gap: 0;
+    margin: 0 0 20px;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 4px;
+  }
+  .doc-type-option {
+    flex: 1;
+    text-align: center;
+    padding: 10px 8px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-muted);
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-family: inherit;
+    transition: background .15s, color .15s;
+  }
+  .doc-type-option:hover { color: var(--text-primary); }
+  .doc-type-option.active {
+    background: var(--amber);
+    color: #1a2e4a;
+  }
+  .doc-type-hint {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin: -12px 0 16px;
+    padding: 0 4px;
+  }
+
+  /* Line items table — Description / Qty / Unit Price / Total grid */
+  .line-items-wrap {
+    background: rgba(255,255,255,0.02);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 12px 6px;
+  }
+  .line-items-header,
+  .line-item-row {
+    display: grid;
+    grid-template-columns: 1fr 70px 110px 90px 32px;
+    gap: 8px;
+    align-items: center;
+  }
+  .line-items-header {
+    padding: 4px 6px 8px;
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-tertiary);
+    border-bottom: 1px solid var(--border);
+  }
+  .line-items-header .lih-qty,
+  .line-items-header .lih-rate { text-align: right; }
+  .line-items-header .lih-total { text-align: right; }
+  .line-items-list { list-style: none; margin: 0; padding: 6px 0 0; }
+  .line-item-row { padding: 5px 0; }
+  .line-item-row .li-desc { min-width: 0; }
+  .line-item-row .li-qty,
+  .line-item-row .li-rate { text-align: right; }
+  .line-item-row .li-row-total {
+    text-align: right;
+    font-family: 'DM Mono', monospace;
+    font-weight: 600;
+    font-size: 13px;
+    color: var(--text-primary);
+  }
+  .line-item-row .input-prefix-wrap { margin: 0; }
+  .btn-add-line {
+    margin: 6px 0 4px;
+    background: transparent;
+    border: 1px dashed var(--border);
+    color: var(--text-muted);
+    padding: 7px 14px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-family: inherit;
+    cursor: pointer;
+    width: 100%;
+  }
+  .btn-add-line:hover { color: var(--blue); border-color: var(--blue); }
+  .btn-remove-line {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    font-size: 18px;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0 4px;
+  }
+  .btn-remove-line:hover { color: #dc2626; }
+  .line-items-total {
+    margin-top: 8px;
+    padding: 10px 6px 4px;
+    font-size: 14px;
+    text-align: right;
+    border-top: 2px solid var(--text-primary);
+    font-weight: 700;
+  }
+
   .section-divider {
     border: none;
     border-top: 1px solid var(--border);
@@ -238,6 +346,23 @@
 
 <div class="form-card">
   <form id="new-job-form" autocomplete="off">
+
+    {# Document Type — every button (Dashboard/Estimates/Invoices/Planner)
+       lands here; this switch controls which table gets written on save
+       and where the user gets redirected to review. #}
+    <div class="doc-type-switch" role="tablist" aria-label="Document type">
+      <button type="button" class="doc-type-option{% if doc_type == 'estimate'   %} active{% endif %}"
+              data-doc-type="estimate"   role="tab"
+              aria-selected="{{ 'true' if doc_type == 'estimate'   else 'false' }}">Estimate</button>
+      <button type="button" class="doc-type-option{% if doc_type == 'work_order' %} active{% endif %}"
+              data-doc-type="work_order" role="tab"
+              aria-selected="{{ 'true' if doc_type == 'work_order' else 'false' }}">Work Order</button>
+      <button type="button" class="doc-type-option{% if doc_type == 'invoice'    %} active{% endif %}"
+              data-doc-type="invoice"    role="tab"
+              aria-selected="{{ 'true' if doc_type == 'invoice'    else 'false' }}">Invoice</button>
+    </div>
+    <div class="doc-type-hint" id="doc-type-hint"></div>
+    <input type="hidden" id="h_doc_type" name="doc_type" value="{{ doc_type }}">
 
     <!-- Customer -->
     <div class="form-group">
@@ -295,78 +420,46 @@
 
     <hr class="section-divider">
 
-    <!-- ── Pricing Mode ───────────────────────────────────── -->
+    {# ── Line Items ───────────────────────────────────────────────
+       Every line is Description / Quantity / Unit Price — the system
+       computes the row total and the grand total live. Labor looks like
+       ("Labor", 8, 125) = $1,000. Parts look like ("Baffle", 1, 175).
+       A flat-rate pump-out is just one row with qty=1. The old Flat /
+       T&M / Line Items mode selector is gone — everything is line items. #}
     <div class="form-group">
-      <label class="form-label">Pricing</label>
-      <select class="form-select" id="pricing_mode" name="pricing_mode">
-        <option value="none">No estimate yet</option>
-        <option value="flat">Flat rate</option>
-        <option value="tm">Time &amp; materials</option>
-        <option value="lineitems">Line items</option>
-      </select>
-    </div>
-
-    <!-- Estimate badge — shown when any amount is entered -->
-    <div class="estimate-badge" id="estimate-badge">
-      &#9889; Est. <span id="estimate-badge-amount"></span>
-    </div>
-
-    <!-- FLAT RATE panel -->
-    <div class="pricing-panel" id="panel-flat">
-      <div class="panel-title">Flat Rate</div>
-      <div class="form-group">
-        <label class="form-label">Amount</label>
-        <div class="input-prefix-wrap">
-          <span class="input-prefix">$</span>
-          <input type="number" class="form-input" id="flat_amount" name="flat_amount"
-            placeholder="0.00" min="0" step="0.01">
+      <label class="form-label" style="display:flex;align-items:center;justify-content:space-between">
+        <span>Line Items</span>
+        <span class="estimate-badge" id="estimate-badge" style="position:static;display:none;margin:0">
+          &#9889; Est. <span id="estimate-badge-amount"></span>
+        </span>
+      </label>
+      <div class="line-items-wrap">
+        <div class="line-items-header">
+          <span class="lih-desc">Description</span>
+          <span class="lih-qty">Qty</span>
+          <span class="lih-rate">Unit Price</span>
+          <span class="lih-total">Total</span>
+          <span class="lih-gap"></span>
         </div>
-        <div class="pricing-hint">Worker hits DONE &rarr; invoice auto-generates at this amount.</div>
+        <ul class="line-items-list" id="line-items-list">
+          <li class="line-item-row">
+            <input type="text"   class="form-input li-desc" placeholder="e.g. Septic pump-out — 1,000 gal tank" data-li-desc>
+            <input type="number" class="form-input li-qty"  placeholder="1"    min="0" step="0.25" data-li-qty  value="1">
+            <div class="input-prefix-wrap li-rate-wrap">
+              <span class="input-prefix">$</span>
+              <input type="number" class="form-input li-rate" placeholder="0.00" min="0" step="0.01" data-li-rate>
+            </div>
+            <span class="li-row-total" data-li-rowtotal>$0.00</span>
+            <button type="button" class="btn-remove-line" title="Remove">&times;</button>
+          </li>
+        </ul>
+        <button type="button" class="btn-add-line" id="btn-add-line">+ Add line item</button>
+        <div class="line-items-total">Total: <strong id="li-total">$0.00</strong></div>
       </div>
-    </div>
-
-    <!-- TIME & MATERIALS panel -->
-    <div class="pricing-panel" id="panel-tm">
-      <div class="panel-title">Time &amp; Materials</div>
-      <div class="form-row">
-        <div class="form-group">
-          <label class="form-label">Est. Hours</label>
-          <input type="number" class="form-input" id="tm_hours" name="tm_hours"
-            placeholder="0.0" min="0" step="0.5">
-        </div>
-        <div class="form-group">
-          <label class="form-label">Parts Budget</label>
-          <div class="input-prefix-wrap">
-            <span class="input-prefix">$</span>
-            <input type="number" class="form-input" id="tm_parts" name="tm_parts"
-              placeholder="0.00" min="0" step="0.01">
-          </div>
-        </div>
-      </div>
-      <div class="pricing-hint">
-        Est. total: <strong id="tm-calc">—</strong> &nbsp;(labor @ $<span id="tm-rate">125</span>/hr + parts)
-      </div>
-    </div>
-
-    <!-- LINE ITEMS panel -->
-    <div class="pricing-panel" id="panel-lineitems">
-      <div class="panel-title">Line Items</div>
-      <ul class="line-items-list" id="line-items-list">
-        <li class="line-item-row">
-          <input type="text" class="form-input" placeholder="Description (e.g. Pump out)" data-li-desc>
-          <div class="input-prefix-wrap">
-            <span class="input-prefix">$</span>
-            <input type="number" class="form-input" placeholder="0.00" min="0" step="0.01" data-li-amt>
-          </div>
-          <button type="button" class="btn-remove-line" title="Remove">&times;</button>
-        </li>
-      </ul>
-      <button type="button" class="btn-add-line" id="btn-add-line">+ Add line</button>
-      <div class="line-items-total">Total: <strong id="li-total">$0.00</strong></div>
     </div>
 
     <!-- hidden fields written by JS before submit -->
-    <input type="hidden" id="h_contract_type"    name="contract_type"    value="">
+    <input type="hidden" id="h_contract_type"    name="contract_type"    value="flat_rate">
     <input type="hidden" id="h_estimated_amount" name="estimated_amount" value="">
     <input type="hidden" id="h_estimated_hours"  name="estimated_hours"  value="">
     <input type="hidden" id="h_line_items_json"  name="line_items_json"  value="">
@@ -435,124 +528,143 @@
   document.getElementById('scheduled_date').value = yyyy + '-' + mm + '-' + dd;
   document.getElementById('scheduled_time').value = '08:00';
 
-  // ── Pricing mode ──────────────────────────────────────────────────
-  var HOURLY_RATE = 125; // matches personality layer default
+  // ── Document type selector ────────────────────────────────────────
+  // All four "+ New X" buttons route here. The segmented control at
+  // the top of the form tells the backend which table gets written
+  // on save AND which review page the user lands on after. The
+  // submit button label + hint line update live.
 
-  var pricingMode   = document.getElementById('pricing_mode');
-  var panelFlat     = document.getElementById('panel-flat');
-  var panelTm       = document.getElementById('panel-tm');
-  var panelLi       = document.getElementById('panel-lineitems');
-  var badge         = document.getElementById('estimate-badge');
-  var badgeAmt      = document.getElementById('estimate-badge-amount');
+  var hDocType  = document.getElementById('h_doc_type');
+  var hintEl    = document.getElementById('doc-type-hint');
+  var btnSubmit = document.getElementById('btn-submit');
+  var docTypeButtons = document.querySelectorAll('.doc-type-option');
 
-  var hContractType   = document.getElementById('h_contract_type');
-  var hEstAmount      = document.getElementById('h_estimated_amount');
-  var hEstHours       = document.getElementById('h_estimated_hours');
-  var hLineItemsJson  = document.getElementById('h_line_items_json');
+  // Copy for each type — the hint + submit label + required-field rules
+  var DOC_TYPE_COPY = {
+    estimate:   {
+      hint:   'Draft an estimate for the customer. They\'ll review + accept before you start work.',
+      button: 'Save Estimate',
+    },
+    work_order: {
+      hint:   'Start a work order. Items get added as the job progresses; close it when you\'re done.',
+      button: 'Start Work Order',
+    },
+    invoice:    {
+      hint:   'Create an invoice for completed work. Customer gets a Pay Now link when you send it.',
+      button: 'Save Invoice',
+    },
+  };
 
-  function showPanel(id) {
-    [panelFlat, panelTm, panelLi].forEach(function(p) { p.classList.remove('visible'); });
-    if (id) { document.getElementById(id).classList.add('visible'); }
+  function applyDocType(type) {
+    hDocType.value = type;
+    docTypeButtons.forEach(function(btn) {
+      var active = btn.getAttribute('data-doc-type') === type;
+      btn.classList.toggle('active', active);
+      btn.setAttribute('aria-selected', active ? 'true' : 'false');
+    });
+    var copy = DOC_TYPE_COPY[type] || DOC_TYPE_COPY.estimate;
+    hintEl.textContent = copy.hint;
+    btnSubmit.textContent = copy.button;
   }
+
+  docTypeButtons.forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      applyDocType(btn.getAttribute('data-doc-type'));
+    });
+  });
+
+  // Initialize from the server-rendered value
+  applyDocType(hDocType.value || 'estimate');
+
+  // ── Pricing — line items only (qty × rate) ────────────────────────
+  // Every row is {description, quantity, unit_price} with total
+  // computed as qty × unit_price. Labor = ("Labor", 8, 125) = $1,000.
+  // Parts = ("Baffle", 1, 175). Flat rate = one row with qty=1. The
+  // same three-field shape handles every old mode (flat / T&M / lines).
+
+  var badge          = document.getElementById('estimate-badge');
+  var badgeAmt       = document.getElementById('estimate-badge-amount');
+  var hContractType  = document.getElementById('h_contract_type');
+  var hEstAmount     = document.getElementById('h_estimated_amount');
+  var hEstHours      = document.getElementById('h_estimated_hours');
+  var hLineItemsJson = document.getElementById('h_line_items_json');
 
   function updateBadge(amount) {
     if (amount && amount > 0) {
-      badgeAmt.textContent = '$' + parseFloat(amount).toLocaleString('en-US', {minimumFractionDigits: 0, maximumFractionDigits: 0});
-      badge.classList.add('visible');
+      badgeAmt.textContent = '$' + parseFloat(amount).toLocaleString('en-US',
+        {minimumFractionDigits: 0, maximumFractionDigits: 0});
+      badge.style.display = 'inline-flex';
     } else {
-      badge.classList.remove('visible');
+      badge.style.display = 'none';
     }
   }
 
-  pricingMode.addEventListener('change', function() {
-    var mode = this.value;
-    hContractType.value = '';
-    hEstAmount.value    = '';
-    hEstHours.value     = '';
-    hLineItemsJson.value = '';
-    badge.classList.remove('visible');
-
-    if (mode === 'flat') {
-      showPanel('panel-flat');
-      hContractType.value = 'flat_rate';
-    } else if (mode === 'tm') {
-      showPanel('panel-tm');
-      hContractType.value = 'time_and_materials';
-      recalcTm();
-    } else if (mode === 'lineitems') {
-      showPanel('panel-lineitems');
-      hContractType.value = 'flat_rate';
-      recalcLineItems();
-    } else {
-      showPanel(null);
-    }
-  });
-
-  // Flat rate live update
-  document.getElementById('flat_amount').addEventListener('input', function() {
-    var v = parseFloat(this.value) || 0;
-    hEstAmount.value = v > 0 ? v : '';
-    updateBadge(v);
-  });
-
-  // T&M live calc
-  function recalcTm() {
-    var hrs   = parseFloat(document.getElementById('tm_hours').value) || 0;
-    var parts = parseFloat(document.getElementById('tm_parts').value) || 0;
-    var total = Math.round((hrs * HOURLY_RATE + parts) * 100) / 100;
-    document.getElementById('tm-rate').textContent = HOURLY_RATE;
-    document.getElementById('tm-calc').textContent = total > 0 ? '$' + total.toFixed(2) : '—';
-    hEstHours.value  = hrs > 0 ? hrs : '';
-    hEstAmount.value = total > 0 ? total : '';
-    updateBadge(total);
-  }
-  document.getElementById('tm_hours').addEventListener('input', recalcTm);
-  document.getElementById('tm_parts').addEventListener('input', recalcTm);
-
-  // Line items
   function recalcLineItems() {
-    var rows  = document.querySelectorAll('#line-items-list .line-item-row');
+    var rows = document.querySelectorAll('#line-items-list .line-item-row');
     var total = 0;
     var items = [];
+    var laborHours = 0;
     rows.forEach(function(row) {
       var desc = row.querySelector('[data-li-desc]').value.trim();
-      var amt  = parseFloat(row.querySelector('[data-li-amt]').value) || 0;
-      total += amt;
-      if (desc || amt > 0) { items.push({ description: desc, qty: 1, unit_price: amt, total: amt }); }
+      var qty  = parseFloat(row.querySelector('[data-li-qty]').value)  || 0;
+      var rate = parseFloat(row.querySelector('[data-li-rate]').value) || 0;
+      var rowTotal = Math.round(qty * rate * 100) / 100;
+      row.querySelector('[data-li-rowtotal]').textContent =
+        rowTotal > 0 ? '$' + rowTotal.toFixed(2) : '$0.00';
+      total += rowTotal;
+      // Aggregate labor hours across rows whose description mentions "labor"
+      // — lets invoice-side reports continue to surface a "total hours" signal
+      if (/labor/i.test(desc) && qty > 0) { laborHours += qty; }
+      if (desc || rowTotal > 0) {
+        items.push({
+          description: desc || 'Item',
+          qty: qty,
+          unit_price: rate,
+          total: rowTotal,
+        });
+      }
     });
     document.getElementById('li-total').textContent = '$' + total.toFixed(2);
-    hEstAmount.value    = total > 0 ? total : '';
+    hEstAmount.value     = total > 0 ? total : '';
+    hEstHours.value      = laborHours > 0 ? laborHours : '';
     hLineItemsJson.value = items.length ? JSON.stringify(items) : '';
     updateBadge(total);
   }
+
+  function wireRow(row) {
+    row.querySelector('[data-li-desc]').addEventListener('input', recalcLineItems);
+    row.querySelector('[data-li-qty]') .addEventListener('input', recalcLineItems);
+    row.querySelector('[data-li-rate]').addEventListener('input', recalcLineItems);
+    var rm = row.querySelector('.btn-remove-line');
+    if (rm) {
+      rm.addEventListener('click', function() {
+        var rows = document.querySelectorAll('#line-items-list .line-item-row');
+        if (rows.length > 1) { row.remove(); recalcLineItems(); }
+      });
+    }
+  }
+
+  // Wire the initial row (server-rendered)
+  document.querySelectorAll('#line-items-list .line-item-row').forEach(wireRow);
 
   document.getElementById('btn-add-line').addEventListener('click', function() {
     var list = document.getElementById('line-items-list');
     var li = document.createElement('li');
     li.className = 'line-item-row';
     li.innerHTML = [
-      '<input type="text" class="form-input" placeholder="Description" data-li-desc>',
-      '<div class="input-prefix-wrap">',
+      '<input type="text"   class="form-input li-desc" placeholder="Description" data-li-desc>',
+      '<input type="number" class="form-input li-qty"  placeholder="1"    min="0" step="0.25" data-li-qty value="1">',
+      '<div class="input-prefix-wrap li-rate-wrap">',
         '<span class="input-prefix">$</span>',
-        '<input type="number" class="form-input" placeholder="0.00" min="0" step="0.01" data-li-amt>',
+        '<input type="number" class="form-input li-rate" placeholder="0.00" min="0" step="0.01" data-li-rate>',
       '</div>',
+      '<span class="li-row-total" data-li-rowtotal>$0.00</span>',
       '<button type="button" class="btn-remove-line" title="Remove">&times;</button>'
     ].join('');
-    li.querySelector('.btn-remove-line').addEventListener('click', function() {
-      li.remove(); recalcLineItems();
-    });
-    li.querySelector('[data-li-desc]').addEventListener('input', recalcLineItems);
-    li.querySelector('[data-li-amt]').addEventListener('input', recalcLineItems);
     list.appendChild(li);
+    wireRow(li);
+    li.querySelector('[data-li-desc]').focus();
   });
-
-  // Wire remove on first row
-  document.querySelector('.btn-remove-line').addEventListener('click', function() {
-    var rows = document.querySelectorAll('#line-items-list .line-item-row');
-    if (rows.length > 1) { this.closest('.line-item-row').remove(); recalcLineItems(); }
-  });
-  document.querySelector('[data-li-desc]').addEventListener('input', recalcLineItems);
-  document.querySelector('[data-li-amt]').addEventListener('input', recalcLineItems);
 
   // ── Form submit ───────────────────────────────────────────────────
   var form      = document.getElementById('new-job-form');
@@ -565,16 +677,16 @@
     elError.style.display = 'none';
     elSuccess.style.display = 'none';
     btnSubmit.disabled = true;
-    var isProposal = document.getElementById('generate_proposal').checked;
-    btnSubmit.textContent = isProposal ? 'Creating job + drafting proposal\u2026' : 'Creating\u2026';
+    btnSubmit.textContent = 'Saving\u2026';
 
-    // Build line_items from hidden field or empty array
+    // Build line_items from the hidden field
     var lineItems = [];
     try {
       if (hLineItemsJson.value) { lineItems = JSON.parse(hLineItemsJson.value); }
     } catch(e) {}
 
     var payload = {
+      doc_type:         hDocType.value || 'estimate',
       customer_id:      document.getElementById('customer_id').value,
       job_type:         document.getElementById('job_type').value,
       address:          document.getElementById('address').value,
@@ -582,7 +694,7 @@
       scheduled_time:   document.getElementById('scheduled_time').value,
       notes:            document.getElementById('notes').value,
       generate_proposal: document.getElementById('generate_proposal').checked,
-      // Pricing
+      // Pricing — all documents share the same qty×rate line-item shape now
       contract_type:    hContractType.value   || null,
       estimated_amount: hEstAmount.value      ? parseFloat(hEstAmount.value) : null,
       estimated_hours:  hEstHours.value       ? parseFloat(hEstHours.value)  : null,
@@ -597,27 +709,22 @@
     .then(function(res) { return res.json(); })
     .then(function(data) {
       if (data.success) {
-        var msg, delay;
-        if (data.proposal_id) {
-          msg = 'Job created. Proposal drafted \u2014 view it in Office.';
-          delay = 3000;
-        } else if (data.proposal_error) {
-          msg = 'Job created. Proposal generation failed \u2014 try from Command Center.';
-          delay = 3000;
-        } else {
-          msg = 'Job created.';
-          delay = 2000;
-        }
-        elSuccess.textContent = msg;
+        // On success the server returns a review URL specific to the
+        // document type (estimate → /dashboard/proposal/<id>,
+        // invoice → /dashboard/invoice/<id>, work_order → /dashboard/job/<id>)
+        // so the owner/tech immediately sees the customer-facing version
+        // with Accept + Edit buttons. No lingering flash — we jump right in.
+        elSuccess.textContent = 'Saved. Opening review\u2026';
         elSuccess.style.display = 'block';
         setTimeout(function() {
           window.location.href = data.redirect || '/dashboard/';
-        }, delay);
+        }, 400);
       } else {
         elError.textContent = data.error || 'Something went wrong.';
         elError.style.display = 'block';
         btnSubmit.disabled = false;
-        btnSubmit.textContent = 'Create Job';
+        var copy = DOC_TYPE_COPY[hDocType.value] || DOC_TYPE_COPY.estimate;
+        btnSubmit.textContent = copy.button;
       }
     })
     .catch(function(err) {

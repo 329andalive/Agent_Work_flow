@@ -56,7 +56,7 @@
       <span class="card-title">Estimates — Last 90 Days</span>
       <span class="card-count">{{ proposals|length }}</span>
     </span>
-    <a href="/dashboard/estimates/new" class="btn btn-primary">+ New Estimate</a>
+    <a href="/dashboard/new-job?type=estimate" class="btn btn-primary">+ New Estimate</a>
   </div>
   <div class="card-body-flush">
     {% if proposals %}
@@ -103,7 +103,7 @@
     {% else %}
     <div class="empty-state">
       No estimates in the last 90 days.<br>
-      <a href="/dashboard/estimates/new" style="font-size:12px;color:var(--blue);text-decoration:none;margin-top:4px;display:inline-block">
+      <a href="/dashboard/new-job?type=estimate" style="font-size:12px;color:var(--blue);text-decoration:none;margin-top:4px;display:inline-block">
         Create your first estimate →
       </a>
     </div>

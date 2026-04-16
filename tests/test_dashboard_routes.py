@@ -231,3 +231,138 @@ def test_invoice_send_action_redirects_to_list(invoice_client):
     )
     assert resp.status_code == 302, f"Expected 302, got {resp.status_code}"
     assert "/dashboard/invoices/" in resp.headers["Location"]
+
+
+def test_invoice_close_wo_redirects_to_invoice_view(invoice_client):
+    """action=close_wo flips status to draft and returns to invoice_view for sending."""
+    resp = invoice_client.post(
+        f"/dashboard/invoice/{FAKE_INVOICE_ID}/action",
+        data={"action": "close_wo"},
+        follow_redirects=False,
+    )
+    assert resp.status_code == 302, f"Expected 302, got {resp.status_code}"
+    assert f"/dashboard/invoice/{FAKE_INVOICE_ID}" in resp.headers["Location"]
+
+
+# ---------------------------------------------------------------------------
+# Unified /api/jobs/create — estimate / work_order / invoice all route through
+# one endpoint and redirect to the correct review page.
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def create_job_client():
+    os.environ.setdefault("SUPABASE_URL", "https://fake.supabase.co")
+    os.environ.setdefault("SUPABASE_SERVICE_KEY", "fake-key")
+    os.environ.setdefault("SECRET_KEY", "test-secret")
+
+    fake_customer = {
+        "id": "cust-0001",
+        "customer_name": "Test Customer",
+        "customer_phone": "2075551234",
+        "customer_address": "1 Main St",
+    }
+    fake_job_id = "job-0001-create-uuid"
+    fake_proposal_id = "prop-0001-create-uuid"
+    fake_invoice_id = "inv-0001-create-uuid"
+
+    captured = {"invoice_status": None, "job_status": None}
+
+    def _make_mock_table(name):
+        table = MagicMock()
+        for m in ("select", "insert", "update", "delete", "eq", "neq",
+                  "gt", "lt", "gte", "lte", "in_", "ilike", "not_",
+                  "order", "limit", "single", "is_", "or_", "filter"):
+            getattr(table, m).return_value = table
+
+        if name == "customers":
+            select_result = MagicMock(); select_result.data = [fake_customer]
+            table.execute.return_value = select_result
+        elif name == "jobs":
+            def _insert_jobs(row):
+                captured["job_status"] = row.get("status")
+                result = MagicMock(); result.data = [{"id": fake_job_id}]
+                table.execute.return_value = result
+                return table
+            table.insert.side_effect = _insert_jobs
+            default = MagicMock(); default.data = []
+            table.execute.return_value = default
+        elif name == "proposals":
+            def _insert_prop(row):
+                result = MagicMock(); result.data = [{"id": fake_proposal_id}]
+                table.execute.return_value = result
+                return table
+            table.insert.side_effect = _insert_prop
+            default = MagicMock(); default.data = []
+            table.execute.return_value = default
+        elif name == "invoices":
+            def _insert_inv(row):
+                captured["invoice_status"] = row.get("status")
+                result = MagicMock(); result.data = [{"id": fake_invoice_id}]
+                table.execute.return_value = result
+                return table
+            table.insert.side_effect = _insert_inv
+            default = MagicMock(); default.data = []
+            table.execute.return_value = default
+        else:
+            default = MagicMock(); default.data = []
+            table.execute.return_value = default
+        return table
+
+    mock_sb = MagicMock()
+    mock_sb.table.side_effect = _make_mock_table
+
+    with patch("routes.dashboard_routes._get_supabase", return_value=mock_sb):
+        from execution.sms_receive import app
+        app.config["TESTING"] = True
+        client = app.test_client()
+        with client.session_transaction() as sess:
+            sess["client_id"] = TEST_CLIENT_ID
+        yield client, captured, fake_job_id, fake_proposal_id, fake_invoice_id
+
+
+def _create_job_payload(doc_type):
+    return {
+        "customer_id": "cust-0001",
+        "job_type": "pump out",
+        "scheduled_date": "2026-04-20",
+        "doc_type": doc_type,
+        "estimated_amount": 350.0,
+        "line_items": [{"description": "Pump out", "qty": 1, "unit_price": 350.0, "total": 350.0}],
+    }
+
+
+def test_api_create_job_estimate_redirects_to_proposal(create_job_client):
+    client, captured, job_id, prop_id, inv_id = create_job_client
+    resp = client.post("/api/jobs/create", json=_create_job_payload("estimate"))
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert body["success"] is True
+    assert body["doc_type"] == "estimate"
+    assert body["redirect"] == f"/dashboard/proposal/{prop_id}"
+    assert captured["job_status"] == "scheduled"
+
+
+def test_api_create_job_invoice_redirects_to_invoice(create_job_client):
+    client, captured, job_id, prop_id, inv_id = create_job_client
+    resp = client.post("/api/jobs/create", json=_create_job_payload("invoice"))
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert body["success"] is True
+    assert body["doc_type"] == "invoice"
+    assert body["redirect"] == f"/dashboard/invoice/{inv_id}"
+    assert captured["job_status"] == "complete"
+    assert captured["invoice_status"] == "draft"
+
+
+def test_api_create_job_work_order_redirects_to_invoice_with_wo_status(create_job_client):
+    """Work orders write to invoices with status='work_order' so all three
+    doc types review on the same page."""
+    client, captured, job_id, prop_id, inv_id = create_job_client
+    resp = client.post("/api/jobs/create", json=_create_job_payload("work_order"))
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert body["success"] is True
+    assert body["doc_type"] == "work_order"
+    assert body["redirect"] == f"/dashboard/invoice/{inv_id}"
+    assert captured["job_status"] == "work_order"
+    assert captured["invoice_status"] == "work_order"
