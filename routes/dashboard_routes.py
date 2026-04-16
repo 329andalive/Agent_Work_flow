@@ -1227,6 +1227,139 @@ def api_save_proposal(proposal_id):
 
 
 # ---------------------------------------------------------------------------
+# POST /api/invoices/<id>/save — Inline edit save from the dashboard
+#
+# Mirrors api_save_proposal but writes to the invoices table. Used by the
+# invoice_view Edit panel to mutate line_items + notes + amount_due while
+# a document is still editable (status in draft | work_order). Sent or
+# paid invoices are locked — the endpoint returns 409.
+# ---------------------------------------------------------------------------
+
+@dashboard_bp.route("/api/invoices/<invoice_id>/save", methods=["POST"])
+def api_save_invoice(invoice_id):
+    client_id = _resolve_client_id()
+    if not client_id:
+        return jsonify({"success": False, "error": "Not authenticated"}), 401
+
+    data = request.get_json(silent=True) or {}
+    raw_items = data.get("line_items") or []
+    notes = (data.get("notes") or "").strip()
+
+    if not isinstance(raw_items, list):
+        return jsonify({"success": False, "error": "line_items must be a list"}), 400
+
+    # Normalize — preserve qty + unit_price so the qty × rate display
+    # survives a round-trip through save. Fall back to amount for legacy
+    # payloads that only send a single dollar figure per row.
+    line_items: list[dict] = []
+    for item in raw_items:
+        if not isinstance(item, dict):
+            continue
+        desc = (item.get("description") or "").strip()
+        qty_raw = item.get("qty")
+        rate_raw = item.get("unit_price")
+        amt_raw = item.get("amount") if item.get("amount") is not None else item.get("total")
+        try:
+            qty = float(qty_raw) if qty_raw not in (None, "") else None
+            rate = float(rate_raw) if rate_raw not in (None, "") else None
+            amt = float(amt_raw) if amt_raw not in (None, "") else 0.0
+        except (TypeError, ValueError):
+            qty, rate, amt = None, None, 0.0
+        if qty is not None and rate is not None:
+            amt = round(qty * rate, 2)
+        if not desc and amt <= 0:
+            continue
+        row = {
+            "description": desc or "Service",
+            "amount": amt,
+            "total": amt,
+            "taxable": bool(item.get("taxable", False)),
+        }
+        if qty is not None:
+            row["qty"] = qty
+        if rate is not None:
+            row["unit_price"] = rate
+        line_items.append(row)
+
+    sb = _get_supabase()
+
+    # Verify ownership + lock status
+    try:
+        existing = sb.table("invoices").select(
+            "id, client_id, status, line_items, invoice_text, amount_due"
+        ).eq("id", invoice_id).eq("client_id", client_id).execute()
+        if not existing.data:
+            return jsonify({"success": False, "error": "Invoice not found"}), 404
+        original = existing.data[0]
+    except Exception as e:
+        print(f"[{_ts()}] ERROR api_save_invoice: ownership lookup failed — {e}")
+        return jsonify({"success": False, "error": "Lookup failed"}), 500
+
+    status = (original.get("status") or "").lower()
+    if status not in ("draft", "work_order"):
+        return jsonify({
+            "success": False,
+            "error": f"Cannot edit a {status or 'sent'} invoice",
+        }), 409
+
+    new_total = round(sum(li["amount"] for li in line_items), 2)
+
+    update_payload = {
+        "line_items": json.dumps(line_items),
+        "amount_due": new_total,
+    }
+    if notes:
+        update_payload["invoice_text"] = notes
+    else:
+        update_payload["invoice_text"] = None
+
+    try:
+        sb.table("invoices").update(update_payload).eq("id", invoice_id).eq("client_id", client_id).execute()
+    except Exception as e:
+        print(f"[{_ts()}] ERROR api_save_invoice: update failed — {e}")
+        return jsonify({"success": False, "error": "Save failed"}), 500
+
+    # Log the edit to draft_corrections so the learning loop can pick it up
+    try:
+        from execution.db_document import log_edit
+        original_items = original.get("line_items") or []
+        if isinstance(original_items, str):
+            try:
+                original_items = json.loads(original_items)
+            except Exception:
+                original_items = []
+        if str(original_items) != str(line_items):
+            log_edit(
+                document_type="invoice",
+                document_id=invoice_id,
+                client_id=client_id,
+                field_changed="line_items",
+                original_value=json.dumps(original_items) if original_items else "[]",
+                new_value=json.dumps(line_items),
+            )
+        original_notes = (original.get("invoice_text") or "").strip()
+        if original_notes != notes:
+            log_edit(
+                document_type="invoice",
+                document_id=invoice_id,
+                client_id=client_id,
+                field_changed="notes",
+                original_value=original_notes,
+                new_value=notes,
+            )
+    except Exception as e:
+        print(f"[{_ts()}] WARN api_save_invoice: edit logging failed — {e}")
+
+    print(f"[{_ts()}] INFO api_save_invoice: Saved invoice {invoice_id[:8]} total=${new_total}")
+    return jsonify({
+        "success": True,
+        "invoice_id": invoice_id,
+        "total": new_total,
+        "line_item_count": len(line_items),
+    })
+
+
+# ---------------------------------------------------------------------------
 # GET /dashboard/invoice/<id> — Invoice document view
 # ---------------------------------------------------------------------------
 

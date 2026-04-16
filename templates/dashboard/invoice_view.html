@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 
 {% set is_work_order = (invoice.status == 'work_order') %}
+{% set is_editable = (invoice.status in ('work_order', 'draft')) and not invoice.paid_at %}
 {% block title %}{% if is_work_order %}Work Order{% else %}Invoice{% endif %}{% endblock %}
 {% block page_title %}{% if is_work_order %}Work Order{% else %}Invoice{% endif %}{% endblock %}
 {% block topbar_meta %}{{ fmt_date(invoice.created_at) }}{% endblock %}
@@ -17,12 +18,32 @@
   .doc-date { font-size: 13px; color: var(--text-secondary); margin-top: 2px; }
   .doc-section { padding: 16px 24px; border-bottom: 1px solid var(--border); }
   .doc-section:last-child { border-bottom: none; }
-  .doc-section-title { font-family: 'DM Mono', monospace; font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-tertiary); margin-bottom: 8px; }
+  .doc-section-title { font-family: 'DM Mono', monospace; font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-tertiary); margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; }
   .doc-field { font-size: 14px; margin-bottom: 4px; }
-  .doc-line-item { display: flex; justify-content: space-between; padding: 6px 0; font-size: 14px; border-bottom: 1px solid #f3f4f6; }
+  .doc-line-item { display: flex; justify-content: space-between; padding: 6px 0; font-size: 14px; border-bottom: 1px solid #f3f4f6; gap: 8px; }
   .doc-line-item:last-child { border-bottom: none; }
-  .doc-line-desc { color: var(--text-primary); }
+  .doc-line-desc { color: var(--text-primary); flex: 1; }
   .doc-line-amount { font-weight: 600; font-family: 'DM Mono', monospace; }
+
+  /* Inline edit — visible when status is work_order or draft */
+  .doc-line-item.editable { padding: 8px 0; display: grid; grid-template-columns: 1fr 60px 90px 80px 28px; gap: 8px; align-items: center; }
+  .doc-line-item.editable .li-desc  { padding: 6px 8px; border: 1px solid var(--border); border-radius: 4px; font-size: 14px; font-family: inherit; min-width: 0; }
+  .doc-line-item.editable .li-qty   { padding: 6px 8px; border: 1px solid var(--border); border-radius: 4px; font-size: 14px; font-family: 'DM Mono', monospace; text-align: right; }
+  .doc-line-item.editable .li-rate  { padding: 6px 8px; border: 1px solid var(--border); border-radius: 4px; font-size: 14px; font-family: 'DM Mono', monospace; text-align: right; }
+  .doc-line-item.editable .li-total { text-align: right; font-family: 'DM Mono', monospace; font-weight: 600; font-size: 13px; color: var(--text-primary); }
+  .doc-line-item.editable .li-remove { background: transparent; border: none; color: #dc2626; cursor: pointer; font-size: 18px; line-height: 1; padding: 0 4px; }
+  .doc-line-item.editable .li-remove:hover { color: #991b1b; }
+  .doc-add-row { padding: 8px 0; }
+  .doc-add-row button { background: transparent; border: 1px dashed var(--border); color: var(--text-secondary); padding: 8px 14px; border-radius: 6px; font-size: 13px; cursor: pointer; width: 100%; }
+  .doc-add-row button:hover { color: var(--blue); border-color: var(--blue); }
+  .doc-notes-edit { width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; font-family: inherit; font-size: 13px; min-height: 60px; resize: vertical; box-sizing: border-box; }
+  .doc-edit-toggle { background: transparent; border: 1px solid var(--border); color: var(--text-secondary); font-family: 'DM Mono', monospace; font-size: 10px; padding: 4px 10px; border-radius: 4px; cursor: pointer; text-transform: uppercase; letter-spacing: 0.06em; }
+  .doc-edit-toggle:hover { color: var(--blue); border-color: var(--blue); }
+  .doc-edit-toggle.active { background: var(--blue); color: #fff; border-color: var(--blue); }
+  .toast { position: fixed; bottom: 24px; right: 24px; padding: 12px 18px; border-radius: 6px; font-size: 13px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); z-index: 1000; opacity: 0; transition: opacity 0.2s; pointer-events: none; }
+  .toast.show { opacity: 1; }
+  .toast.success { background: #dcfce7; color: #166534; }
+  .toast.error { background: #fee2e2; color: #991b1b; }
   .doc-totals { padding: 12px 0; }
   .doc-total-row { display: flex; justify-content: space-between; padding: 4px 0; font-size: 14px; color: var(--text-secondary); }
   .doc-total-row.grand { padding-top: 8px; margin-top: 4px; border-top: 2px solid var(--text-primary); font-size: 16px; font-weight: 700; color: var(--text-primary); }
@@ -42,7 +63,8 @@
   .flash-error { background: #fee2e2; color: #991b1b; }
   .paid-banner { background: #dcfce7; border: 2px solid #16a34a; border-radius: 8px; padding: 14px 20px; text-align: center; font-size: 15px; font-weight: 700; color: #166534; margin-top: 8px; }
   @media print {
-    .doc-actions, .doc-back, .flash-msg, #sidebar, #hamburger, #sidebar-overlay, .topbar { display: none !important; }
+    .doc-actions, .doc-back, .flash-msg, .doc-edit-toggle, .doc-add-row, .li-remove, #sidebar, #hamburger, #sidebar-overlay, .topbar { display: none !important; }
+    .doc-line-item.editable .li-desc, .doc-line-item.editable .li-qty, .doc-line-item.editable .li-rate { border: none !important; padding: 0 !important; background: transparent !important; }
     #main { margin-left: 0 !important; padding: 0 !important; }
     body { background: #fff; }
     .doc-card { box-shadow: none; border: 1px solid #ddd; }
@@ -87,7 +109,15 @@
     </div>
 
     <div class="doc-section">
-      <div class="doc-section-title">Line Items</div>
+      <div class="doc-section-title">
+        <span>Line Items</span>
+        {% if is_editable %}
+        <button type="button" class="doc-edit-toggle" id="edit-toggle" onclick="toggleEdit()">Edit</button>
+        {% endif %}
+      </div>
+
+      {# View mode #}
+      <div id="li-view">
       {% for li in line_items %}
       {% set _qty  = (li.qty|float) if li.qty is defined and li.qty is not none else None %}
       {% set _rate = (li.unit_price|float) if li.unit_price is defined and li.unit_price is not none else None %}
@@ -104,6 +134,30 @@
         <span class="doc-line-amount">${{ "%.2f"|format(_tot) }}</span>
       </div>
       {% endfor %}
+      </div>
+
+      {% if is_editable %}
+      {# Edit mode #}
+      <div id="li-edit" style="display:none">
+        <div id="li-edit-rows">
+          {% for li in line_items %}
+            {% set _qty  = (li.qty|float)        if li.qty        is defined and li.qty        is not none else 1 %}
+            {% set _rate = (li.unit_price|float) if li.unit_price is defined and li.unit_price is not none
+                           else (li.total|float if li.total is defined else (li.amount|float if li.amount is defined else 0)) %}
+          <div class="doc-line-item editable">
+            <input type="text"   class="li-desc"  value="{{ li.description or li.get('name','Item') }}" placeholder="Description">
+            <input type="number" class="li-qty"   step="0.25" min="0"  value="{{ "%g"|format(_qty) }}"   placeholder="1">
+            <input type="number" class="li-rate"  step="0.01" min="0"  value="{{ "%.2f"|format(_rate) }}" placeholder="0.00">
+            <span class="li-total" data-li-total>${{ "%.2f"|format(_qty * _rate) }}</span>
+            <button type="button" class="li-remove" onclick="removeRow(this)" aria-label="Remove">&times;</button>
+          </div>
+          {% endfor %}
+        </div>
+        <div class="doc-add-row">
+          <button type="button" onclick="addRow()">+ Add line item</button>
+        </div>
+      </div>
+      {% endif %}
 
       <div class="doc-totals">
         <div class="doc-total-row"><span>Subtotal</span><span id="disp-subtotal">${{ "%.2f"|format(subtotal) }}</span></div>
@@ -194,8 +248,13 @@
         {% endif %}
       </div>
       <div class="doc-actions">
+        {% if is_editable %}
+        <button type="button" class="doc-btn doc-btn-primary" id="btn-save" style="display:none" onclick="saveEdits()">
+          Save Changes
+        </button>
+        {% endif %}
         {% if is_work_order %}
-        <form method="POST" action="/dashboard/invoice/{{ invoice.id }}/action" style="display:inline"
+        <form method="POST" action="/dashboard/invoice/{{ invoice.id }}/action" style="display:inline" id="form-close-wo"
               onsubmit="return confirm('Close this work order? It will become a draft invoice ready to send.');">
           <input type="hidden" name="action" value="close_wo">
           <button type="submit" class="doc-btn doc-btn-amber">Close Work Order</button>
@@ -248,6 +307,160 @@
 
 {% block extra_js %}
 <script>
+var INVOICE_ID = '{{ invoice.id }}';
+var IS_EDITABLE = {{ 'true' if is_editable else 'false' }};
+var EDITING = false;
+
+function $(id) { return document.getElementById(id); }
+
+function showToast(msg, kind) {
+  var t = document.createElement('div');
+  t.className = 'toast ' + (kind || 'success');
+  t.textContent = msg;
+  document.body.appendChild(t);
+  void t.offsetWidth;
+  t.classList.add('show');
+  setTimeout(function() {
+    t.classList.remove('show');
+    setTimeout(function() { t.remove(); }, 250);
+  }, 2400);
+}
+
+// ---------------------------------------------------------------------------
+// Edit / view toggle — only active when is_editable is true
+// ---------------------------------------------------------------------------
+
+function toggleEdit() {
+  if (!IS_EDITABLE) return;
+  EDITING = !EDITING;
+  var view      = $('li-view');
+  var edit      = $('li-edit');
+  var saveBtn   = $('btn-save');
+  var toggleBtn = $('edit-toggle');
+  var closeWo   = $('form-close-wo');
+
+  if (EDITING) {
+    view.style.display = 'none';
+    edit.style.display = 'block';
+    if (saveBtn) saveBtn.style.display = 'inline-block';
+    if (closeWo) closeWo.style.display = 'none';
+    toggleBtn.textContent = 'Cancel';
+    toggleBtn.classList.add('active');
+    attachRowListeners();
+    recalcTotal();
+  } else {
+    view.style.display = 'block';
+    edit.style.display = 'none';
+    if (saveBtn) saveBtn.style.display = 'none';
+    if (closeWo) closeWo.style.display = 'inline';
+    toggleBtn.textContent = 'Edit';
+    toggleBtn.classList.remove('active');
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Line item row add / remove + live total recalc
+// ---------------------------------------------------------------------------
+
+function addRow() {
+  var rows = $('li-edit-rows');
+  var row = document.createElement('div');
+  row.className = 'doc-line-item editable';
+  row.innerHTML =
+    '<input type="text"   class="li-desc"  placeholder="Description">' +
+    '<input type="number" class="li-qty"   step="0.25" min="0" value="1"    placeholder="1">' +
+    '<input type="number" class="li-rate"  step="0.01" min="0"                placeholder="0.00">' +
+    '<span class="li-total" data-li-total>$0.00</span>' +
+    '<button type="button" class="li-remove" onclick="removeRow(this)" aria-label="Remove">&times;</button>';
+  rows.appendChild(row);
+  row.querySelector('.li-desc').focus();
+  attachRowListeners(row);
+  recalcTotal();
+}
+
+function removeRow(btn) {
+  var row = btn.closest('.doc-line-item');
+  if (row) { row.remove(); recalcTotal(); }
+}
+
+function attachRowListeners(scope) {
+  var rows = scope && scope.classList && scope.classList.contains('doc-line-item')
+    ? [scope]
+    : (scope || document).querySelectorAll('#li-edit-rows .doc-line-item');
+  rows.forEach(function(row) {
+    ['.li-qty', '.li-rate', '.li-desc'].forEach(function(sel) {
+      var el = row.querySelector(sel);
+      if (el) el.addEventListener('input', recalcTotal);
+    });
+  });
+}
+
+function recalcTotal() {
+  var rows = document.querySelectorAll('#li-edit-rows .doc-line-item');
+  var subtotal = 0;
+  rows.forEach(function(row) {
+    var qty  = parseFloat(row.querySelector('.li-qty')  ? row.querySelector('.li-qty').value  : '1') || 0;
+    var rate = parseFloat(row.querySelector('.li-rate') ? row.querySelector('.li-rate').value : '0') || 0;
+    var rowTotal = Math.round(qty * rate * 100) / 100;
+    var totalEl = row.querySelector('[data-li-total]');
+    if (totalEl) totalEl.textContent = '$' + rowTotal.toFixed(2);
+    subtotal += rowTotal;
+  });
+  SUBTOTAL = subtotal;
+  $('disp-subtotal').textContent = '$' + subtotal.toFixed(2);
+  updateTax();
+}
+
+// ---------------------------------------------------------------------------
+// Save edits — POST to /api/invoices/<id>/save
+// ---------------------------------------------------------------------------
+
+function saveEdits() {
+  var rows = document.querySelectorAll('#li-edit-rows .doc-line-item');
+  var line_items = [];
+  rows.forEach(function(row) {
+    var desc = row.querySelector('.li-desc').value.trim();
+    var qty  = parseFloat(row.querySelector('.li-qty').value)  || 0;
+    var rate = parseFloat(row.querySelector('.li-rate').value) || 0;
+    var total = Math.round(qty * rate * 100) / 100;
+    if (desc || total > 0) {
+      line_items.push({
+        description: desc || 'Service',
+        qty: qty,
+        unit_price: rate,
+        total: total,
+        amount: total,
+      });
+    }
+  });
+
+  var btn = $('btn-save');
+  btn.disabled = true;
+  btn.textContent = 'Saving...';
+
+  fetch('/api/invoices/' + INVOICE_ID + '/save', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({line_items: line_items})
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    btn.disabled = false;
+    btn.textContent = 'Save Changes';
+    if (data.success) {
+      showToast('Saved \u2713', 'success');
+      setTimeout(function() { window.location.reload(); }, 600);
+    } else {
+      showToast('Save failed: ' + (data.error || 'unknown'), 'error');
+    }
+  })
+  .catch(function() {
+    btn.disabled = false;
+    btn.textContent = 'Save Changes';
+    showToast('Network error — save failed', 'error');
+  });
+}
+
 function buildInvoiceText() {
   var lines = [];
   lines.push('INVOICE — {{ business_name }}');

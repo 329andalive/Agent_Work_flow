@@ -239,6 +239,89 @@ def test_invoice_send_action_redirects_to_list(invoice_client):
     assert "/dashboard/invoices/" in resp.headers["Location"]
 
 
+@pytest.fixture
+def editable_invoice_client():
+    """Flask test client with a work_order-status invoice that can be edited."""
+    os.environ.setdefault("SUPABASE_URL", "https://fake.supabase.co")
+    os.environ.setdefault("SUPABASE_SERVICE_KEY", "fake-key")
+    os.environ.setdefault("SECRET_KEY", "test-secret")
+
+    captured = {"update_payload": None}
+    status_holder = {"status": "work_order"}
+
+    def _make_mock_table(name):
+        table = MagicMock()
+        for m in ("select", "insert", "update", "delete", "eq", "neq",
+                  "gt", "lt", "gte", "lte", "in_", "ilike", "not_",
+                  "order", "limit", "single", "is_", "or_", "filter"):
+            getattr(table, m).return_value = table
+
+        if name == "invoices":
+            select_result = MagicMock()
+            select_result.data = [{
+                "id": FAKE_INVOICE_ID,
+                "client_id": TEST_CLIENT_ID,
+                "status": status_holder["status"],
+                "line_items": [],
+                "invoice_text": None,
+                "amount_due": 0,
+            }]
+            def _update(payload):
+                captured["update_payload"] = payload
+                result = MagicMock(); result.data = [{"id": FAKE_INVOICE_ID}]
+                table.execute.return_value = result
+                return table
+            table.update.side_effect = _update
+            table.execute.return_value = select_result
+        else:
+            default = MagicMock(); default.data = []
+            table.execute.return_value = default
+        return table
+
+    mock_sb = MagicMock()
+    mock_sb.table.side_effect = _make_mock_table
+
+    with patch("routes.dashboard_routes._get_supabase", return_value=mock_sb):
+        from execution.sms_receive import app
+        app.config["TESTING"] = True
+        client = app.test_client()
+        with client.session_transaction() as sess:
+            sess["client_id"] = TEST_CLIENT_ID
+        yield client, captured, status_holder
+
+
+def test_api_save_invoice_writes_line_items_and_total(editable_invoice_client):
+    client, captured, status_holder = editable_invoice_client
+    resp = client.post(
+        f"/api/invoices/{FAKE_INVOICE_ID}/save",
+        json={"line_items": [
+            {"description": "Labor", "qty": 8, "unit_price": 125},
+            {"description": "PVC coupler", "qty": 2, "unit_price": 12.50},
+        ]},
+    )
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert body["success"] is True
+    assert body["total"] == 1025.00
+    # Update payload should have line_items as JSON + amount_due
+    assert captured["update_payload"] is not None
+    assert captured["update_payload"]["amount_due"] == 1025.00
+    assert "Labor" in captured["update_payload"]["line_items"]
+
+
+def test_api_save_invoice_rejects_sent_invoice(editable_invoice_client):
+    """Sent invoices are locked — save returns 409."""
+    client, _, status_holder = editable_invoice_client
+    status_holder["status"] = "sent"
+    resp = client.post(
+        f"/api/invoices/{FAKE_INVOICE_ID}/save",
+        json={"line_items": [{"description": "Labor", "qty": 1, "unit_price": 100}]},
+    )
+    assert resp.status_code == 409
+    body = resp.get_json()
+    assert body["success"] is False
+
+
 def test_invoice_close_wo_redirects_to_invoice_view(invoice_client):
     """action=close_wo flips status to draft and returns to invoice_view for sending."""
     resp = invoice_client.post(
