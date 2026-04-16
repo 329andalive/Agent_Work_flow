@@ -503,6 +503,54 @@ def api_create_estimate():
 
 
 # ---------------------------------------------------------------------------
+# GET /dashboard/workorders/ — Work Orders list page
+# Shows open work orders (invoices rows with status='work_order').
+# Rows link to /dashboard/invoice/<id> — same review surface as invoices.
+# "+ New Work Order" button points at the unified /dashboard/new-job form.
+# ---------------------------------------------------------------------------
+
+@dashboard_bp.route("/dashboard/workorders/", strict_slashes=False)
+def workorders_page():
+    client_id = _resolve_client_id()
+    if not client_id:
+        return redirect("/login")
+
+    ctx = _base_context("workorders", client_id)
+    sb = _get_supabase()
+
+    workorders = []
+    try:
+        result = sb.table("invoices").select(
+            "id, amount_due, status, created_at, job_id, customer_id, invoice_text"
+        ).eq("client_id", client_id).eq("status", "work_order").order("created_at", desc=True).execute()
+        workorders = result.data or []
+    except Exception as e:
+        print(f"[{_ts()}] ERROR dashboard_routes: workorders query — {e}")
+
+    customer_ids = list(set(w["customer_id"] for w in workorders if w.get("customer_id")))
+    cust_map = {}
+    if customer_ids:
+        try:
+            custs = sb.table("customers").select(
+                "id, customer_name, customer_phone, customer_email, customer_address"
+            ).in_("id", customer_ids).execute().data or []
+            cust_map = {c["id"]: c for c in custs}
+        except Exception as e:
+            print(f"[{_ts()}] ERROR dashboard_routes: workorders cust map — {e}")
+
+    total_open = sum(float(w.get("amount_due") or 0) for w in workorders)
+
+    ctx.update({
+        "workorders": workorders,
+        "cust_map": cust_map,
+        "total_open": total_open,
+        "fmt_short_date": fmt_short_date,
+        "today": date.today().isoformat(),
+    })
+    return render_template("dashboard/workorders.html", **ctx)
+
+
+# ---------------------------------------------------------------------------
 # GET /dashboard/workorders/new — New Work Order form
 # ---------------------------------------------------------------------------
 
@@ -1253,6 +1301,66 @@ def invoice_view(invoice_id):
         except Exception:
             pass
 
+    # Daily Log — read-only aggregation of crew/equipment/material rows
+    # written by the PWA Job Log flow. Grouped by log_date so the owner
+    # sees "what happened on-site each day" next to the work order.
+    # No-op (empty list) when the job has no logged activity yet.
+    daily_log = []
+    jid = invoice.get("job_id")
+    if jid:
+        try:
+            crew_rows = sb.table("job_crew_log").select(
+                "log_date, employee_id, notes"
+            ).eq("client_id", client_id).eq("job_id", jid).execute().data or []
+            equip_rows = sb.table("job_equipment_log").select(
+                "log_date, equipment_name, notes"
+            ).eq("client_id", client_id).eq("job_id", jid).execute().data or []
+            mat_rows = sb.table("job_material_log").select(
+                "log_date, material_name, quantity, unit, supplier, billable, notes"
+            ).eq("client_id", client_id).eq("job_id", jid).execute().data or []
+
+            # Employee id → name lookup for crew rows
+            emp_ids = list({r["employee_id"] for r in crew_rows if r.get("employee_id")})
+            emp_name = {}
+            if emp_ids:
+                emp_rows = sb.table("employees").select("id, name").in_("id", emp_ids).execute().data or []
+                emp_name = {e["id"]: e.get("name") or "—" for e in emp_rows}
+
+            by_date = {}
+            for r in crew_rows:
+                d = r.get("log_date") or ""
+                by_date.setdefault(d, {"crew": [], "equipment": [], "materials": []})
+                by_date[d]["crew"].append({
+                    "name": emp_name.get(r.get("employee_id"), "—"),
+                    "notes": r.get("notes") or "",
+                })
+            for r in equip_rows:
+                d = r.get("log_date") or ""
+                by_date.setdefault(d, {"crew": [], "equipment": [], "materials": []})
+                by_date[d]["equipment"].append({
+                    "name": r.get("equipment_name") or "—",
+                    "notes": r.get("notes") or "",
+                })
+            for r in mat_rows:
+                d = r.get("log_date") or ""
+                by_date.setdefault(d, {"crew": [], "equipment": [], "materials": []})
+                by_date[d]["materials"].append({
+                    "name": r.get("material_name") or "—",
+                    "quantity": r.get("quantity"),
+                    "unit": r.get("unit") or "",
+                    "supplier": r.get("supplier") or "",
+                    "billable": r.get("billable", True),
+                    "notes": r.get("notes") or "",
+                })
+
+            daily_log = [
+                {"log_date": d, **by_date[d]}
+                for d in sorted(by_date.keys(), reverse=True)
+            ]
+        except Exception as e:
+            print(f"[{_ts()}] ERROR dashboard_routes: daily log — {e}")
+            daily_log = []
+
     ctx.update({
         "invoice": invoice,
         "job": job,
@@ -1263,6 +1371,7 @@ def invoice_view(invoice_id):
         "tax_amount": tax_amount,
         "total": total,
         "payment_link_url": payment_link_url,
+        "daily_log": daily_log,
         "fmt_date": fmt_date,
         "fmt_phone": fmt_phone,
     })

@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+
+{% block title %}Work Orders{% endblock %}
+{% block page_title %}Work Orders{% endblock %}
+{% block topbar_meta %}Open · {{ today }}{% endblock %}
+
+{% block content %}
+<!-- Metrics -->
+<div class="summary-strip">
+  <div class="summary-tile">
+    <div class="summary-tile__label">Open Work Orders</div>
+    <div class="summary-tile__value">{{ workorders|length }}</div>
+    <div class="summary-tile__sub">in progress</div>
+  </div>
+  <div class="summary-tile">
+    <div class="summary-tile__label">Logged Total</div>
+    <div class="summary-tile__value">${{ "%.2f"|format(total_open) }}</div>
+    <div class="summary-tile__sub">pre-invoice</div>
+  </div>
+</div>
+
+<!-- Work Order list -->
+<div class="card">
+  <div class="card-header">
+    <span style="display:flex;align-items:center;gap:10px">
+      <span class="card-title">Open Work Orders</span>
+      <span class="card-count">{{ workorders|length }}</span>
+    </span>
+    <a href="/dashboard/new-job?type=work_order" class="btn btn-primary">+ New Work Order</a>
+  </div>
+  <div class="card-body-flush">
+    {% if workorders %}
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Customer</th>
+          <th>Opened</th>
+          <th style="text-align:right">Logged</th>
+          <th>Status</th>
+          <th style="width:24px"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for wo in workorders %}
+        {% set cust = cust_map.get(wo.customer_id, {}) if wo.customer_id else {} %}
+        <tr style="cursor:pointer" onclick="window.location='/dashboard/invoice/{{ wo.id }}'">
+          <td style="font-weight:500">
+            {{ cust.get('customer_name', '—') }}
+            {% if cust and (not cust.get('customer_phone') or not cust.get('customer_email') or not cust.get('customer_address')) %}
+            <span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#f59e0b;margin-left:4px;vertical-align:middle" title="Missing contact info"></span>
+            {% endif %}
+          </td>
+          <td style="font-family:'DM Mono',monospace;font-size:11px;color:var(--text-tertiary)">
+            {{ fmt_short_date(wo.created_at) }}
+            <span data-created="{{ wo.created_at }}"></span>
+          </td>
+          <td style="text-align:right;font-family:'Barlow Condensed',sans-serif;font-size:17px;font-weight:700">
+            ${{ "%.2f"|format(wo.amount_due|float) if wo.amount_due else '—' }}
+          </td>
+          <td><span class="badge badge-amber">open</span></td>
+          <td style="color:var(--text-tertiary);font-size:13px">→</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="empty-state">
+      No open work orders.<br>
+      <a href="/dashboard/new-job?type=work_order" style="font-size:12px;color:var(--blue);text-decoration:none;margin-top:4px;display:inline-block">
+        Create your first work order →
+      </a>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Age pill on open work orders
+document.querySelectorAll('[data-created]').forEach(function(el) {
+  var created = el.getAttribute('data-created');
+  if (!created) return;
+  var days = Math.floor((Date.now() - new Date(created).getTime()) / 86400000);
+  if (days < 7) return;
+  var cls = days >= 30 ? 'age-pill--red' : 'age-pill--amber';
+  var pill = document.createElement('span');
+  pill.className = 'age-pill ' + cls;
+  pill.textContent = days + 'd';
+  el.appendChild(pill);
+});
+</script>
+{% endblock %}

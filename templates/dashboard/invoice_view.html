@@ -126,6 +126,49 @@
       </div>
     </div>
 
+    {% if daily_log %}
+    <div class="doc-section">
+      <div class="doc-section-title">Daily Log <span style="color:var(--text-tertiary);font-weight:400;text-transform:none;letter-spacing:0;margin-left:6px">— from PWA job log</span></div>
+      {% for day in daily_log %}
+      <div style="margin:10px 0 16px;padding:10px 12px;background:rgba(255,255,255,0.02);border:1px solid var(--border);border-radius:8px">
+        <div style="font-family:'DM Mono',monospace;font-size:12px;color:var(--text-secondary);font-weight:600;margin-bottom:8px">
+          {{ fmt_date(day.log_date) }}
+        </div>
+        {% if day.crew %}
+        <div style="margin-bottom:6px">
+          <span style="font-size:11px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.05em">Crew</span>
+          <div style="font-size:14px;margin-top:2px">
+            {% for c in day.crew %}{{ c.name }}{% if c.notes %} <span style="color:var(--text-tertiary);font-size:12px">({{ c.notes }})</span>{% endif %}{% if not loop.last %}, {% endif %}{% endfor %}
+          </div>
+        </div>
+        {% endif %}
+        {% if day.equipment %}
+        <div style="margin-bottom:6px">
+          <span style="font-size:11px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.05em">Equipment</span>
+          <div style="font-size:14px;margin-top:2px">
+            {% for e in day.equipment %}{{ e.name }}{% if e.notes %} <span style="color:var(--text-tertiary);font-size:12px">({{ e.notes }})</span>{% endif %}{% if not loop.last %}, {% endif %}{% endfor %}
+          </div>
+        </div>
+        {% endif %}
+        {% if day.materials %}
+        <div>
+          <span style="font-size:11px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.05em">Materials</span>
+          <ul style="list-style:none;padding:0;margin:4px 0 0;font-size:14px">
+            {% for m in day.materials %}
+            <li style="padding:2px 0">
+              {{ "%g"|format(m.quantity|float) if m.quantity is not none else '' }} {{ m.unit }} {{ m.name }}
+              {% if m.supplier %}<span style="color:var(--text-tertiary);font-size:12px"> · {{ m.supplier }}</span>{% endif %}
+              {% if not m.billable %}<span class="badge badge-gray" style="font-size:10px;margin-left:4px">not billable</span>{% endif %}
+            </li>
+            {% endfor %}
+          </ul>
+        </div>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
     {% if invoice.due_date %}
     <div class="doc-section" style="padding:12px 24px">
       <span style="font-size:13px;color:var(--text-secondary)">Due: {{ fmt_date(invoice.due_date) }}</span>

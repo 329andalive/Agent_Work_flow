@@ -98,6 +98,12 @@ def test_dashboard_invoices_returns_200(app_client):
     assert resp.status_code == 200, f"/dashboard/invoices/ → {resp.status_code}"
 
 
+def test_dashboard_workorders_returns_200(app_client):
+    """Work Orders tab is a list page (not the old new-form)."""
+    resp = app_client.get("/dashboard/workorders/")
+    assert resp.status_code == 200, f"/dashboard/workorders/ → {resp.status_code}"
+
+
 def test_dashboard_workers_returns_200(app_client):
     resp = app_client.get("/dashboard/workers")
     assert resp.status_code == 200, f"/dashboard/workers → {resp.status_code}"
