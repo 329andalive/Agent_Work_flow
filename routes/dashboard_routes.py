@@ -3345,6 +3345,87 @@ def workers_delete():
 
 
 # ---------------------------------------------------------------------------
+# POST /api/workers/<id>/send-app — Email PWA install link to a team member
+# ---------------------------------------------------------------------------
+
+@dashboard_bp.route("/api/workers/<worker_id>/send-app", methods=["POST"])
+def workers_send_app(worker_id):
+    client_id = _resolve_client_id()
+    if not client_id:
+        return jsonify({"success": False, "error": "Not authenticated"}), 401
+
+    data = request.get_json(silent=True) or {}
+    to_email = (data.get("email") or "").strip()
+    if not to_email:
+        return jsonify({"success": False, "error": "Email address required"}), 400
+
+    sb = _get_supabase()
+
+    try:
+        emp = sb.table("employees").select("id, name").eq("id", worker_id).eq("client_id", client_id).execute()
+        if not emp.data:
+            return jsonify({"success": False, "error": "Worker not found"}), 404
+        worker_name = emp.data[0].get("name") or "Team member"
+    except Exception as e:
+        print(f"[{_ts()}] ERROR workers_send_app: lookup — {e}")
+        return jsonify({"success": False, "error": "Lookup failed"}), 500
+
+    # Load business name from client row
+    try:
+        client_row = _load_client(client_id)
+        business_name = client_row.get("business_name") or "Bolts11"
+    except Exception:
+        business_name = "Bolts11"
+
+    base_url = os.environ.get("BOLTS11_BASE_URL", "https://bolts11.com")
+    pwa_url = f"{base_url}/pwa/"
+
+    html_body = f"""
+    <div style="font-family:Arial,Helvetica,sans-serif;max-width:480px;margin:0 auto;padding:20px">
+      <h2 style="color:#1a2e4a;margin-bottom:4px">{business_name}</h2>
+      <p style="color:#555;font-size:15px;line-height:1.5">
+        Hey {worker_name},<br><br>
+        You've been added to the team. Tap the button below on your phone to open the app, then add it to your home screen for quick access.
+      </p>
+      <div style="text-align:center;margin:28px 0">
+        <a href="{pwa_url}" style="display:inline-block;background:#f59e0b;color:#1a2e4a;font-weight:700;font-size:16px;padding:14px 32px;border-radius:8px;text-decoration:none;letter-spacing:0.02em">
+          Open {business_name} App
+        </a>
+      </div>
+      <p style="color:#888;font-size:13px;line-height:1.5">
+        <strong>To install:</strong> Open this link on your phone &rarr; tap the Share button (or &vellip; menu) &rarr; "Add to Home Screen." The app works offline once installed.
+      </p>
+      <hr style="border:none;border-top:1px solid #eee;margin:24px 0">
+      <p style="color:#aaa;font-size:11px">{business_name} &middot; Powered by Bolts11</p>
+    </div>
+    """
+
+    try:
+        import resend
+        resend.api_key = os.environ.get("RESEND_API_KEY", "")
+        if not resend.api_key:
+            return jsonify({"success": False, "error": "Email not configured (RESEND_API_KEY missing)"}), 500
+
+        sender = os.environ.get("RESEND_FROM_EMAIL", "noreply@bolts11.com")
+        response = resend.Emails.send({
+            "from": f"{business_name} <{sender}>",
+            "to": [to_email],
+            "subject": f"{business_name} — Install the App",
+            "html": html_body,
+        })
+
+        if response.get("id"):
+            print(f"[{_ts()}] INFO workers_send_app: PWA link sent to {to_email} for {worker_name}")
+            return jsonify({"success": True})
+        else:
+            print(f"[{_ts()}] WARN workers_send_app: Resend returned no id — {response}")
+            return jsonify({"success": False, "error": "Email delivery failed"}), 500
+    except Exception as e:
+        print(f"[{_ts()}] ERROR workers_send_app: send failed — {e}")
+        return jsonify({"success": False, "error": f"Email send error: {e}"}), 500
+
+
+# ---------------------------------------------------------------------------
 # POST /api/jobs/<id>/approve-scope — Owner approves scope change
 # ---------------------------------------------------------------------------
 

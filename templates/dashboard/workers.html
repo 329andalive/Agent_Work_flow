@@ -87,6 +87,14 @@
     border: 1px solid #C0DD97; background: var(--bg-card);
     color: #3B6D11; cursor: pointer;
   }
+  .btn-send-app {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px; padding: 4px 10px; border-radius: 4px;
+    border: 1px solid #93c5fd; background: var(--bg-card);
+    color: #1d4ed8; cursor: pointer; transition: all 0.1s;
+  }
+  .btn-send-app:hover { background: #dbeafe; }
+  .btn-send-app:disabled { opacity: 0.4; cursor: not-allowed; }
   .inactive-label { font-size: 10px; color: var(--text-tertiary); font-style: italic; }
 
   /* Modal */
@@ -177,6 +185,7 @@
       <div class="worker-actions">
         <button class="btn-edit-w" onclick='openEdit({{ w|tojson }})'>Edit</button>
         {% if w.active %}
+        <button class="btn-send-app" onclick="sendApp('{{ w.id }}', '{{ w.email or '' }}', '{{ w.name or '' }}')">Send App</button>
         <button class="btn-deact" onclick="toggle('{{ w.id }}', false)">Deactivate</button>
         {% else %}
         <span class="inactive-label">Inactive</span>
@@ -304,6 +313,33 @@ async function toggle(id, active) {
     if (data.success) window.location.reload();
     else alert(data.error || 'Failed.');
   } catch(e) { alert('Network error.'); }
+}
+async function sendApp(id, email, name) {
+  if (!email) {
+    email = prompt('No email on file for ' + name + '. Enter their email:');
+    if (!email) return;
+  }
+  var btn = event.target;
+  btn.disabled = true;
+  btn.textContent = 'Sending…';
+  try {
+    var res = await fetch('/api/workers/' + id + '/send-app', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({email: email})
+    });
+    var data = await res.json();
+    if (data.success) {
+      btn.textContent = 'Sent ✓';
+      setTimeout(function() { btn.textContent = 'Send App'; btn.disabled = false; }, 3000);
+    } else {
+      alert(data.error || 'Failed to send.');
+      btn.textContent = 'Send App'; btn.disabled = false;
+    }
+  } catch(e) {
+    alert('Network error.');
+    btn.textContent = 'Send App'; btn.disabled = false;
+  }
 }
 document.addEventListener('keydown', function(e) { if (e.key === 'Escape') closeModal(); });
 </script>
