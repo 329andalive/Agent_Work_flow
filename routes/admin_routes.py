@@ -419,46 +419,79 @@ def delete_client(client_id):
         )
         return redirect(f"/clients/{client_id}")
 
-    # Cascade through child tables first
-    errors = []
+    # Cascade through child tables first. We classify each table's
+    # result into three buckets:
+    #   - total_rows_deleted: the table exists, rows were (or weren't)
+    #     there; either way the call completed successfully
+    #   - skipped: the table doesn't exist in this Supabase instance
+    #     (aspirational tables from the schema-in-progress). NOT an
+    #     error — these are silently no-op for clients that obviously
+    #     have no rows in a non-existent table.
+    #   - errors: actual failures (FK constraints, permissions, etc.)
+    #     that the admin needs to know about.
+    errors: list[str] = []
+    skipped: list[str] = []
     total_rows_deleted = 0
-    for table in _CASCADE_TABLES_BY_CLIENT_ID:
+
+    def _run_cascade(table: str, filter_col: str, filter_val: str) -> None:
+        nonlocal total_rows_deleted
         try:
-            # PostgREST requires a filter on deletes; use eq client_id
-            res = sb.table(table).delete().eq("client_id", client_id).execute()
+            res = sb.table(table).delete().eq(filter_col, filter_val).execute()
             n = len(res.data or []) if hasattr(res, "data") else 0
             total_rows_deleted += n
         except Exception as e:
-            errors.append(f"{table}: {str(e)[:80]}")
+            msg = str(e)
+            # PostgREST's "Could not find the table" signals the table
+            # isn't in the schema cache — usually because it doesn't
+            # exist (migration never ran). Silent skip; not an error.
+            if "Could not find the table" in msg or "schema cache" in msg:
+                skipped.append(table)
+            else:
+                errors.append(f"{table}: {msg[:200]}")
 
+    for table in _CASCADE_TABLES_BY_CLIENT_ID:
+        _run_cascade(table, "client_id", client_id)
     for table in _CASCADE_TABLES_BY_CLIENT_PHONE:
         if not client_phone:
             continue
-        try:
-            res = sb.table(table).delete().eq("client_phone", client_phone).execute()
-            n = len(res.data or []) if hasattr(res, "data") else 0
-            total_rows_deleted += n
-        except Exception as e:
-            errors.append(f"{table}: {str(e)[:80]}")
+        _run_cascade(table, "client_phone", client_phone)
 
-    # Finally delete the client row itself
+    # Finally delete the client row itself. If this fails it's almost
+    # certainly a FK constraint from some table pointing at clients.id
+    # that isn't in our cascade list above. Surface the FULL Postgres
+    # error (not truncated) in the flash — that error typically names
+    # the blocking table and constraint so the admin can either add
+    # it to the cascade or clean it up manually.
     try:
         sb.table("clients").delete().eq("id", client_id).execute()
     except Exception as e:
-        flash(f"Child rows cleaned but client row delete failed: {e}", "error")
+        full_error = str(e)
+        print(f"[{_ts()}] ERROR admin: delete_client final delete failed — {full_error}")
+        flash(
+            f"Child rows cleaned but the clients row itself couldn't be "
+            f"deleted. This usually means some other table still has a "
+            f"foreign key pointing at this client. Full Postgres error: "
+            f"{full_error}",
+            "error",
+        )
         return redirect(f"/clients/{client_id}")
 
     _admin_audit(
         sb, client_phone, "delete_client",
         f"client_id={client_id[:8]} business={business_name!r} "
-        f"rows_deleted={total_rows_deleted} errors={len(errors)}"
+        f"rows_deleted={total_rows_deleted} skipped={len(skipped)} errors={len(errors)}"
     )
 
-    msg = f"✓ Deleted {business_name} ({total_rows_deleted} child rows removed)"
+    # Structured flash — tell the admin exactly what happened.
+    parts = [f"✓ Deleted {business_name} ({total_rows_deleted} child rows removed)"]
+    if skipped:
+        parts.append(
+            f"{len(skipped)} missing table(s) skipped ({', '.join(skipped)})"
+        )
     if errors:
-        msg += f" — {len(errors)} cascade warnings (check logs)"
+        parts.append(f"{len(errors)} real cascade warning(s) — check Railway logs")
         print(f"[{_ts()}] WARN admin: delete_client cascade errors — {errors}")
-    flash(msg, "success" if not errors else "warning")
+    flash(" — ".join(parts), "success" if not errors else "warning")
     return redirect("/clients")
 
 

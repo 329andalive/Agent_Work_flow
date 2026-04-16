@@ -797,3 +797,232 @@ def test_admin_client_detail_forms_prefill_email_from_client_row():
     # And the Client Details card should show the email row so the admin
     # can see what's on file at a glance
     assert "client.email" in src
+
+
+# ---------------------------------------------------------------------------
+# Delete cascade resilience — missing tables + FK blocks
+#
+# Production logs showed the cascade hitting 5 tables that don't exist
+# in the user's Supabase instance (job_photos, invoice_drafts, etc.)
+# AND the final clients row delete failing, probably because of a FK
+# constraint from a table not in the cascade list. These tests lock
+# in the three-part fix: silent skip for missing tables, full error
+# surface on final delete failure, structured flash report.
+# ---------------------------------------------------------------------------
+
+def _delete_mock_sb_with_missing_tables(
+    missing_tables: list = None,
+    final_delete_error: str = None,
+) -> MagicMock:
+    """
+    Build a Supabase mock where specific child-table delete() calls
+    raise the PostgREST "Could not find the table" error, and the
+    final clients.delete() can be made to raise a custom error too.
+    """
+    missing_tables = missing_tables or []
+    mock_sb = MagicMock()
+
+    def _table(name):
+        t = MagicMock()
+        for m in ("select", "eq", "order", "limit", "is_", "ilike", "in_",
+                  "insert", "update"):
+            getattr(t, m).return_value = t
+        # Default: select/execute returns the approved client row; delete
+        # on the clients table can be overridden to raise.
+        if name == "clients":
+            t.execute.return_value = MagicMock(data=[{
+                "id": "client-1",
+                "business_name": "Acme Septic",
+                "phone": "+15555550200",
+                "owner_name": "Bob",
+            }])
+            # The delete().eq().execute() path needs its own behavior.
+            # Route: sb.table("clients").delete().eq("id",...).execute()
+            clients_delete = MagicMock()
+            clients_delete_eq = MagicMock()
+            if final_delete_error:
+                clients_delete_eq.execute.side_effect = Exception(final_delete_error)
+            else:
+                clients_delete_eq.execute.return_value = MagicMock(data=[{"id": "client-1"}])
+            clients_delete.eq.return_value = clients_delete_eq
+            t.delete.return_value = clients_delete
+            return t
+
+        if name in missing_tables:
+            # PostgREST's actual error shape for missing tables
+            delete_chain = MagicMock()
+            eq_chain = MagicMock()
+            eq_chain.execute.side_effect = Exception(
+                "{'message': \"Could not find the table "
+                f"'public.{name}' in the schema cache\"}}"
+            )
+            delete_chain.eq.return_value = eq_chain
+            t.delete.return_value = delete_chain
+            return t
+
+        # Normal table — delete succeeds returning empty list
+        delete_chain = MagicMock()
+        eq_chain = MagicMock()
+        eq_chain.execute.return_value = MagicMock(data=[])
+        delete_chain.eq.return_value = eq_chain
+        t.delete.return_value = delete_chain
+        t.execute.return_value = MagicMock(data=[])
+        return t
+
+    mock_sb.table.side_effect = _table
+    return mock_sb
+
+
+def test_delete_cascade_silently_skips_missing_tables(admin_client):
+    """
+    Tables that don't exist in Supabase (PostgREST "Could not find
+    the table" error) must be silently skipped, NOT logged as errors.
+    The user's production logs showed 5 such tables cluttering every
+    delete with warnings; after this fix those become silent skips.
+    """
+    mock_sb = _delete_mock_sb_with_missing_tables(
+        missing_tables=["job_photos", "invoice_drafts", "job_extended_data",
+                        "time_bank", "needs_attention"],
+    )
+    with patch("routes.admin_routes._sb", return_value=mock_sb):
+        resp = admin_client.post(
+            "/clients/client-1/delete",
+            data={"confirm_name": "Acme Septic"},
+            follow_redirects=False,
+        )
+
+    assert resp.status_code in (301, 302, 308)
+    # The successful delete redirects to /clients (the list), not back
+    # to the detail page. If the cascade had logged these as errors
+    # the flash would be a "warning" and still succeed — but the
+    # behavior we want is "success" with a skipped-tables note.
+    assert resp.headers.get("Location", "").endswith("/clients")
+
+
+def test_delete_flash_mentions_skipped_tables_explicitly(admin_client):
+    """
+    When missing tables get skipped, the flash message should name
+    them so the admin sees exactly which aspirational tables are
+    missing from their Supabase instance.
+
+    We inspect the session flash queue BEFORE the redirect consumes
+    it (don't follow_redirects — the flash is still in the session).
+    """
+    mock_sb = _delete_mock_sb_with_missing_tables(
+        missing_tables=["job_photos", "invoice_drafts"],
+    )
+    with patch("routes.admin_routes._sb", return_value=mock_sb):
+        resp = admin_client.post(
+            "/clients/client-1/delete",
+            data={"confirm_name": "Acme Septic"},
+            follow_redirects=False,
+        )
+
+    assert resp.status_code in (301, 302, 308)
+    with admin_client.session_transaction() as sess:
+        flashes = sess.get("_flashes", [])
+    assert any("missing table" in msg.lower() for (_, msg) in flashes), (
+        f"Expected a flash mentioning 'missing table(s) skipped'. "
+        f"Got: {flashes}"
+    )
+
+
+def test_delete_final_client_delete_failure_surfaces_full_postgres_error(admin_client):
+    """
+    If the final clients.delete() fails (typically a FK constraint
+    from a table not in our cascade), the admin needs the FULL
+    Postgres error in the flash — not a truncated-to-80-chars
+    summary. That error text usually names the blocking table and
+    constraint so the admin can diagnose.
+    """
+    blocking_error = (
+        "update or delete on table \"clients\" violates foreign key "
+        "constraint \"onboarding_tokens_client_id_fkey\" on table "
+        "\"onboarding_tokens\""
+    )
+    mock_sb = _delete_mock_sb_with_missing_tables(
+        final_delete_error=blocking_error,
+    )
+    with patch("routes.admin_routes._sb", return_value=mock_sb):
+        resp = admin_client.post(
+            "/clients/client-1/delete",
+            data={"confirm_name": "Acme Septic"},
+            follow_redirects=False,
+        )
+
+    # Failure bounces back to the detail page, not to /clients
+    assert resp.status_code in (301, 302, 308)
+    assert "/clients/client-1" in resp.headers.get("Location", "")
+
+    # The full error text (including the constraint name) should be in
+    # the flashed message
+    with admin_client.session_transaction() as sess:
+        flashes = sess.get("_flashes", [])
+    combined = " ".join(msg for (_, msg) in flashes)
+    assert "onboarding_tokens_client_id_fkey" in combined, (
+        "The full Postgres error — including the blocking constraint "
+        "name — must appear in the flash so the admin can diagnose. "
+        f"Got flashes: {flashes}"
+    )
+    assert "foreign key" in combined.lower()
+
+
+def test_delete_cascade_real_errors_still_logged_separately_from_skips(admin_client):
+    """
+    A real error (not a missing-table error) must land in the
+    `errors` bucket and show as a cascade warning — we don't want
+    to accidentally silence real problems alongside the skips.
+    """
+    mock_sb = MagicMock()
+
+    def _table(name):
+        t = MagicMock()
+        for m in ("select", "eq", "order", "limit", "is_", "ilike", "in_",
+                  "insert", "update"):
+            getattr(t, m).return_value = t
+        if name == "clients":
+            t.execute.return_value = MagicMock(data=[{
+                "id": "client-1",
+                "business_name": "Acme Septic",
+                "phone": "+15555550200",
+                "owner_name": "Bob",
+            }])
+            clients_delete = MagicMock()
+            clients_delete_eq = MagicMock()
+            clients_delete_eq.execute.return_value = MagicMock(data=[{"id": "client-1"}])
+            clients_delete.eq.return_value = clients_delete_eq
+            t.delete.return_value = clients_delete
+            return t
+
+        delete_chain = MagicMock()
+        eq_chain = MagicMock()
+        # The customers table raises a REAL error (not a missing-table)
+        if name == "customers":
+            eq_chain.execute.side_effect = Exception(
+                "permission denied for table customers"
+            )
+        else:
+            eq_chain.execute.return_value = MagicMock(data=[])
+        delete_chain.eq.return_value = eq_chain
+        t.delete.return_value = delete_chain
+        t.execute.return_value = MagicMock(data=[])
+        return t
+
+    mock_sb.table.side_effect = _table
+
+    with patch("routes.admin_routes._sb", return_value=mock_sb):
+        resp = admin_client.post(
+            "/clients/client-1/delete",
+            data={"confirm_name": "Acme Septic"},
+            follow_redirects=False,
+        )
+
+    assert resp.status_code in (301, 302, 308)
+    with admin_client.session_transaction() as sess:
+        flashes = sess.get("_flashes", [])
+    combined = " ".join(msg for (_, msg) in flashes)
+    # Real error should produce a "warning" flash mentioning cascade warnings
+    assert "warning" in combined.lower() or "check" in combined.lower(), (
+        f"A real (non-missing-table) cascade error must surface as a "
+        f"warning in the flash. Got: {flashes}"
+    )
