@@ -715,29 +715,12 @@
       </span>
     </a>
 
-    <!-- Classes -->
-    <a href="/dashboard/classes"
-       class="nav-single-link {{ 'active' if active_page == 'classes' else '' }}">
-      <span style="display:flex;align-items:center;gap:10px;">
-        <span class="nav-section-icon">📋</span> Classes
-      </span>
-    </a>
-
-    <!-- Schedule -->
-    <a href="/dashboard/schedule"
-       class="nav-single-link {{ 'active' if active_page == 'schedule' else '' }}">
-      <span style="display:flex;align-items:center;gap:10px;">
-        <span class="nav-section-icon">📅</span> Schedule
-      </span>
-    </a>
+    {# Classes / Schedule / Command Center removed from sidebar
+       on 2026-04-16 — not part of this build. Routes + templates
+       are left in place (reachable by direct URL) so we can bring
+       them back by re-adding the nav blocks here. #}
 
     <div class="sidebar-section-label" style="margin-top:4px">System</div>
-    <a href="/dashboard/command.html"
-       class="nav-single-link {{ 'active' if active_page == 'command' else '' }}">
-      <span style="display:flex;align-items:center;gap:10px;">
-        <span class="nav-section-icon">▶</span> Command Center
-      </span>
-    </a>
     <a href="/dashboard/onboarding.html"
        class="nav-single-link {{ 'active' if active_page == 'onboarding' else '' }}">
       <span style="display:flex;align-items:center;gap:10px;">
