@@ -158,9 +158,21 @@ def save_dispatch_session(
         sb = get_supabase()
         now = datetime.now(timezone.utc).isoformat()
 
-        # Write route_assignments
+        # Write route_assignments — delete any existing row for the same
+        # (client, worker, job, date) first so re-dispatching doesn't
+        # create duplicates that show the same job multiple times on
+        # the PWA route screen.
         rows = []
         for a in assignments:
+            dispatch_date = a.get("dispatch_date") or now[:10]
+            try:
+                sb.table("route_assignments").delete().eq(
+                    "client_id", client_id
+                ).eq("worker_id", a["worker_id"]).eq(
+                    "job_id", a["job_id"]
+                ).eq("dispatch_date", dispatch_date).execute()
+            except Exception:
+                pass
             rows.append({
                 "client_id": client_id,
                 "session_id": session_id,
@@ -168,6 +180,7 @@ def save_dispatch_session(
                 "worker_id": a["worker_id"],
                 "wave_id": a.get("wave_id"),
                 "sort_order": a.get("sort_order", 0),
+                "dispatch_date": dispatch_date,
                 "assigned_at": now,
             })
 

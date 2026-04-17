@@ -478,17 +478,23 @@ def get_schedule(client_id: str, employee_id: str, days: int = 5) -> dict:
         print(f"[{_ts()}] ERROR pwa_jobs: get_schedule ra failed — {e}")
         return {"success": False, "error": str(e)}
 
-    # Group by date
+    # Group by date — deduplicate so multiple dispatch sessions
+    # for the same job don't cause it to appear multiple times.
     date_to_jobs: dict = defaultdict(list)
     date_sort_map: dict = defaultdict(dict)
+    _seen: set = set()
     for row in (ra.data or []):
         d   = row["dispatch_date"]
         jid = row["job_id"]
+        key = (d, jid)
+        if key in _seen:
+            continue
+        _seen.add(key)
         date_to_jobs[d].append(jid)
         date_sort_map[d][jid] = row.get("sort_order", 0)
 
     # Fetch all jobs in one query
-    all_job_ids = [jid for jids in date_to_jobs.values() for jid in jids]
+    all_job_ids = list({jid for jids in date_to_jobs.values() for jid in jids})
     jobs_map: dict = {}
     if all_job_ids:
         try:
