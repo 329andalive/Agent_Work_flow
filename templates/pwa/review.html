@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Review — Bolts11</title>
+  <link rel="manifest" href="/static/manifest.json">
+  <meta name="theme-color" content="#132038">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="apple-touch-icon" href="/static/icon-192.png">
+
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    html,body{height:100%;-webkit-tap-highlight-color:transparent}
+    body{
+      font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+      background:#132038;color:#fff;
+      min-height:100vh;display:flex;flex-direction:column;
+      padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+    }
+    .topbar{
+      display:flex;align-items:center;justify-content:space-between;
+      padding:14px 18px;background:rgba(0,0,0,.2);flex-shrink:0;
+    }
+    .topbar a{color:rgba(255,255,255,.7);text-decoration:none;font-size:14px;padding:6px 10px}
+    .topbar .who{font-size:13px;color:rgba(255,255,255,.6)}
+    .topbar .who strong{color:#fff;font-weight:600}
+
+    .page-title{
+      font-size:20px;font-weight:800;padding:20px 18px 4px;
+    }
+    .page-sub{
+      font-size:13px;color:rgba(255,255,255,.45);padding:0 18px 16px;
+    }
+
+    .doc-list{
+      flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;
+      padding:0 14px 40px;
+    }
+
+    .doc-card{
+      display:block;text-decoration:none;color:inherit;
+      background:rgba(255,255,255,.06);
+      border:1px solid rgba(255,255,255,.08);
+      border-radius:12px;padding:14px 16px;
+      margin-bottom:10px;
+      transition:background .12s;
+    }
+    .doc-card:active{background:rgba(255,255,255,.12)}
+
+    .doc-row{display:flex;align-items:center;justify-content:space-between;gap:10px}
+    .doc-info{flex:1;min-width:0}
+    .doc-cust{font-size:15px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .doc-meta{display:flex;align-items:center;gap:8px;margin-top:4px;flex-wrap:wrap}
+    .doc-badge{
+      font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;
+      padding:2px 8px;border-radius:4px;
+    }
+    .doc-badge--estimate{background:rgba(245,158,11,.2);color:#f59e0b}
+    .doc-badge--work_order{background:rgba(147,197,253,.2);color:#93c5fd}
+    .doc-badge--invoice{background:rgba(134,239,172,.2);color:#86efac}
+    .doc-date{font-size:11px;color:rgba(255,255,255,.35);font-variant-numeric:tabular-nums}
+    .doc-summary{font-size:12px;color:rgba(255,255,255,.35);margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .doc-amount{
+      font-size:20px;font-weight:800;
+      font-variant-numeric:tabular-nums;
+      white-space:nowrap;
+    }
+    .doc-arrow{color:rgba(255,255,255,.2);font-size:18px;margin-left:4px}
+
+    .empty{
+      text-align:center;padding:60px 20px;
+      color:rgba(255,255,255,.3);font-size:14px;
+      line-height:1.6;
+    }
+  </style>
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/static/sw.js');
+    }
+  </script>
+</head>
+<body>
+
+  <div class="topbar">
+    <a href="/pwa/">&larr; Home</a>
+    <div class="who">
+      <strong>{{ employee_name }}</strong>
+    </div>
+  </div>
+
+  <div class="page-title">Review</div>
+  <div class="page-sub">Tap to review, edit, or send. {{ docs|length }} pending.</div>
+
+  <div class="doc-list">
+    {% if docs %}
+      {% for d in docs %}
+      <a href="{{ d.review_url }}" class="doc-card">
+        <div class="doc-row">
+          <div class="doc-info">
+            <div class="doc-cust">{{ cust_map.get(d.customer_id, '—') }}</div>
+            <div class="doc-meta">
+              <span class="doc-badge doc-badge--{{ d.type }}">{{ d.type|replace('_',' ') }}</span>
+              <span class="doc-date">{{ d.created_at[:10] if d.created_at else '' }}</span>
+            </div>
+            {% if d.summary %}
+            <div class="doc-summary">{{ d.summary }}</div>
+            {% endif %}
+          </div>
+          <div class="doc-amount">${{ "%.2f"|format(d.amount|float) }}</div>
+          <span class="doc-arrow">&rsaquo;</span>
+        </div>
+      </a>
+      {% endfor %}
+    {% else %}
+      <div class="empty">
+        No documents waiting for review.<br>
+        Create a job from the Job Tracker to get started.
+      </div>
+    {% endif %}
+  </div>
+
+</body>
+</html>

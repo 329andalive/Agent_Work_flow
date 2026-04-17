@@ -118,6 +118,84 @@ def pwa_auth_verify(token):
     return redirect("/pwa/")
 
 
+# ---------------------------------------------------------------------------
+# GET /pwa/review — list pending documents for review/edit/send
+# ---------------------------------------------------------------------------
+
+@pwa_bp.route("/review", strict_slashes=False)
+@require_pwa_auth
+def pwa_review():
+    from execution.db_connection import get_client as get_supabase
+
+    client_id = session.get("client_id")
+    sb = get_supabase()
+
+    # Load draft proposals (estimates awaiting review)
+    proposals = []
+    try:
+        result = sb.table("proposals").select(
+            "id, customer_id, job_id, amount_estimate, status, created_at, proposal_text"
+        ).eq("client_id", client_id).eq("status", "draft").order("created_at", desc=True).limit(50).execute()
+        proposals = result.data or []
+    except Exception as e:
+        print(f"[{_ts()}] ERROR pwa_review: proposals query — {e}")
+
+    # Load draft + work_order invoices
+    invoices = []
+    try:
+        result = sb.table("invoices").select(
+            "id, customer_id, job_id, amount_due, status, created_at, invoice_text"
+        ).eq("client_id", client_id).in_("status", ["draft", "work_order"]).order("created_at", desc=True).limit(50).execute()
+        invoices = result.data or []
+    except Exception as e:
+        print(f"[{_ts()}] ERROR pwa_review: invoices query — {e}")
+
+    # Build combined list with type tag
+    docs = []
+    for p in proposals:
+        docs.append({
+            "id": p["id"],
+            "type": "estimate",
+            "customer_id": p.get("customer_id"),
+            "amount": p.get("amount_estimate") or 0,
+            "status": p.get("status", "draft"),
+            "created_at": p.get("created_at"),
+            "summary": (p.get("proposal_text") or "")[:60],
+            "review_url": f"/dashboard/proposal/{p['id']}",
+        })
+    for inv in invoices:
+        doc_type = "work_order" if inv.get("status") == "work_order" else "invoice"
+        docs.append({
+            "id": inv["id"],
+            "type": doc_type,
+            "customer_id": inv.get("customer_id"),
+            "amount": inv.get("amount_due") or 0,
+            "status": inv.get("status", "draft"),
+            "created_at": inv.get("created_at"),
+            "summary": (inv.get("invoice_text") or "")[:60],
+            "review_url": f"/dashboard/invoice/{inv['id']}",
+        })
+
+    # Sort by created_at desc
+    docs.sort(key=lambda d: d.get("created_at") or "", reverse=True)
+
+    # Resolve customer names
+    cust_ids = list({d["customer_id"] for d in docs if d.get("customer_id")})
+    cust_map = {}
+    if cust_ids:
+        try:
+            custs = sb.table("customers").select("id, customer_name").in_("id", cust_ids).execute().data or []
+            cust_map = {c["id"]: c.get("customer_name") or "—" for c in custs}
+        except Exception:
+            pass
+
+    return render_template("pwa/review.html",
+        employee_name=session.get("employee_name", "Tech"),
+        docs=docs,
+        cust_map=cust_map,
+    )
+
+
 @pwa_bp.route("/clock", strict_slashes=False)
 @require_pwa_auth
 def pwa_clock():
