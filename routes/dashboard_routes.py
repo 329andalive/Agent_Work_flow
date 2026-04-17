@@ -215,7 +215,7 @@ def control_board():
     # TODO: add clock_in/clock_out columns to employees table or link via jobs.assigned_employee_id
     employees = []
     try:
-        result = sb.table("employees").select("id, name, phone, role, active").eq("client_id", client_id).eq("active", True).execute()
+        result = sb.table("employees").select("id, name, phone, email, role, active").eq("client_id", client_id).eq("active", True).execute()
         employees = result.data or []
     except Exception as e:
         print(f"[{_ts()}] ERROR dashboard_routes: employees query — {e}")

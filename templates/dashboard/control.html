@@ -64,6 +64,14 @@
   /* SortableJS drag states */
   .job-card-row.sortable-ghost { opacity:.3; border:2px dashed #F5C843 !important; }
   .job-card-row.sortable-chosen { box-shadow:0 6px 20px rgba(0,0,0,.22); transform:scale(1.015); z-index:100; }
+  .btn-send-app {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px; padding: 4px 10px; border-radius: 4px;
+    border: 1px solid #93c5fd; background: var(--bg-card);
+    color: #1d4ed8; cursor: pointer; transition: all 0.1s;
+  }
+  .btn-send-app:hover { background: #dbeafe; }
+  .btn-send-app:disabled { opacity: 0.4; cursor: not-allowed; }
 {% endblock %}
 
 {% block content %}
@@ -141,6 +149,7 @@
         <tr>
           <th>Name</th>
           <th>Role</th>
+          <th style="width:90px"></th>
         </tr>
       </thead>
       <tbody>
@@ -151,6 +160,9 @@
             {{ e.name or '—' }}
           </td>
           <td><span class="badge badge-gray">{{ e.role or '—' }}</span></td>
+          <td>
+            <button class="btn-send-app" onclick="sendApp('{{ e.id }}', '{{ e.email or '' }}', '{{ e.name or '' }}', this)">Send App</button>
+          </td>
         </tr>
         {% endfor %}
       </tbody>
@@ -194,5 +206,32 @@
     }
   });
 })();
+
+async function sendApp(id, email, name, btn) {
+  if (!email) {
+    email = prompt('No email on file for ' + name + '. Enter their email:');
+    if (!email) return;
+  }
+  btn.disabled = true;
+  btn.textContent = 'Sending…';
+  try {
+    var res = await fetch('/api/workers/' + id + '/send-app', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({email: email})
+    });
+    var data = await res.json();
+    if (data.success) {
+      btn.textContent = 'Sent ✓';
+      setTimeout(function() { btn.textContent = 'Send App'; btn.disabled = false; }, 3000);
+    } else {
+      alert(data.error || 'Failed to send.');
+      btn.textContent = 'Send App'; btn.disabled = false;
+    }
+  } catch(e) {
+    alert('Network error.');
+    btn.textContent = 'Send App'; btn.disabled = false;
+  }
+}
 </script>
 {% endblock %}
