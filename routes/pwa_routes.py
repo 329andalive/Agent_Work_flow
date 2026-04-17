@@ -976,8 +976,19 @@ def pwa_workorder_create_form():
         return jsonify({"success": False, "error": "Customer required"}), 400
 
     from datetime import date as _date
-    job_status = "in_progress" if when == "now" else "scheduled"
-    sched_date = _date.today().isoformat() if when == "now" else scheduled_date
+    import json as _json
+
+    # doc_type: 'work_order' (default) or 'invoice'. Both create a
+    # jobs row + an invoices row (matching the dashboard flow).
+    doc_type = (data.get("doc_type") or "work_order").strip().lower()
+    if doc_type not in ("work_order", "invoice"):
+        doc_type = "work_order"
+
+    STATUS_BY_DOC = {"work_order": "work_order", "invoice": "complete"}
+    INV_STATUS_BY_DOC = {"work_order": "work_order", "invoice": "draft"}
+
+    job_status = STATUS_BY_DOC[doc_type] if when == "now" or doc_type == "invoice" else "scheduled"
+    sched_date = _date.today().isoformat() if when == "now" else (scheduled_date or _date.today().isoformat())
     job_label  = job_type.replace("_", " ").title()
     description = job_label + (f" — {notes}" if notes else "")
 
@@ -988,7 +999,7 @@ def pwa_workorder_create_form():
             J.JOB_TYPE:           job_type,
             J.JOB_DESCRIPTION:    description,
             J.JOB_NOTES:          notes or None,
-            J.RAW_INPUT:          description,
+            J.RAW_INPUT:          f"Created via PWA (doc_type={doc_type})",
             J.STATUS:             job_status,
             J.DISPATCH_STATUS:    "unassigned",
             J.ESTIMATED_AMOUNT:   amount,
@@ -1001,8 +1012,27 @@ def pwa_workorder_create_form():
             return jsonify({"success": False, "error": "Failed to create job"}), 500
 
         job_id = result.data[0][J.ID]
-        print(f"[{_ts()}] INFO pwa_wo_form: WO created job={job_id[:8]} status={job_status} amount={amount}")
-        return jsonify({"success": True, "job_id": job_id})
+
+        # Create sidecar invoices row (matching dashboard /api/jobs/create)
+        inv_row = {
+            "client_id":   client_id,
+            "customer_id": customer_id,
+            "job_id":      job_id,
+            "amount_due":  amount,
+            "status":      INV_STATUS_BY_DOC[doc_type],
+        }
+        line_items = [{"description": job_label, "qty": 1, "unit_price": amount, "total": amount, "amount": amount}]
+        inv_row["line_items"] = _json.dumps(line_items)
+        if notes:
+            inv_row["invoice_text"] = notes
+        try:
+            sb.table("invoices").insert(inv_row).execute()
+        except Exception as e2:
+            print(f"[{_ts()}] WARN pwa_wo_form: invoice insert failed — {e2}")
+
+        label = "Work Order" if doc_type == "work_order" else "Invoice"
+        print(f"[{_ts()}] INFO pwa_wo_form: {label} created job={job_id[:8]} status={job_status} amount={amount}")
+        return jsonify({"success": True, "job_id": job_id, "message": f"{label} created."})
     except Exception as e:
         print(f"[{_ts()}] ERROR pwa_wo_form: {e}")
         return jsonify({"success": False, "error": str(e)}), 500

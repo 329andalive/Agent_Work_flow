@@ -50,8 +50,24 @@
     .mode-tab .tab-icon{font-size:20px;line-height:1}
     .mode-tab.active-estimate{color:#f59e0b;border-bottom-color:#f59e0b}
     .mode-tab.active-joblog{color:#86efac;border-bottom-color:#86efac}
-    .mode-tab.active-workorder{color:#93c5fd;border-bottom-color:#93c5fd}
     .mode-tab.active-customer{color:#e2e8f0;border-bottom-color:#e2e8f0}
+
+    /* Doc-type segmented control inside New Job panel */
+    .doc-switch{
+      display:flex;gap:0;margin:0 0 16px;
+      background:rgba(255,255,255,.06);
+      border:1px solid rgba(255,255,255,.1);
+      border-radius:10px;padding:3px;
+    }
+    .doc-opt{
+      flex:1;text-align:center;padding:10px 4px;
+      font-size:12px;font-weight:700;
+      background:none;border:none;border-radius:8px;
+      color:rgba(255,255,255,.4);cursor:pointer;
+      font-family:inherit;transition:all .15s;
+      text-transform:uppercase;letter-spacing:.04em;
+    }
+    .doc-opt.active{background:#f59e0b;color:#132038}
 
     /* ── Panel container ── */
     .panels{flex:1;overflow:hidden;position:relative}
@@ -248,14 +264,11 @@
 
   <!-- Tab bar -->
   <div class="mode-tabs" id="mode-tabs">
-    <button class="mode-tab" data-panel="estimate" data-active="active-estimate">
-      <span class="tab-icon">📋</span>Estimate
+    <button class="mode-tab" data-panel="newjob" data-active="active-estimate">
+      <span class="tab-icon">📋</span>New Job
     </button>
     <button class="mode-tab" data-panel="joblog" data-active="active-joblog">
       <span class="tab-icon">📅</span>Job Log
-    </button>
-    <button class="mode-tab" data-panel="workorder" data-active="active-workorder">
-      <span class="tab-icon">🔧</span>Work Order
     </button>
     <button class="mode-tab" data-panel="customer" data-active="active-customer">
       <span class="tab-icon">👤</span>Customer
@@ -265,47 +278,54 @@
   <!-- Panels -->
   <div class="panels" id="panels">
 
-    <!-- ── ESTIMATE panel ── -->
-    <div class="panel" id="panel-estimate">
-      <div class="form-panel" id="est-form-wrap">
-        <div class="form-title">New Estimate</div>
-        <div class="form-sub">Fill in the details — AI drafts the estimate.</div>
+    <!-- ── NEW JOB panel (unified: Estimate / WO / Invoice) ── -->
+    <div class="panel" id="panel-newjob">
+      <div class="form-panel" id="nj-form-wrap">
+
+        <!-- Doc-type segmented control -->
+        <div class="doc-switch">
+          <button type="button" class="doc-opt active" data-doc="estimate" onclick="setDocType('estimate')">Estimate</button>
+          <button type="button" class="doc-opt" data-doc="work_order" onclick="setDocType('work_order')">WO</button>
+          <button type="button" class="doc-opt" data-doc="invoice" onclick="setDocType('invoice')">Invoice</button>
+        </div>
+        <div class="form-sub" id="nj-hint">Fill in the details — AI drafts the estimate.</div>
+        <input type="hidden" id="nj-doc-type" value="estimate">
 
         <!-- Customer search -->
         <div class="field-group">
           <div class="field-label">Customer</div>
           <div class="cust-search-wrap">
-            <input class="field-input" id="est-cust-search" type="text"
+            <input class="field-input" id="nj-cust-search" type="text"
               placeholder="Search by name or type 'new'…" autocomplete="off">
-            <div class="cust-results" id="est-cust-results"></div>
+            <div class="cust-results" id="nj-cust-results"></div>
           </div>
         </div>
 
-        <!-- New customer fields — hidden until "new" selected -->
-        <div id="est-new-cust" style="display:none">
+        <!-- New customer fields -->
+        <div id="nj-new-cust" style="display:none">
           <div class="field-group">
             <div class="field-label">Customer Name</div>
-            <input class="field-input" id="est-cust-name" type="text" placeholder="Full name">
+            <input class="field-input" id="nj-cust-name" type="text" placeholder="Full name">
           </div>
           <div class="field-row">
             <div class="field-group">
               <div class="field-label">Phone</div>
-              <input class="field-input" id="est-cust-phone" type="tel" placeholder="(207) 555-0100">
+              <input class="field-input" id="nj-cust-phone" type="tel" placeholder="(207) 555-0100">
             </div>
             <div class="field-group">
               <div class="field-label">Address</div>
-              <input class="field-input" id="est-cust-addr" type="text" placeholder="Street address">
+              <input class="field-input" id="nj-cust-addr" type="text" placeholder="Street address">
             </div>
           </div>
           <div class="field-group">
             <div class="field-label">Email (optional)</div>
-            <input class="field-input" id="est-cust-email" type="email" placeholder="customer@email.com">
+            <input class="field-input" id="nj-cust-email" type="email" placeholder="customer@email.com">
           </div>
         </div>
 
         <div class="field-group">
           <div class="field-label">Job Type</div>
-          <select class="field-select" id="est-job-type">
+          <select class="field-select" id="nj-job-type">
             <option value="">Select type…</option>
             <option value="pump_out">Pump Out</option>
             <option value="line_repair">Line Repair</option>
@@ -320,18 +340,40 @@
           </select>
         </div>
 
+        <!-- Price — shown for WO + Invoice, hidden for Estimate -->
+        <div class="field-group" id="nj-price-group" style="display:none">
+          <div class="field-label">Price</div>
+          <input class="field-input" id="nj-price" type="number"
+            placeholder="0.00" min="0" step="0.01" inputmode="decimal">
+        </div>
+
+        <!-- When — shown for WO only -->
+        <div class="field-group" id="nj-when-group" style="display:none">
+          <div class="field-label">When</div>
+          <div class="when-row">
+            <button type="button" class="when-btn" id="nj-now" onclick="selectWhen('now')">
+              <span class="when-ico">⚡</span>Now / Today
+            </button>
+            <button type="button" class="when-btn" id="nj-later" onclick="selectWhen('later')">
+              <span class="when-ico">📅</span>Schedule Later
+            </button>
+          </div>
+          <div style="display:none;margin-top:10px" id="nj-date-wrap">
+            <input class="field-input" id="nj-date" type="date">
+          </div>
+        </div>
+
         <div class="field-group">
           <div class="field-label">Notes (optional)</div>
-          <textarea class="field-textarea" id="est-notes" rows="3"
+          <textarea class="field-textarea" id="nj-notes" rows="3"
             placeholder="Scope details, access notes, what you saw on site…"></textarea>
         </div>
 
-        <button class="submit-btn estimate-submit" id="est-submit" disabled>
+        <button class="submit-btn estimate-submit" id="nj-submit" disabled>
           Draft Estimate
         </button>
       </div>
-      <!-- result shown after submit -->
-      <div id="est-result" style="display:none"></div>
+      <div id="nj-result" style="display:none"></div>
     </div>
 
     <!-- ── JOB LOG panel ── two-phase form ── -->
@@ -415,94 +457,6 @@
 
     </div>
 
-    <!-- ── WORK ORDER panel ── -->
-    <div class="panel" id="panel-workorder">
-      <div class="form-panel" id="wo-form-wrap">
-        <div class="form-title">New Work Order</div>
-        <div class="form-sub">Verbal job · no estimate needed.</div>
-
-        <!-- Customer search -->
-        <div class="field-group">
-          <div class="field-label">Customer</div>
-          <div class="cust-search-wrap">
-            <input class="field-input" id="wo-cust-search" type="text"
-              placeholder="Search by name or type 'new'…" autocomplete="off">
-            <div class="cust-results" id="wo-cust-results"></div>
-          </div>
-        </div>
-
-        <!-- New customer fields -->
-        <div id="wo-new-cust" style="display:none">
-          <div class="field-group">
-            <div class="field-label">Customer Name</div>
-            <input class="field-input" id="wo-cust-name" type="text" placeholder="Full name">
-          </div>
-          <div class="field-row">
-            <div class="field-group">
-              <div class="field-label">Phone</div>
-              <input class="field-input" id="wo-cust-phone" type="tel" placeholder="(207) 555-0100">
-            </div>
-            <div class="field-group">
-              <div class="field-label">Address</div>
-              <input class="field-input" id="wo-cust-addr" type="text" placeholder="Street address">
-            </div>
-          </div>
-          <div class="field-group">
-            <div class="field-label">Email (optional)</div>
-            <input class="field-input" id="wo-cust-email" type="email" placeholder="customer@email.com">
-          </div>
-        </div>
-
-        <div class="field-group">
-          <div class="field-label">Job Type</div>
-          <select class="field-select" id="wo-job-type">
-            <option value="">Select type…</option>
-            <option value="pump_out">Pump Out</option>
-            <option value="line_repair">Line Repair</option>
-            <option value="inspection">Inspection</option>
-            <option value="riser_installation">Riser Installation</option>
-            <option value="baffle_replacement">Baffle Replacement</option>
-            <option value="hydro_jetting">Hydro Jetting</option>
-            <option value="drain_cleaning">Drain Cleaning</option>
-            <option value="locate">Locate / Camera</option>
-            <option value="emergency">Emergency</option>
-            <option value="other">Other</option>
-          </select>
-        </div>
-
-        <div class="field-group">
-          <div class="field-label">Agreed Price</div>
-          <input class="field-input" id="wo-price" type="number"
-            placeholder="0.00" min="0" step="0.01" inputmode="decimal">
-        </div>
-
-        <div class="field-group">
-          <div class="field-label">When</div>
-          <div class="when-row">
-            <button type="button" class="when-btn" id="wo-now" onclick="selectWhen('now')">
-              <span class="when-ico">⚡</span>Now / Today
-            </button>
-            <button type="button" class="when-btn" id="wo-later" onclick="selectWhen('later')">
-              <span class="when-ico">📅</span>Schedule Later
-            </button>
-          </div>
-          <div style="display:none;margin-top:10px" id="wo-date-wrap">
-            <input class="field-input" id="wo-date" type="date">
-          </div>
-        </div>
-
-        <div class="field-group">
-          <div class="field-label">Notes (optional)</div>
-          <textarea class="field-textarea" id="wo-notes" rows="2"
-            placeholder="Access notes, scope details…"></textarea>
-        </div>
-
-        <button class="submit-btn workorder-submit" id="wo-submit" disabled>
-          Create Work Order
-        </button>
-      </div>
-      <div id="wo-result" style="display:none"></div>
-    </div>
 
     <!-- ── CUSTOMER panel ── -->
     <div class="panel" id="panel-customer">
@@ -541,22 +495,23 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // State
 // ─────────────────────────────────────────────────────────────────────────────
-var CUSTOMERS      = [];      // loaded once on first customer search
+var CUSTOMERS      = [];
 var CUST_LOADED    = false;
-var EST_CUST_ID    = null;    // selected existing customer (estimate)
-var EST_NEW_CUST   = false;
-var WO_CUST_ID     = null;    // selected existing customer (work order)
-var WO_NEW_CUST    = false;
-var WO_WHEN        = null;    // 'now' | 'later'
+
+// New Job unified state
+var NJ_CUST_ID     = null;
+var NJ_NEW_CUST    = false;
+var NJ_WHEN        = null;     // 'now' | 'later' (WO only)
+var NJ_DOC_TYPE    = 'estimate';
 
 // Job Log state
-var JL_JOBS        = [];      // open jobs for selected customer
-var JL_EMPLOYEES   = [];      // all active employees
+var JL_JOBS        = [];
+var JL_EMPLOYEES   = [];
 var JL_CUST_ID     = null;
 var JL_JOB_ID      = null;
 var JL_JOB_LABEL   = '';
 var JL_CREW_IDS    = [];
-var JL_SESSION_ID  = null;    // returned by /pwa/api/joblog/start
+var JL_SESSION_ID  = null;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tab switching
@@ -573,7 +528,6 @@ function showPanel(name) {
   var panel = document.getElementById('panel-' + name);
   if (panel) panel.classList.add('active');
 
-  // Fire intent on first open
   if (name === 'joblog' && JL_EMPLOYEES.length === 0) loadJobLogData();
 }
 
@@ -649,230 +603,157 @@ document.addEventListener('click', function(e) {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ESTIMATE form
+// NEW JOB — unified form (Estimate / WO / Invoice)
 // ─────────────────────────────────────────────────────────────────────────────
-var estSearch = document.getElementById('est-cust-search');
-var estResults = document.getElementById('est-cust-results');
-var estNewWrap = document.getElementById('est-new-cust');
 
-estSearch.addEventListener('focus', loadCustomers);
-estSearch.addEventListener('input', function() {
-  buildCustResults(this.value, estResults,
-    function(c) { // onSelect existing
-      EST_CUST_ID  = c.id;
-      EST_NEW_CUST = false;
-      estSearch.value = c.customer_name || c.customer_phone;
-      estNewWrap.style.display = 'none';
-      checkEstReady();
-    },
-    function() { // onNew
-      EST_CUST_ID  = null;
-      EST_NEW_CUST = true;
-      estSearch.value = 'New customer';
-      estNewWrap.style.display = 'block';
-      document.getElementById('est-cust-name').focus();
-      checkEstReady();
-    }
-  );
-});
+var DOC_COPY = {
+  estimate:   { hint: 'Fill in the details \u2014 AI drafts the estimate.',  btn: 'Draft Estimate',     title: 'Estimate Drafted',    price: false, when: false },
+  work_order: { hint: 'Verbal job \u00b7 tech enters price and schedule.',   btn: 'Create Work Order',  title: 'Work Order Created',  price: true,  when: true  },
+  invoice:    { hint: 'Job is done \u2014 bill the customer.',               btn: 'Create Invoice',     title: 'Invoice Created',     price: true,  when: false },
+};
 
-function checkEstReady() {
-  var custOk = EST_CUST_ID || (EST_NEW_CUST && document.getElementById('est-cust-name').value.trim() && document.getElementById('est-cust-phone').value.trim());
-  var typeOk = !!document.getElementById('est-job-type').value;
-  document.getElementById('est-submit').disabled = !(custOk && typeOk);
-}
+window.setDocType = function(dt) {
+  NJ_DOC_TYPE = dt;
+  document.getElementById('nj-doc-type').value = dt;
+  document.querySelectorAll('.doc-opt').forEach(function(b) {
+    b.classList.toggle('active', b.getAttribute('data-doc') === dt);
+  });
+  var copy = DOC_COPY[dt];
+  document.getElementById('nj-hint').textContent = copy.hint;
+  document.getElementById('nj-submit').textContent = copy.btn;
+  document.getElementById('nj-price-group').style.display = copy.price ? 'block' : 'none';
+  document.getElementById('nj-when-group').style.display  = copy.when  ? 'block' : 'none';
+  document.getElementById('nj-submit').className = 'submit-btn ' +
+    (dt === 'work_order' ? 'workorder-submit' : dt === 'invoice' ? 'workorder-submit' : 'estimate-submit');
+  checkNjReady();
+};
 
-['est-cust-name','est-cust-phone','est-cust-addr','est-job-type','est-notes'].forEach(function(id) {
-  var el = document.getElementById(id);
-  if (el) { el.addEventListener('input', checkEstReady); el.addEventListener('change', checkEstReady); }
-});
+var njSearch  = document.getElementById('nj-cust-search');
+var njResults = document.getElementById('nj-cust-results');
+var njNewWrap = document.getElementById('nj-new-cust');
 
-document.getElementById('est-submit').addEventListener('click', async function() {
-  var btn = this;
-  btn.disabled = true; btn.textContent = 'Drafting…';
-
-  try {
-    var customer_id   = EST_CUST_ID || null;
-    var customer_name  = EST_NEW_CUST ? document.getElementById('est-cust-name').value.trim() : '';
-    var customer_phone = EST_NEW_CUST ? document.getElementById('est-cust-phone').value.trim() : '';
-    var customer_addr  = EST_NEW_CUST ? document.getElementById('est-cust-addr').value.trim() : '';
-    var customer_email = EST_NEW_CUST ? document.getElementById('est-cust-email').value.trim() : '';
-    var job_type       = document.getElementById('est-job-type').value;
-    var notes          = document.getElementById('est-notes').value.trim();
-
-    var payload = { customer_id, customer_name, customer_phone, customer_address: customer_addr, customer_email, job_type, notes };
-
-    var r = await fetch('/pwa/api/estimate/create', {
-      method: 'POST', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify(payload)
-    });
-    var d = await r.json();
-
-    var resEl = document.getElementById('est-result');
-    document.getElementById('est-form-wrap').style.display = 'none';
-    resEl.style.display = 'block';
-
-    if (d.success) {
-      resEl.innerHTML =
-        '<div class="result-card success">' +
-        '<div class="result-ico">✅</div>' +
-        '<div class="result-title">Estimate Drafted</div>' +
-        '<div class="result-msg">' + esc(d.message || 'Estimate created and ready for review.') + '</div>' +
-        '<button class="result-again" onclick="resetEstimate()">New Estimate</button>' +
-        '</div>';
-    } else {
-      resEl.innerHTML =
-        '<div class="result-card error">' +
-        '<div class="result-ico">⚠️</div>' +
-        '<div class="result-title">Something went wrong</div>' +
-        '<div class="result-msg">' + esc(d.error || 'Try again.') + '</div>' +
-        '<button class="result-again" onclick="resetEstimate()">Try Again</button>' +
-        '</div>';
-    }
-  } catch(e) {
-    document.getElementById('est-form-wrap').style.display = 'none';
-    document.getElementById('est-result').style.display = 'block';
-    document.getElementById('est-result').innerHTML =
-      '<div class="result-card error"><div class="result-ico">⚠️</div><div class="result-title">Connection Error</div><div class="result-msg">Check your signal and try again.</div><button class="result-again" onclick="resetEstimate()">Try Again</button></div>';
-  }
-});
-
-function resetEstimate() {
-  EST_CUST_ID = null; EST_NEW_CUST = false;
-  document.getElementById('est-cust-search').value = '';
-  document.getElementById('est-cust-name').value   = '';
-  document.getElementById('est-cust-phone').value  = '';
-  document.getElementById('est-cust-addr').value   = '';
-  document.getElementById('est-cust-email').value  = '';
-  document.getElementById('est-job-type').value    = '';
-  document.getElementById('est-notes').value       = '';
-  document.getElementById('est-new-cust').style.display = 'none';
-  document.getElementById('est-form-wrap').style.display = 'block';
-  document.getElementById('est-result').style.display   = 'none';
-  document.getElementById('est-submit').disabled = true;
-  document.getElementById('est-submit').textContent = 'Draft Estimate';
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// WORK ORDER form
-// ─────────────────────────────────────────────────────────────────────────────
-var woSearch  = document.getElementById('wo-cust-search');
-var woResults = document.getElementById('wo-cust-results');
-var woNewWrap = document.getElementById('wo-new-cust');
-
-woSearch.addEventListener('focus', loadCustomers);
-woSearch.addEventListener('input', function() {
-  buildCustResults(this.value, woResults,
+njSearch.addEventListener('focus', loadCustomers);
+njSearch.addEventListener('input', function() {
+  buildCustResults(this.value, njResults,
     function(c) {
-      WO_CUST_ID  = c.id;
-      WO_NEW_CUST = false;
-      woSearch.value = c.customer_name || c.customer_phone;
-      woNewWrap.style.display = 'none';
-      checkWoReady();
+      NJ_CUST_ID  = c.id;
+      NJ_NEW_CUST = false;
+      njSearch.value = c.customer_name || c.customer_phone;
+      njNewWrap.style.display = 'none';
+      checkNjReady();
     },
     function() {
-      WO_CUST_ID  = null;
-      WO_NEW_CUST = true;
-      woSearch.value = 'New customer';
-      woNewWrap.style.display = 'block';
-      document.getElementById('wo-cust-name').focus();
-      checkWoReady();
+      NJ_CUST_ID  = null;
+      NJ_NEW_CUST = true;
+      njSearch.value = 'New customer';
+      njNewWrap.style.display = 'block';
+      document.getElementById('nj-cust-name').focus();
+      checkNjReady();
     }
   );
 });
 
 window.selectWhen = function(val) {
-  WO_WHEN = val;
-  document.getElementById('wo-now').classList.toggle('sel', val === 'now');
-  document.getElementById('wo-later').classList.toggle('sel', val === 'later');
-  var wrap = document.getElementById('wo-date-wrap');
-  wrap.style.display = val === 'later' ? 'block' : 'none';
+  NJ_WHEN = val;
+  document.getElementById('nj-now').classList.toggle('sel', val === 'now');
+  document.getElementById('nj-later').classList.toggle('sel', val === 'later');
+  document.getElementById('nj-date-wrap').style.display = val === 'later' ? 'block' : 'none';
   if (val === 'later') {
     var tom = new Date(); tom.setDate(tom.getDate() + 1);
-    document.getElementById('wo-date').value = tom.toISOString().slice(0,10);
+    document.getElementById('nj-date').value = tom.toISOString().slice(0,10);
   }
-  checkWoReady();
+  checkNjReady();
 };
 
-function checkWoReady() {
-  var custOk = WO_CUST_ID || (WO_NEW_CUST && document.getElementById('wo-cust-name').value.trim() && document.getElementById('wo-cust-phone').value.trim());
-  var typeOk = !!document.getElementById('wo-job-type').value;
-  var priceOk = parseFloat(document.getElementById('wo-price').value) > 0;
-  var whenOk  = !!WO_WHEN;
-  document.getElementById('wo-submit').disabled = !(custOk && typeOk && priceOk && whenOk);
+function checkNjReady() {
+  var custOk  = NJ_CUST_ID || (NJ_NEW_CUST && document.getElementById('nj-cust-name').value.trim() && document.getElementById('nj-cust-phone').value.trim());
+  var typeOk  = !!document.getElementById('nj-job-type').value;
+  var copy    = DOC_COPY[NJ_DOC_TYPE];
+  var priceOk = !copy.price || parseFloat(document.getElementById('nj-price').value) > 0;
+  var whenOk  = !copy.when  || !!NJ_WHEN;
+  document.getElementById('nj-submit').disabled = !(custOk && typeOk && priceOk && whenOk);
 }
 
-['wo-cust-name','wo-cust-phone','wo-cust-addr','wo-job-type','wo-price','wo-notes'].forEach(function(id) {
+['nj-cust-name','nj-cust-phone','nj-cust-addr','nj-job-type','nj-price','nj-notes'].forEach(function(id) {
   var el = document.getElementById(id);
-  if (el) { el.addEventListener('input', checkWoReady); el.addEventListener('change', checkWoReady); }
+  if (el) { el.addEventListener('input', checkNjReady); el.addEventListener('change', checkNjReady); }
 });
 
-document.getElementById('wo-submit').addEventListener('click', async function() {
+document.getElementById('nj-submit').addEventListener('click', async function() {
   var btn = this;
-  btn.disabled = true; btn.textContent = 'Creating…';
+  var dt  = NJ_DOC_TYPE;
+  var copy = DOC_COPY[dt];
+  btn.disabled = true; btn.textContent = dt === 'estimate' ? 'Drafting\u2026' : 'Creating\u2026';
 
   try {
     var payload = {
-      customer_id:    WO_CUST_ID || null,
-      customer_name:    WO_NEW_CUST ? document.getElementById('wo-cust-name').value.trim() : '',
-      customer_phone:   WO_NEW_CUST ? document.getElementById('wo-cust-phone').value.trim() : '',
-      customer_address: WO_NEW_CUST ? document.getElementById('wo-cust-addr').value.trim() : '',
-      customer_email:   WO_NEW_CUST ? document.getElementById('wo-cust-email').value.trim() : '',
-      job_type:         document.getElementById('wo-job-type').value,
-      notes:            document.getElementById('wo-notes').value.trim(),
-      amount:           parseFloat(document.getElementById('wo-price').value),
-      when:             WO_WHEN,
-      scheduled_date:   WO_WHEN === 'later' ? document.getElementById('wo-date').value : null,
-      send_confirmation: false,
+      customer_id:      NJ_CUST_ID || null,
+      customer_name:    NJ_NEW_CUST ? document.getElementById('nj-cust-name').value.trim() : '',
+      customer_phone:   NJ_NEW_CUST ? document.getElementById('nj-cust-phone').value.trim() : '',
+      customer_address: NJ_NEW_CUST ? document.getElementById('nj-cust-addr').value.trim() : '',
+      customer_email:   NJ_NEW_CUST ? document.getElementById('nj-cust-email').value.trim() : '',
+      job_type:         document.getElementById('nj-job-type').value,
+      notes:            document.getElementById('nj-notes').value.trim(),
     };
 
-    var r = await fetch('/pwa/api/workorder/create', {
+    var url;
+    if (dt === 'estimate') {
+      url = '/pwa/api/estimate/create';
+    } else {
+      url = '/pwa/api/workorder/create';
+      payload.doc_type = dt;
+      payload.amount   = parseFloat(document.getElementById('nj-price').value) || 0;
+      payload.when     = dt === 'work_order' ? (NJ_WHEN || 'now') : 'now';
+      payload.scheduled_date = (NJ_WHEN === 'later') ? document.getElementById('nj-date').value : null;
+    }
+
+    var r = await fetch(url, {
       method: 'POST', headers: {'Content-Type':'application/json'},
       body: JSON.stringify(payload)
     });
     var d = await r.json();
 
-    document.getElementById('wo-form-wrap').style.display = 'none';
-    document.getElementById('wo-result').style.display = 'block';
+    document.getElementById('nj-form-wrap').style.display = 'none';
+    document.getElementById('nj-result').style.display = 'block';
 
     if (d.success) {
-      document.getElementById('wo-result').innerHTML =
+      document.getElementById('nj-result').innerHTML =
         '<div class="result-card success">' +
-        '<div class="result-ico">✅</div>' +
-        '<div class="result-title">Work Order Created</div>' +
-        '<div class="result-msg">Job is on the dispatch board.</div>' +
-        '<button class="result-again" onclick="resetWO()">New Work Order</button>' +
+        '<div class="result-ico">\u2705</div>' +
+        '<div class="result-title">' + esc(copy.title) + '</div>' +
+        '<div class="result-msg">' + esc(d.message || 'Done. Check Office for details.') + '</div>' +
+        '<button class="result-again" onclick="resetNewJob()">New Job</button>' +
         '</div>';
     } else {
-      document.getElementById('wo-result').innerHTML =
+      document.getElementById('nj-result').innerHTML =
         '<div class="result-card error">' +
-        '<div class="result-ico">⚠️</div>' +
+        '<div class="result-ico">\u26A0\uFE0F</div>' +
         '<div class="result-title">Something went wrong</div>' +
         '<div class="result-msg">' + esc(d.error || 'Try again.') + '</div>' +
-        '<button class="result-again" onclick="resetWO()">Try Again</button>' +
+        '<button class="result-again" onclick="resetNewJob()">Try Again</button>' +
         '</div>';
     }
   } catch(e) {
-    document.getElementById('wo-form-wrap').style.display = 'none';
-    document.getElementById('wo-result').style.display = 'block';
-    document.getElementById('wo-result').innerHTML =
-      '<div class="result-card error"><div class="result-ico">⚠️</div><div class="result-title">Connection Error</div><div class="result-msg">Check your signal and try again.</div><button class="result-again" onclick="resetWO()">Try Again</button></div>';
+    document.getElementById('nj-form-wrap').style.display = 'none';
+    document.getElementById('nj-result').style.display = 'block';
+    document.getElementById('nj-result').innerHTML =
+      '<div class="result-card error"><div class="result-ico">\u26A0\uFE0F</div><div class="result-title">Connection Error</div><div class="result-msg">Check your signal and try again.</div><button class="result-again" onclick="resetNewJob()">Try Again</button></div>';
   }
 });
 
-function resetWO() {
-  WO_CUST_ID = null; WO_NEW_CUST = false; WO_WHEN = null;
-  ['wo-cust-search','wo-cust-name','wo-cust-phone','wo-cust-addr','wo-cust-email','wo-job-type','wo-price','wo-notes'].forEach(function(id) {
+function resetNewJob() {
+  NJ_CUST_ID = null; NJ_NEW_CUST = false; NJ_WHEN = null;
+  ['nj-cust-search','nj-cust-name','nj-cust-phone','nj-cust-addr','nj-cust-email','nj-job-type','nj-price','nj-notes'].forEach(function(id) {
     var el = document.getElementById(id); if (el) el.value = '';
   });
-  document.getElementById('wo-new-cust').style.display  = 'none';
-  document.getElementById('wo-date-wrap').style.display = 'none';
-  document.getElementById('wo-now').classList.remove('sel');
-  document.getElementById('wo-later').classList.remove('sel');
-  document.getElementById('wo-form-wrap').style.display = 'block';
-  document.getElementById('wo-result').style.display    = 'none';
-  document.getElementById('wo-submit').disabled = true;
-  document.getElementById('wo-submit').textContent = 'Create Work Order';
+  document.getElementById('nj-new-cust').style.display  = 'none';
+  document.getElementById('nj-date-wrap').style.display  = 'none';
+  document.getElementById('nj-now').classList.remove('sel');
+  document.getElementById('nj-later').classList.remove('sel');
+  document.getElementById('nj-form-wrap').style.display = 'block';
+  document.getElementById('nj-result').style.display    = 'none';
+  setDocType(NJ_DOC_TYPE);
+  document.getElementById('nj-submit').disabled = true;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1208,8 +1089,8 @@ setupVoice('jl-mic-btn', 'jl-input');
 (function() {
   var params = new URLSearchParams(window.location.search);
   var intent = params.get('intent');
-  var tabMap = { job_log:'joblog', estimate:'estimate', work_order:'workorder', customer:'customer' };
-  var panel = tabMap[intent] || 'estimate';
+  var tabMap = { job_log:'joblog', estimate:'newjob', work_order:'newjob', customer:'customer' };
+  var panel = tabMap[intent] || 'newjob';
   window.history.replaceState({}, '', window.location.pathname);
   showPanel(panel);
 })();
