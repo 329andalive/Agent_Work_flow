@@ -1065,7 +1065,7 @@ def pwa_workorder_create_form():
     STATUS_BY_DOC = {"work_order": "work_order", "invoice": "complete"}
     INV_STATUS_BY_DOC = {"work_order": "work_order", "invoice": "draft"}
 
-    job_status = STATUS_BY_DOC[doc_type] if when == "now" or doc_type == "invoice" else "scheduled"
+    job_status = STATUS_BY_DOC[doc_type]
     sched_date = _date.today().isoformat() if when == "now" else (scheduled_date or _date.today().isoformat())
     job_label  = job_type.replace("_", " ").title()
     description = job_label + (f" — {notes}" if notes else "")

@@ -2720,13 +2720,16 @@ def schedule_planner():
     except Exception as e:
         print(f"[{_ts()}] WARN dashboard_routes: planner backlog — {e}")
 
-    # Load jobs already scheduled for this week
+    # Load jobs already scheduled for this week — only actionable statuses
+    # so completed/cancelled jobs don't clutter the board.
     week_jobs = []
     try:
         result = sb.table("jobs").select(
             "id, job_type, job_description, job_address, status, "
             "scheduled_date, customer_id, zone_cluster, estimated_amount, job_notes"
-        ).eq("client_id", client_id).gte(
+        ).eq("client_id", client_id).in_(
+            "status", ["work_order", "scheduled", "pending", "in_progress", "new", "estimated"]
+        ).gte(
             "scheduled_date", week_days[0].isoformat()
         ).lte(
             "scheduled_date", week_days[-1].isoformat()
@@ -2825,11 +2828,19 @@ def api_reschedule_job():
         return jsonify({"success": False, "error": str(e)}), 500
 
     try:
+        # Read current status so we don't overwrite work_order → scheduled
+        current = sb.table("jobs").select("status").eq("id", job_id).execute()
+        cur_status = current.data[0].get("status", "") if current.data else ""
+
         update = {"scheduled_date": new_date}
-        if new_date:
-            update["status"] = "scheduled"
+        if not new_date:
+            # Dragged to backlog — keep work_order if it was one
+            if cur_status != "work_order":
+                update["status"] = "pending"
         else:
-            update["status"] = "work_order"
+            # Dragged to a day — keep work_order status, otherwise mark scheduled
+            if cur_status != "work_order":
+                update["status"] = "scheduled"
         sb.table("jobs").update(update).eq("id", job_id).execute()
         print(f"[{_ts()}] INFO dashboard_routes: Rescheduled job {job_id[:8]} → {new_date}")
         return jsonify({"success": True})
@@ -2901,7 +2912,7 @@ def api_create_work_order_planner():
         wo = {
             "client_id": client_id,
             "customer_id": customer_id,
-            "status": "scheduled" if scheduled_date else "work_order",
+            "status": "work_order",
             "scheduled_date": scheduled_date,
             "job_type": job_type,
             "job_description": scope,
