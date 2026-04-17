@@ -2707,28 +2707,44 @@ def schedule_planner():
     monday = today - timedelta(days=today.weekday()) + timedelta(weeks=week_offset)
     week_days = [monday + timedelta(days=i) for i in range(5)]  # Mon-Fri only
 
-    # Load ALL unscheduled jobs (work_order, scheduled, pending — no date or no worker)
+    # Backlog = two groups merged:
+    # 1. Unscheduled regular jobs (no date yet, waiting to be planned)
+    # 2. ALL open work orders (ongoing until closed — always visible
+    #    in backlog so the dispatcher can assign techs every day)
     backlog = []
     try:
+        # Regular unscheduled jobs
         result = sb.table("jobs").select(
             "id, job_type, job_description, job_address, status, "
             "scheduled_date, customer_id, zone_cluster, estimated_amount, job_notes"
         ).eq("client_id", client_id).in_(
-            "status", ["work_order", "scheduled", "pending"]
+            "status", ["scheduled", "pending"]
         ).is_("scheduled_date", "null").order("created_at").execute()
         backlog = result.data or []
     except Exception as e:
         print(f"[{_ts()}] WARN dashboard_routes: planner backlog — {e}")
 
-    # Load jobs already scheduled for this week — only actionable statuses
-    # so completed/cancelled jobs don't clutter the board.
+    try:
+        # Open work orders — always in backlog regardless of date
+        wo_result = sb.table("jobs").select(
+            "id, job_type, job_description, job_address, status, "
+            "scheduled_date, customer_id, zone_cluster, estimated_amount, job_notes"
+        ).eq("client_id", client_id).eq(
+            "status", "work_order"
+        ).order("created_at").execute()
+        backlog += wo_result.data or []
+    except Exception as e:
+        print(f"[{_ts()}] WARN dashboard_routes: planner WO backlog — {e}")
+
+    # Load jobs already scheduled for this week — excludes work_orders
+    # (they live in backlog permanently) and completed/cancelled jobs.
     week_jobs = []
     try:
         result = sb.table("jobs").select(
             "id, job_type, job_description, job_address, status, "
             "scheduled_date, customer_id, zone_cluster, estimated_amount, job_notes"
         ).eq("client_id", client_id).in_(
-            "status", ["work_order", "scheduled", "pending", "in_progress", "new", "estimated"]
+            "status", ["scheduled", "pending", "in_progress", "new", "estimated"]
         ).gte(
             "scheduled_date", week_days[0].isoformat()
         ).lte(
