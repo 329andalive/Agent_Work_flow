@@ -376,6 +376,21 @@ pricing.
 
 ---
 
+## Database hosting
+
+- **Bolts11 (this project):** Supabase Pro. Runs as-is on the existing
+  `wczzlvhpryufohjwmxwd.supabase.co` project. Do not move — the coupling
+  audit is documented in `plan.md` decisions log.
+- **New projects going forward:** default to Neon Postgres. Free tier
+  auto-pauses when idle (wakes on query) so dormant side-projects don't
+  accrue charges. Up to 10 free projects per Neon org; scale to paid per
+  project if one goes live. File uploads can still use Supabase Storage
+  free tier (separate from the DB), or Cloudflare R2 if egress matters.
+- **Do not mix:** pick one host per project. Cross-host queries add
+  latency and break multi-tenant guarantees.
+
+---
+
 ## API Credentials (.env)
 
 ```
