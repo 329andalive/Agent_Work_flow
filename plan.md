@@ -91,6 +91,7 @@ this doc in the Decisions log, and insert the new subtask.
 
 ## Decisions log
 - **2026-04-23:** Chose phase-based structure over single-feature plan because the scope is "iron out," not "add one feature." Phases are independent so we can stop after any of them and still have shipped value.
+- **2026-04-23:** Kept Bolts11 on paid Supabase rather than migrating. Future projects default to Neon. Storage stays on Supabase free tier. Coupling audit: ~130 PostgREST query chains across 22 db_*.py files, single chokepoint in `execution/db_connection.py` — migration remains feasible if ever needed.
 
 ## Risks
 - **Risk:** Recent commits (WO backlog, route dedup, PWA unified form) may have subtle bugs not covered by tests. **Mitigation:** Phase 2 is entirely manual QA of exactly those commits before building more.

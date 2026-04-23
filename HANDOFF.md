@@ -1,8 +1,20 @@
 Response
 
 # HANDOFF.md — Bolts11 Session Log
-> Last updated: March 31, 2026 — Backend Engineer
+> Last updated: April 23, 2026
 > Read CLAUDE.md first every session before touching any code.
+
+---
+
+## Session — April 23, 2026
+
+### Database hosting — resolved
+
+Bolts11 stays on Supabase, upgrading to Pro for this project. New projects
+going forward default to Neon Postgres (auto-pauses idle, wakes on query,
+10 free projects). See `CLAUDE.md` "Database hosting" section and
+`plan.md` decisions log for the full reasoning. This concern is closed;
+next session picks up `plan.md` Phase 1.
 
 ---
 
