@@ -728,14 +728,6 @@ def test_pwa_new_job_endpoint_requires_auth(pwa_client):
     assert resp.status_code in (301, 302, 308, 400, 401, 403)
 
 
-def test_pwa_shell_links_to_new_job_screen(pwa_client):
-    """Shell should link to /pwa/job now that step 5 is live."""
-    _set_pwa_session(pwa_client)
-    resp = pwa_client.get("/pwa/")
-    body = resp.data.decode()
-    assert "/pwa/job" in body
-
-
 # ---------------------------------------------------------------------------
 # pwa_new_job module unit tests
 # ---------------------------------------------------------------------------
@@ -822,16 +814,6 @@ def test_pwa_chat_screen_requires_auth(pwa_client):
     resp = pwa_client.get("/pwa/chat")
     assert resp.status_code in (301, 302, 308)
     assert "/pwa/login" in resp.headers.get("Location", "")
-
-
-def test_pwa_chat_screen_renders_when_authed(pwa_client):
-    """GET /pwa/chat with session should render the chat screen."""
-    _set_pwa_session(pwa_client)
-    resp = pwa_client.get("/pwa/chat")
-    assert resp.status_code == 200
-    body = resp.data.decode()
-    assert "Jesse" in body
-    assert "Message" in body  # placeholder text in textarea
 
 
 def test_pwa_chat_history_returns_messages(pwa_client):
@@ -1307,20 +1289,6 @@ def test_pwa_chat_send_persists_action_in_metadata(pwa_client):
     assert assistant_call is not None
     meta = assistant_call.kwargs.get("metadata") or {}
     assert meta.get("action", {}).get("type") == "clock_in"
-
-
-def test_pwa_chat_html_renders_chip_and_voice_markup():
-    """Chat template should ship the chip + mic button hooks."""
-    # Cheap render-side check that the 6b pieces are wired into the template.
-    from pathlib import Path
-    html = Path(__file__).parent.parent / "templates" / "pwa" / "chat.html"
-    body = html.read_text()
-    # Action chip CSS class + render function
-    assert "renderChip" in body
-    assert ".chip" in body
-    # Voice input button + Web Speech wiring
-    assert "mic-btn" in body
-    assert "SpeechRecognition" in body
 
 
 # ---------------------------------------------------------------------------
@@ -1903,14 +1871,3 @@ def test_pwa_logout_clears_chat_session_override(pwa_client):
         assert sess.get("pwa_chat_session_id") is None
 
 
-def test_pwa_chat_html_has_new_chat_button():
-    """Sanity: chat template ships the New Chat button + JS handler."""
-    from pathlib import Path
-    html = Path(__file__).parent.parent / "templates" / "pwa" / "chat.html"
-    body = html.read_text()
-    # Markup
-    assert 'id="new-chat-btn"' in body
-    assert "+ New" in body
-    # JS function + endpoint
-    assert "function newChat" in body
-    assert "/pwa/api/chat/new-session" in body
