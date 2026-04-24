@@ -8,7 +8,7 @@ FIXED: accepts temp PIN 5555 for new clients with no pin_hash set,
 import os
 import re
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -70,7 +70,7 @@ def access_request():
         sb.table("access_requests").insert({
             "name": name, "email": email, "phone": phone_e164,
             "business_type": business_type, "status": "pending",
-            "created_at": datetime.utcnow().isoformat(),
+            "created_at": datetime.now(timezone.utc).isoformat(),
         }).execute()
     except Exception as e:
         print(f"[{_ts()}] WARN access_request: DB insert failed — {e}")

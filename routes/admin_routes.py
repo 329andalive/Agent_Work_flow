@@ -4,7 +4,7 @@ routes/admin_routes.py — All routes for the Bolts11 Admin Dashboard
 import os
 import re
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from functools import wraps
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -174,7 +174,7 @@ def approve_request(req_id):
         existing = sb.table("clients").select("id").eq("phone", phone_e164).execute()
         if existing.data:
             flash(f"Client with {phone_e164} already exists.", "warning")
-            sb.table("access_requests").update({"status":"approved","approved_at":datetime.utcnow().isoformat()}).eq("id",req_id).execute()
+            sb.table("access_requests").update({"status":"approved","approved_at":datetime.now(timezone.utc).isoformat()}).eq("id",req_id).execute()
             return redirect("/requests")
         business_name = request.form.get("business_name") or f"{(req.get('name') or '').split()[0]}'s {req.get('business_type','Business')}"
         owner_name  = req.get("name","")
@@ -183,7 +183,7 @@ def approve_request(req_id):
             "business_name": business_name, "owner_name": owner_name,
             "phone": phone_e164, "active": True,
             "trade_vertical": _map_vertical(req.get("business_type","")),
-            "created_at": datetime.utcnow().isoformat(),
+            "created_at": datetime.now(timezone.utc).isoformat(),
         }
         # Carry the owner email forward onto the client record (added
         # April 2026 — see sql/add_email_to_clients.sql). Without this
@@ -192,7 +192,7 @@ def approve_request(req_id):
         if owner_email:
             new_client["email"] = owner_email
         sb.table("clients").insert(new_client).execute()
-        sb.table("access_requests").update({"status":"approved","approved_at":datetime.utcnow().isoformat()}).eq("id",req_id).execute()
+        sb.table("access_requests").update({"status":"approved","approved_at":datetime.now(timezone.utc).isoformat()}).eq("id",req_id).execute()
         if owner_email:
             try:
                 from execution.resend_agent import send_welcome_email
@@ -220,7 +220,7 @@ def reject_request(req_id):
 @_require_admin
 def mark_contacted(req_id):
     try:
-        _sb().table("access_requests").update({"status":"contacted","contacted_at":datetime.utcnow().isoformat()}).eq("id",req_id).execute()
+        _sb().table("access_requests").update({"status":"contacted","contacted_at":datetime.now(timezone.utc).isoformat()}).eq("id",req_id).execute()
         flash("Marked as contacted.", "success")
     except Exception as e:
         flash(f"Error: {e}", "error")
@@ -341,7 +341,7 @@ def _admin_audit(sb, client_phone: str, action: str, summary: str) -> None:
             "agent_name":   "admin",
             "action_taken": action,
             "input_summary": summary[:500],
-            "output_summary": f"by admin_pin at {datetime.utcnow().isoformat()}",
+            "output_summary": f"by admin_pin at {datetime.now(timezone.utc).isoformat()}",
             "sms_sent":     False,
         }).execute()
     except Exception as e:

@@ -18,7 +18,7 @@ Usage:
 
 import os
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -52,7 +52,7 @@ def _cancel_pending_consent(client_id: str, customer_phone: str) -> None:
         customer_id = cust.data["id"]
         supabase.table("follow_ups").update({
             "status":    "sent",
-            "sent_at":   datetime.utcnow().isoformat(),
+            "sent_at":   datetime.now(timezone.utc).isoformat(),
             "sent_body": "customer_opted_in",
         }).eq("client_id", client_id).eq("customer_id", customer_id).eq("follow_up_type", "pending_consent").eq("status", "pending").execute()
 
